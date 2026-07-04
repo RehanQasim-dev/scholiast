@@ -133,8 +133,30 @@ exists** — the sharded keys are the only format. The shapes below are the per-
 
 ## 3. Implemented features
 
+### 3.0 Annotation mode & toolbar
+- **Two-stage popup**: clicking the extension icon opens a compact quick-actions popup (action
+  icons + a "Clip this page" button) with **no content extraction**. The full clipper UI — and the
+  expensive page-to-markdown conversion — loads only when "Clip this page" is pressed (or a quick
+  clip is triggered). Side panel and embedded iframe skip the quick state and load the full clipper
+  immediately, as before.
+- Annotating is an explicit, opt-in **annotation mode** per page: entered via the extension's
+  highlighter toggle (or the `H`/`P` keys), never during normal browsing. Stored highlights and
+  comment boxes still render on page load regardless of mode — mode only gates *creating/editing*.
+- While the mode is on, an **Excalidraw-style toolbar** floats top-center
+  (`src/utils/annotation-toolbar.ts`): **Select** (browse/manage), **Highlighter** (`H`),
+  **Pen** (`P`), and **×** (exit mode). Tools change only when the user changes them; the active
+  tool is always visibly marked. Last-used tool is remembered (storage `annotationLastTool`) and
+  restored on mode entry.
+- The toolbar doesn't own the tools — it syncs to the existing body-class toggles via a
+  MutationObserver, so every entry path (keys, popup, messages) stays consistent, and any tool
+  activation auto-shows the toolbar. It is the **only** on-page tool UI: the old bottom
+  "Clip highlights" menu bar was removed entirely (its actions live elsewhere — clip via the
+  popup, undo/redo via `Ctrl+Z`/`Ctrl+Shift+Z`, exit via the toolbar ×).
+- **`Esc` steps down one level**: active tool → Select; already on Select → exit annotation mode.
+  An open comment draft dims the tool buttons (annotation suspended — see §3.2).
+
 ### 3.1 Text highlighting (Marker)
-- **`H`** toggles highlighter mode.
+- **`H`** toggles the highlighter tool (entering annotation mode if needed).
 - Smart cursor: hovering an annotation/comment card disables the highlighter (reverts to normal
   cursor) to avoid accidental highlights; restores on leave.
 - Selecting text shows a floating **color-swatch popup** (circular swatches above the selection).
@@ -147,16 +169,29 @@ exists** — the sharded keys are the only format. The shapes below are the per-
   the anchor's quote/offsets. Selections inside an editable context (input / textarea /
   contenteditable / ARIA textbox) are ignored via `isEditableContext` (`src/utils/dom-utils.ts`) so
   text picked in a page search box or rich-text editor never turns into a highlight.
-- Undo/redo: `Ctrl+Z` / `Ctrl+Shift+Z`. `Esc` exits mode.
+- Undo/redo: `Ctrl+Z` / `Ctrl+Shift+Z`. `Esc` drops to the Select tool (see §3.0).
 
 ### 3.2 Commenting & annotation system
-- Comments render as floating **cards on the left or right** of the viewport based on available space;
-  if neither fits, body padding nudges content inward. Cards stack top-to-bottom without overlap.
+- Comments render as floating **cards in a single right-side column**, stacked top-to-bottom in
+  document order of their highlights without overlap; if the viewport lacks room, a body margin
+  nudges content leftward. (Always-right avoids cards landing over left-side page chrome like a TOC.)
+- **Empty comment editors are discarded on click-away**: the box disappears (the highlight stays)
+  instead of lingering as an empty field.
 - **`Ctrl`+click** an existing highlight opens its comment bar for typing.
 - **Threaded replies**: a reply bar at the bottom of each card adds replies to the thread.
 - **Smart truncation**: replies longer than 3 lines collapse; 4th line fades/blurs out.
 - **Expandable**: clicking a truncated reply expands just that one (double-click → edit mode).
-- Inline markdown in editor: `Ctrl+B` / `Ctrl+I` wrap selection. Auto-saves on click-outside.
+- Inline markdown in editor: `Ctrl+B` / `Ctrl+I` wrap selection.
+- **Draft-first commit model (no auto-save)**: an editor with text is a *draft*. Drafts save only
+  explicitly (`Enter` / ↑ button) and discard only explicitly (`Escape`); they persist across
+  clicks, scrolls, and page selections (the box keeps its editor visible even unfocused). While a
+  draft is open, **annotation is suspended**: drag-selections stay plain native selections with the
+  browser's native selection color (so text can be copied into the draft) and no highlight is
+  created — shown passively by the toolbar dimming its tool buttons and the highlighter cursor
+  reverting to the normal text cursor (body class `obsidian-draft-open`); no flashing or
+  auto-scrolling. Empty editors are the exception: they're
+  discarded on click-away, and a selection while one is open creates the highlight normally.
+  Click-away cleanup is deferred to after mouseup so re-layout never disrupts a selection drag.
 - **Diagrams**: An "Add Diagram" button in the comment editor opens a dedicated, isolated Excalidraw window. The comment is created **only when the editor saves** (the diagram-id→highlight mapping is held pending until the save lands), so closing the editor without saving leaves no orphan comment. The editable **scene JSON** is stored in `browser.storage.local` under the `diagrams` key (`{ sceneData, updatedAt }`); the **rendered PNG is stored as a binary blob in IndexedDB** (frame-store `diagrams` store, keyed by diagram id) and rehydrated on demand — never inline in any JSON. Editing reuses the same diagram id (overwrites in place, no orphan); deleting the comment drops both the `diagrams` entry and the IndexedDB blob.
 - **Grouped highlights are one annotation on the live page**: a multi-block selection (e.g. several
   bullet points sharing a `groupId`) shows a **single comment box / thread** anchored to the group's

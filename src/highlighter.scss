@@ -1,16 +1,5 @@
 @import './styles/video-annotator';
 
-@media (max-width: 769px) {
-	.obsidian-highlighter-menu {
-		--obsidian-highlighter-menu-font-size: 15px;
-		--obsidian-highlighter-menu-padding: 4px;
-		--obsidian-highlighter-menu-height: 32px;
-		--obsidian-undo-button-display: flex;
-		--obsidian-highlighter-button-border: none;
-		top: auto !important;
-		bottom: 25px !important;
-	}
-}
 @media (max-width: 500px) {
 	#obsidian-clipper-container {
 		width: 100%;
@@ -111,51 +100,40 @@
 		z-index: 99999999999;
 	}
 }
-/* Hide the clip button on iPadOS because it's not supported */
-.is-ipad-os {
-	.obsidian-highlighter-menu {
-		#obsidian-clip-button {
-			display: none;
-		}
-	}
-}
 
 body.obsidian-highlighter-active {
-	--obsidian-highlighter-menu-font-size: 13px;
-	--obsidian-highlighter-menu-padding: 4px;
-	--obsidian-highlighter-menu-height: 24px;
-	--obsidian-undo-button-display: none;
-	--obsidian-highlighter-button-border: inset rgba(255, 255, 255, 0.1) 0px 0px 0px 1px !important;
-
 	// Disable pinch zoom on mobile
 	touch-action: pan-x pan-y;
 
-	&[data-obsidian-color="yellow"]:not(.obsidian-highlighter-hover-suppress),
-	&:not([data-obsidian-color]):not(.obsidian-highlighter-hover-suppress) {
+	&[data-obsidian-color="yellow"]:not(.obsidian-highlighter-hover-suppress):not(.obsidian-draft-open),
+	&:not([data-obsidian-color]):not(.obsidian-highlighter-hover-suppress):not(.obsidian-draft-open) {
 		&, * { cursor: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='32' height='32' viewBox='0 0 24 24'><g stroke='%23ffffff' stroke-width='1.5' stroke-linecap='round' stroke-linejoin='round'><path d='m9 11-6 6v3h9l3-3' fill='%23ffeb00'/><path d='m22 12-4.6 4.6a2 2 0 0 1-2.8 0l-5.2-5.2a2 2 0 0 1 0-2.8L14 4' fill='%23000000'/></g></svg>") 0 32, text !important; }
 		figure, picture, img, a, table, pre { cursor: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='32' height='32' viewBox='0 0 24 24'><g stroke='%23ffffff' stroke-width='1.5' stroke-linecap='round' stroke-linejoin='round'><path d='m9 11-6 6v3h9l3-3' fill='%23ffeb00'/><path d='m22 12-4.6 4.6a2 2 0 0 1-2.8 0l-5.2-5.2a2 2 0 0 1 0-2.8L14 4' fill='%23000000'/></g></svg>") 0 32, crosshair !important; }
 	}
 
-	&[data-obsidian-color="red"]:not(.obsidian-highlighter-hover-suppress) {
+	&[data-obsidian-color="red"]:not(.obsidian-highlighter-hover-suppress):not(.obsidian-draft-open) {
 		&, * { cursor: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='32' height='32' viewBox='0 0 24 24'><g stroke='%23ffffff' stroke-width='1.5' stroke-linecap='round' stroke-linejoin='round'><path d='m9 11-6 6v3h9l3-3' fill='%23ff6384'/><path d='m22 12-4.6 4.6a2 2 0 0 1-2.8 0l-5.2-5.2a2 2 0 0 1 0-2.8L14 4' fill='%23000000'/></g></svg>") 0 32, text !important; }
 		figure, picture, img, a, table, pre { cursor: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='32' height='32' viewBox='0 0 24 24'><g stroke='%23ffffff' stroke-width='1.5' stroke-linecap='round' stroke-linejoin='round'><path d='m9 11-6 6v3h9l3-3' fill='%23ff6384'/><path d='m22 12-4.6 4.6a2 2 0 0 1-2.8 0l-5.2-5.2a2 2 0 0 1 0-2.8L14 4' fill='%23000000'/></g></svg>") 0 32, crosshair !important; }
 	}
 
-	&[data-obsidian-color="green"]:not(.obsidian-highlighter-hover-suppress) {
+	&[data-obsidian-color="green"]:not(.obsidian-highlighter-hover-suppress):not(.obsidian-draft-open) {
 		&, * { cursor: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='32' height='32' viewBox='0 0 24 24'><g stroke='%23ffffff' stroke-width='1.5' stroke-linecap='round' stroke-linejoin='round'><path d='m9 11-6 6v3h9l3-3' fill='%234bc078'/><path d='m22 12-4.6 4.6a2 2 0 0 1-2.8 0l-5.2-5.2a2 2 0 0 1 0-2.8L14 4' fill='%23000000'/></g></svg>") 0 32, text !important; }
 		figure, picture, img, a, table, pre { cursor: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='32' height='32' viewBox='0 0 24 24'><g stroke='%23ffffff' stroke-width='1.5' stroke-linecap='round' stroke-linejoin='round'><path d='m9 11-6 6v3h9l3-3' fill='%234bc078'/><path d='m22 12-4.6 4.6a2 2 0 0 1-2.8 0l-5.2-5.2a2 2 0 0 1 0-2.8L14 4' fill='%23000000'/></g></svg>") 0 32, crosshair !important; }
 	}
-	&[data-obsidian-color="yellow"] *::selection,
-	&:not([data-obsidian-color]) *::selection {
+	// Selection tint matches the active highlight color — except while a draft
+	// is open (annotation suspended): then selection is for copying text into
+	// the draft and keeps the browser's native selection color.
+	&[data-obsidian-color="yellow"]:not(.obsidian-draft-open) *::selection,
+	&:not([data-obsidian-color]):not(.obsidian-draft-open) *::selection {
 		background-color: rgba(255, 235, 0, 0.35) !important;
 	}
-	&[data-obsidian-color="red"] *::selection {
+	&[data-obsidian-color="red"]:not(.obsidian-draft-open) *::selection {
 		background-color: rgba(255, 0, 0, 0.45);
 	}
-	&[data-obsidian-color="green"] *::selection {
+	&[data-obsidian-color="green"]:not(.obsidian-draft-open) *::selection {
 		background-color: rgba(0, 255, 0, 0.35);
 	}
-	&[data-obsidian-color="black"] *::selection {
+	&[data-obsidian-color="black"]:not(.obsidian-draft-open) *::selection {
 		background-color: rgba(0, 0, 0, 0.35);
 	}
 	
@@ -175,17 +153,33 @@ body.obsidian-highlighter-active {
 	}
 }
 
+// Readability over wash-out. A flat translucent band painted behind arbitrary
+// page text lowers its contrast and makes it harder to read on many sites. To
+// instead REWARD the highlighted text — keep its own color but make it crisper
+// and more prominent — every base highlight does two things:
+//   1. A lighter background tint (0.28) so less of the text's contrast is eaten.
+//   2. `text-shadow` in `currentColor` — which resolves to the text's *original*
+//      color since we never override `color` — giving a faux-bold / sharpened
+//      edge that makes the highlighted text "lift off" the page and read clearer
+//      without changing its hue. (font-weight isn't supported on ::highlight();
+//      text-shadow is, so this is how we add weight.)
+$ob-hl-lift: 0 0 0.35px currentColor, 0 0 0.35px currentColor;
+
 ::highlight(obsidian-highlight-yellow) {
-	background-color: rgba(255, 235, 0, 0.35);
+	background-color: rgba(255, 235, 0, 0.28);
+	text-shadow: $ob-hl-lift;
 }
 ::highlight(obsidian-highlight-red) {
-	background-color: rgba(255, 99, 132, 0.35);
+	background-color: rgba(255, 99, 132, 0.28);
+	text-shadow: $ob-hl-lift;
 }
 ::highlight(obsidian-highlight-green) {
-	background-color: rgba(75, 192, 120, 0.35);
+	background-color: rgba(75, 192, 120, 0.28);
+	text-shadow: $ob-hl-lift;
 }
 ::highlight(obsidian-highlight-black) {
-	background-color: rgba(0, 0, 0, 0.35);
+	background-color: rgba(0, 0, 0, 0.28);
+	text-shadow: $ob-hl-lift;
 }
 
 // Active emphasis (shown while hovering the associated comment box). The
@@ -223,14 +217,18 @@ body.obsidian-highlighter-active {
 }
 
 .obsidian-highlight-color-btn {
+	box-sizing: border-box !important;
 	width: 14px !important;
 	height: 14px !important;
 	min-width: 14px !important;
+	min-height: 0 !important;
 	flex-shrink: 0 !important;
 	border-radius: 50% !important;
 	border: 1px solid rgba(0,0,0,0.2) !important;
 	cursor: pointer !important;
+	margin: 0 !important;
 	padding: 0 !important;
+	line-height: 1 !important;
 	transition: transform 0.1s ease !important;
 	
 	&:hover {
@@ -241,118 +239,6 @@ body.obsidian-highlighter-active {
 	&.color-red { background-color: rgb(255, 99, 132) !important; }
 	&.color-green { background-color: rgb(75, 192, 120) !important; }
 	&.color-black { background-color: rgb(50, 50, 50) !important; }
-}
-
-.obsidian-highlighter-menu {
-	box-sizing: border-box !important;
-	cursor: default;
-	position: fixed;
-	top: 20px;
-	left: 50%;
-	transform: translateX(-50%);
-	border: 1px solid #424242;
-	background: #353535;
-	color: #fff;
-	padding: var(--obsidian-highlighter-menu-padding);
-	height: calc(var(--obsidian-highlighter-menu-height) + var(--obsidian-highlighter-menu-padding) * 2);
-	border-radius: var(--obsidian-highlighter-menu-height);
-	display: flex;
-	align-items: center;
-	gap: 4px;
-	z-index: 9999999999;
-	font-family: ui-sans-serif, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Inter", "Apple Color Emoji", "Segoe UI Emoji", "Segoe UI Symbol", sans-serif;
-	font-size: var(--obsidian-highlighter-menu-font-size) !important;
-	font-weight: 600 !important;
-	box-shadow: 0 2px 10px rgba(0, 0, 0, 0.2) !important;
-	user-select: none;
-	-webkit-user-select: none;
-	-webkit-font-smoothing: antialiased !important;
-	font-variant-numeric: tabular-nums;
-	white-space: nowrap !important;
-
-	.no-highlights {
-		font-weight: 600 !important;
-		padding: 0 4px 0 8px;
-	}
-
-	button#obsidian-redo-highlights:not(.active),
-	button#obsidian-undo-highlights:not(.active) {
-		background-color: transparent !important;
-		opacity: 0.5;
-		cursor: default !important;
-	}
-	button#obsidian-undo-highlights,
-	button#obsidian-redo-highlights {
-		display: var(--obsidian-undo-button-display) !important;
-	}
-
-	.highlight-count {
-		font-variant-numeric: tabular-nums;
-		color: #bebebe !important;
-		padding-inline-start: 4px;
-	}
-
-	button#obsidian-clear-highlights {
-		padding: 0 8px 0 8px !important;
-	}
-
-	button {
-		font-family: ui-sans-serif, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Inter", "Apple Color Emoji", "Segoe UI Emoji", "Segoe UI Symbol", "Microsoft YaHei Light", sans-serif !important;
-		font-size: var(--obsidian-highlighter-menu-font-size) !important;
-		appearance: none !important;
-		background-color: transparent !important;
-		color: #bebebe !important;
-		font-weight: 600 !important;
-		height: var(--obsidian-highlighter-menu-height) !important;
-		min-width: var(--obsidian-highlighter-menu-height) !important;
-		padding: 0 !important;
-		border-radius: var(--obsidian-highlighter-menu-height) !important;
-		border: none !important;
-		cursor: pointer !important;
-		box-shadow: none !important;
-		outline: none !important;
-		display: flex;
-		align-items: center;
-		justify-content: center;
-		font-variant-numeric: tabular-nums !important;
-		gap: 4px;
-		background-color: rgba(255, 255, 255, 0.1) !important;
-		box-shadow: var(--obsidian-highlighter-button-border) !important;
-		-webkit-font-smoothing: antialiased !important;
-		svg {
-			mix-blend-mode: normal !important;
-			margin: 0;
-			color: #bebebe;
-			width: 16px;
-			height: 16px;
-			path, line {
-				color: #bebebe;
-			}
-		}
-		@media (hover: hover) {
-			&:hover {
-				color: white !important;
-				background-color: rgba(255, 255, 255, 0.25) !important;
-				svg {
-					color: white !important;
-					path, line {
-						color: white !important;
-					}
-				}
-			}
-		}
-		&.mod-cta {
-			background-color: #895DF4 !important;
-			color: white !important;
-			padding: 0 8px !important;
-			box-shadow: var(--obsidian-highlighter-button-border) !important;
-			@media (hover: hover) {
-				&:hover {
-					background-color: #A68AF9 !important;
-				}
-			}
-		}
-	}
 }
 
 // Element highlight overlay (figure, img, table, pre, picture). Always
@@ -459,6 +345,76 @@ body.obsidian-highlight-overlays-hidden {
 	}
 }
 
+// Excalidraw-style tool switcher, top-center, visible only in annotation mode.
+// Sleek pill: slim height, fully rounded ends, circular buttons.
+.obsidian-annotation-toolbar {
+	position: fixed;
+	top: 10px;
+	left: 50%;
+	transform: translateX(-50%);
+	z-index: 2147483646;
+	display: flex;
+	align-items: center;
+	gap: 1px;
+	padding: 3px;
+	background: rgba(27, 32, 48, 0.97);
+	backdrop-filter: blur(6px);
+	-webkit-backdrop-filter: blur(6px);
+	border: 1px solid rgba(255, 255, 255, 0.12);
+	border-radius: 999px;
+	box-shadow: 0 4px 14px rgba(0, 0, 0, 0.28);
+	font-family: ui-sans-serif, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Inter", sans-serif;
+
+	button {
+		display: flex;
+		align-items: center;
+		justify-content: center;
+		width: 26px;
+		height: 26px;
+		padding: 0;
+		margin: 0;
+		background: transparent;
+		border: none;
+		border-radius: 999px;
+		color: #8a93a6;
+		cursor: pointer;
+		transition: background 0.12s ease, color 0.12s ease;
+
+		svg {
+			width: 14px;
+			height: 14px;
+		}
+
+		&:hover {
+			background: rgba(255, 255, 255, 0.10);
+			color: #cdd6e6;
+		}
+
+		&.is-active {
+			background: rgba(137, 93, 244, 0.28);
+			color: #A68AF9;
+		}
+
+		&[data-tool="exit"]:hover {
+			color: #ff6b6b;
+		}
+	}
+
+	.obsidian-toolbar-divider {
+		width: 1px;
+		height: 14px;
+		margin: 0 2px;
+		background: rgba(255, 255, 255, 0.12);
+	}
+
+	// A comment draft is open: annotation tools are suspended until the draft
+	// is submitted or discarded. Dim them so the state is visible at a glance.
+	&.has-draft button[data-tool="highlight"],
+	&.has-draft button[data-tool="pen"] {
+		opacity: 0.35;
+	}
+}
+
 @keyframes clipperOpenAnimation {
 	to {
 		opacity: 1;
@@ -477,39 +433,71 @@ body.obsidian-highlight-overlays-hidden {
 	}
 }
 
+// Quick-actions bar shown on a highlight. It's injected into arbitrary live
+// pages, so every layout property is pinned with !important — otherwise host
+// CSS (button/div padding, line-height, height, flex-direction) bleeds in and
+// inflates it into a tall rectangle that overlaps the highlighted text. The
+// goal is a sleek, compact, horizontal bar.
 .obsidian-highlight-action-menu {
 	display: none;
-	align-items: center;
-	gap: 4px;
-	padding: 4px;
+	box-sizing: border-box !important;
+	flex-direction: row !important;
+	flex-wrap: nowrap !important;
+	align-items: center !important;
+	gap: 4px !important;
+	margin: 0 !important;
+	padding: 3px 5px !important;
+	line-height: 1 !important;
+	min-height: 0 !important;
+	height: auto !important;
+	width: auto !important;
 	background: #353535;
 	border: 1px solid #424242;
-	border-radius: 20px;
-	box-shadow: 0 2px 6px rgba(0, 0, 0, 0.2);
+	border-radius: 999px;
+	box-shadow: 0 2px 8px rgba(0, 0, 0, 0.25);
 	z-index: 10;
-	
+
+	.obsidian-highlight-color-picker {
+		display: flex !important;
+		flex-direction: row !important;
+		flex-wrap: nowrap !important;
+		align-items: center !important;
+		gap: 5px !important;
+		margin: 0 !important;
+		padding: 0 6px 0 2px !important;
+		min-height: 0 !important;
+		height: auto !important;
+		border-right: 1px solid rgba(255, 255, 255, 0.14) !important;
+	}
+
 	button:not(.obsidian-highlight-color-btn) {
-		display: flex;
-		align-items: center;
-		justify-content: center;
-		background: transparent;
-		color: #f0f0f0;
-		border: none;
-		border-radius: 16px;
-		padding: 4px 8px;
+		display: flex !important;
+		align-items: center !important;
+		justify-content: center !important;
+		box-sizing: border-box !important;
+		margin: 0 !important;
+		background: transparent !important;
+		color: #f0f0f0 !important;
+		border: none !important;
+		border-radius: 999px !important;
+		padding: 5px 7px !important;
+		min-height: 0 !important;
+		height: auto !important;
+		line-height: 1 !important;
 		cursor: pointer;
-		font-family: ui-sans-serif, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Inter", sans-serif;
-		font-size: 12px;
-		font-weight: 500;
-		gap: 4px;
-		
+		font-family: ui-sans-serif, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Inter", sans-serif !important;
+		font-size: 12px !important;
+		font-weight: 500 !important;
+		gap: 4px !important;
+
 		svg {
-			width: 14px;
-			height: 14px;
+			width: 14px !important;
+			height: 14px !important;
+			flex-shrink: 0 !important;
 		}
 
 		&:hover {
-			background: #424242;
+			background: #424242 !important;
 		}
 	}
 }
@@ -625,9 +613,14 @@ body[data-ob-comment-size="large"] .obsidian-comment-box { --ob-font: 17px; }
 		display: none;
 	}
 	&.is-focused > .obsidian-comment-editor.sleek-input,
-	&.is-empty > .obsidian-comment-editor.sleek-input {
+	&.is-empty > .obsidian-comment-editor.sleek-input,
+	&.has-draft > .obsidian-comment-editor.sleek-input {
 		display: block;
 	}
+	&.has-draft .obsidian-comment-list {
+		margin-bottom: 6px;
+	}
+
 
 	&.is-focused .obsidian-comment-actions-inline {
 		opacity: 1;
@@ -639,7 +632,13 @@ body[data-ob-comment-size="large"] .obsidian-comment-box { --ob-font: 17px; }
 		display: flex;
 		flex-direction: column;
 		gap: 0;
-		margin-bottom: 8px;
+		// No bottom margin by default — the reply field below is hidden until the
+		// box is focused, and reserving space for it wastes vertical room in a
+		// column that can hold many boxes.
+		margin-bottom: 0;
+	}
+	&.is-focused .obsidian-comment-list {
+		margin-bottom: 6px;
 	}
 
 	.obsidian-inline-tag {
@@ -657,7 +656,7 @@ body[data-ob-comment-size="large"] .obsidian-comment-box { --ob-font: 17px; }
 		display: flex;
 		flex-direction: column;
 		background: transparent;
-		padding: 6px 2px 7px;
+		padding: 4px 2px;
 		border-radius: 0;
 
 		// Hairline divider between replies for clear separation in a thread.

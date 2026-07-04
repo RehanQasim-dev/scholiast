@@ -125,6 +125,36 @@ const memoizedExtractPageContent = memoizeWithExpiration(
 	}
 );
 
+// --- Two-stage popup ---------------------------------------------------------
+// The regular browser-action popup opens in a compact "quick actions" state:
+// just the action icons (annotate / reader / dashboard / settings) plus a
+// "Clip this page" button. Content extraction — the expensive page-to-markdown
+// conversion — runs only when the user actually asks to clip. Side panel and
+// embedded iframe are deliberate clipping surfaces, so they skip the quick
+// state and load the full clipper immediately (clipUIReady starts true there).
+let clipUIReady = false;
+let clipUIStarting: Promise<void> | null = null;
+
+function startClipUI(): Promise<void> {
+	if (clipUIReady) return Promise.resolve();
+	if (clipUIStarting) return clipUIStarting;
+	clipUIStarting = (async () => {
+		document.documentElement.classList.remove('quick-state');
+		document.getElementById('popup-container')?.classList.remove('quick-state');
+		// Let the popup window grow before re-measuring — the height var still
+		// holds the compact measurement, and since #popup clips overflow, keeping
+		// it would cap the expanded clipper at quick-state height (only the note
+		// title visible). Same big-then-measure trick as initializeExtension.
+		document.documentElement.style.setProperty('--chromium-popup-height', '2000px');
+		if (currentTabId !== undefined) {
+			await refreshFields(currentTabId);
+		}
+		clipUIReady = true;
+		setTimeout(() => setPopupDimensions(), 0);
+	})();
+	return clipUIStarting;
+}
+
 // Width is used to update the note name field height
 let previousWidth = window.innerWidth;
 
@@ -228,7 +258,7 @@ async function initializeExtension(tabId: number) {
 }
 
 const debouncedHighlightRefresh = debounce(() => {
-	if (currentTabId !== undefined) {
+	if (currentTabId !== undefined && clipUIReady) {
 		memoizedExtractPageContent.clear();
 		memoizedCompileTemplate.clear();
 		refreshFields(currentTabId, { checkTemplateTriggers: false, rebuildSkeleton: false });
@@ -246,7 +276,9 @@ function setupStorageListeners() {
 function setupMessageListeners() {
 	browser.runtime.onMessage.addListener((request: any, sender: browser.Runtime.MessageSender, sendResponse: (response?: any) => void) => {
 		if (request.action === "triggerQuickClip") {
-			handleClipObsidian().then(() => {
+			// Quick clip may arrive while the popup is still in the quick-actions
+			// state — load the clipper (and run extraction) first.
+			startClipUI().then(() => handleClipObsidian()).then(() => {
 				sendResponse({success: true});
 			}).catch((error) => {
 				console.error('Error in handleClipObsidian:', error);
@@ -255,7 +287,8 @@ function setupMessageListeners() {
 			return true;
 		} else if (request.action === "tabUrlChanged") {
 			if (request.tabId === currentTabId) {
-				if (currentTabId !== undefined) {
+				// Don't extract while still in the quick-actions state.
+				if (currentTabId !== undefined && clipUIReady) {
 					refreshFields(currentTabId);
 				}
 			}
@@ -266,7 +299,7 @@ function setupMessageListeners() {
 				if (request.isRestrictedUrl) {
 					showError('pageCannotBeClipped');
 				} else if (request.isValidUrl) {
-					if (currentTabId !== undefined) {
+					if (currentTabId !== undefined && clipUIReady) {
 						refreshFields(currentTabId); // Force template check when URL changes
 					}
 				} else if (request.isBlankPage) {
@@ -405,8 +438,21 @@ document.addEventListener('DOMContentLoaded', async function() {
 					});
 				}
 
-				// Initial content load
-				await refreshFields(currentTabId);
+				// Initial content load. In the quick-actions state extraction is
+				// deferred until the user clicks "Clip this page" (startClipUI);
+				// side panel / iframe load the full clipper immediately.
+				const useQuickState = !isIframe && !isSidePanel;
+				if (useQuickState) {
+					document.documentElement.classList.add('quick-state');
+					document.getElementById('popup-container')?.classList.add('quick-state');
+					const startClipButton = document.getElementById('start-clip-btn');
+					startClipButton?.addEventListener('click', (e) => {
+						e.preventDefault();
+						startClipUI();
+					});
+				} else {
+					await startClipUI();
+				}
 			} catch (error) {
 				console.error('Error initializing popup:', error);
 				showError(getMessage('pleaseReload'));

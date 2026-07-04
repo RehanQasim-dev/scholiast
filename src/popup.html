@@ -1,12 +1,15 @@
 <!DOCTYPE html>
-<html id="popup">
+<!-- quick-state is baked in so the compact popup renders on first paint (no
+     flash of the full clipper). popup.html is only the browser-action popup;
+     side panel / iframe use side-panel.html, which has no quick state. -->
+<html id="popup" class="quick-state">
 	<head>
 		<title data-i18n="extensionName">Obsidian Web Clipper</title>
 		<meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
 		<link rel="stylesheet" href="style.css">
 		<script src="browser-polyfill.min.js"></script>
 	</head>
-	<body id="popup-container">
+	<body id="popup-container" class="quick-state">
 		<div id="popup-header">
 			<div id="template-container">
 				<select id="template-select">
@@ -41,6 +44,11 @@
 			</div>
 		</div>
 		<p class="error-message" style="display: none;"></p>
+		<!-- Quick-actions state: shown instead of the clipper until the user asks
+		     to clip, so opening the popup never pays the page-to-markdown cost. -->
+		<div id="quick-actions">
+			<button id="start-clip-btn" class="mod-cta" data-i18n="clipThisPage"></button>
+		</div>
 		<div class="clipper">
 			<textarea id="note-name-field" type="text" data-i18n="noteName" rows="1"></textarea>
 			<div class="metadata-properties-header">

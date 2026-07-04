@@ -9,11 +9,10 @@ import {
 	applyHighlights,
 	saveHighlights,
 	updateHighlights,
-	updateHighlighterMenu,
 	updateHighlightColor,
 	repositionHighlights,
 } from './highlighter';
-import { clearCommentBoxes, startAddingComment, emphasizeCommentBox } from './comment-overlays';
+import { clearCommentBoxes, startAddingComment, emphasizeCommentBox, hasUnsavedCommentText } from './comment-overlays';
 import { throttle } from './throttle';
 import { getElementByXPath, isDarkColor, setElementHTML, isEditableContext } from './dom-utils';
 import { getMessage } from './i18n';
@@ -25,7 +24,7 @@ let touchStartY: number = 0;
 let isTouchMoved: boolean = false;
 
 const IGNORED_BOUNDARY_SELECTOR =
-	'.obsidian-highlighter-menu, .obsidian-reader-settings, .transcript-segment > strong, .obsidian-highlight-action-menu, .obsidian-comment-box, .obsidian-selection-action';
+	'.obsidian-annotation-toolbar, .obsidian-reader-settings, .transcript-segment > strong, .obsidian-highlight-action-menu, .obsidian-comment-box, .obsidian-selection-action';
 
 // --- Custom Highlight API (for type: 'text' highlights) ---
 //
@@ -316,15 +315,12 @@ function ensureHighlightActionMenu(): HTMLDivElement {
 	menu.style.display = 'none';
 	menu.style.position = 'absolute';
 	menu.style.zIndex = '2147483647';
-	menu.style.gap = '4px';
-	
+	// All cosmetic layout (flex direction, gaps, padding, sizing) lives in CSS
+	// with !important so host-page rules can't inflate the bar — see highlighter.scss.
+
 	const colorPicker = document.createElement('div');
 	colorPicker.className = 'obsidian-highlight-color-picker';
-	colorPicker.style.display = 'flex';
-	colorPicker.style.gap = '4px';
-	colorPicker.style.padding = '4px';
-	colorPicker.style.borderRight = '1px solid rgba(0,0,0,0.1)';
-	
+
 	const colors: Array<'yellow' | 'red' | 'green'> = ['yellow', 'red', 'green'];
 	colors.forEach(color => {
 		const btn = document.createElement('button');
@@ -393,31 +389,44 @@ function showHighlightActionMenuForText(id: string): void {
 	const rects = ranges[0].getClientRects();
 	if (rects.length === 0) return;
 	// Compute bounding box across all line rects for center-top positioning.
-	let left = Infinity, right = -Infinity, top = Infinity;
+	let left = Infinity, right = -Infinity, top = Infinity, bottom = -Infinity;
 	for (let i = 0; i < rects.length; i++) {
 		if (rects[i].left < left) left = rects[i].left;
 		if (rects[i].right > right) right = rects[i].right;
 		if (rects[i].top < top) top = rects[i].top;
+		if (rects[i].bottom > bottom) bottom = rects[i].bottom;
 	}
-	positionActionMenu(id, (left + right) / 2, top);
+	positionActionMenu(id, (left + right) / 2, top, bottom);
 }
 
 function showHighlightActionMenuForOverlay(overlay: HTMLElement): void {
 	const id = overlay.dataset.highlightId;
 	if (!id) return;
 	const rect = overlay.getBoundingClientRect();
-	positionActionMenu(id, (rect.left + rect.right) / 2, rect.top);
+	positionActionMenu(id, (rect.left + rect.right) / 2, rect.top, rect.bottom);
 }
 
-function positionActionMenu(id: string, centerX: number, top: number): void {
+// Gap between the highlighted text and the action bar.
+const ACTION_MENU_GAP = 8;
+
+function positionActionMenu(id: string, centerX: number, top: number, bottom: number): void {
 	const menu = ensureHighlightActionMenu();
 	currentActionTargetId = id;
 	menu.style.display = 'flex';
+	// Measure the real rendered size so the bar never overlaps the text — a
+	// hardcoded offset breaks when CSS/zoom/font changes the menu's height.
 	const menuWidth = menu.offsetWidth || 80;
+	const menuHeight = menu.offsetHeight || 32;
+
 	const idealLeft = centerX - menuWidth / 2;
 	const clampedLeft = Math.max(4, Math.min(idealLeft, window.innerWidth - menuWidth - 4));
 	menu.style.left = `${clampedLeft + window.scrollX}px`;
-	menu.style.top = `${top + window.scrollY - 32}px`;
+
+	// Prefer above the highlight; flip below if there isn't room near the top
+	// of the viewport. Either way the bar clears the text by ACTION_MENU_GAP.
+	const aboveTop = top - ACTION_MENU_GAP - menuHeight;
+	const placeY = aboveTop >= 4 ? aboveTop : bottom + ACTION_MENU_GAP;
+	menu.style.top = `${placeY + window.scrollY}px`;
 }
 
 export let actionMenuHideTimeout: number | null = null;
@@ -446,7 +455,6 @@ async function deleteHighlightById(id: string): Promise<void> {
 	sortHighlights();
 	applyHighlights();
 	saveHighlights();
-	updateHighlighterMenu();
 }
 
 // Nearest ancestor that's a block-whitelist element (figure, picture, img,
@@ -636,7 +644,17 @@ export function handleMouseUp(event: MouseEvent | TouchEvent) {
 	// to edit it selects a word — without this guard that selection gets
 	// hijacked into a new highlight and the selection is cleared, breaking the
 	// comment's dblclick-to-edit.
-	if (target?.closest('.obsidian-comment-box, .obsidian-highlight-action-menu, .obsidian-selection-action')) {
+	if (target?.closest('.obsidian-comment-box, .obsidian-highlight-action-menu, .obsidian-selection-action, .obsidian-annotation-toolbar')) {
+		return;
+	}
+
+	// An open draft (a comment editor with uncommitted text) suspends
+	// annotation: the selection stays a plain native selection (so text can be
+	// copied into the draft) and no highlight is created. The suspension is
+	// shown passively — normal cursor, dimmed toolbar buttons. An OPEN-BUT-EMPTY
+	// editor doesn't block — the highlight is created and the empty editor is
+	// discarded by the click-away cleanup.
+	if (hasUnsavedCommentText()) {
 		return;
 	}
 
@@ -822,7 +840,7 @@ function isOwnHighlighterUi(el: Element): boolean {
 		|| c.contains('obsidian-comment-box')
 		|| c.contains('obsidian-highlight-action-menu')
 		|| c.contains('obsidian-selection-action')
-		|| c.contains('obsidian-highlighter-menu');
+		|| c.contains('obsidian-annotation-toolbar');
 }
 
 // Mutation observer re-positions element overlays when the page reflows.

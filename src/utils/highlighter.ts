@@ -13,61 +13,11 @@ import {
 	syncHoverListener,
 	markHighlightJustCreated,
 } from './highlighter-overlays';
-import { detectBrowser, addBrowserClassToHtml } from './browser-detection';
+import { addBrowserClassToHtml } from './browser-detection';
 import dayjs from 'dayjs';
 import { generalSettings, loadSettings } from './storage-utils';
 import { renderCommentBoxes, clearCommentBoxes } from './comment-overlays';
-import { pushUndo, undoLast, redoLast, canUndo as mgrCanUndo, canRedo as mgrCanRedo, onUndoHistoryChange } from './undo-manager';
-
-/**
- * Helper function to create SVG elements
- */
-function createSVG(config: {
-	width?: string;
-	height?: string;
-	viewBox?: string;
-	className?: string;
-	paths?: string[];
-	lines?: Array<{x1: string, y1: string, x2: string, y2: string}>;
-}): SVGElement {
-	const svg = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
-	svg.setAttribute('xmlns', 'http://www.w3.org/2000/svg');
-	
-	if (config.width) svg.setAttribute('width', config.width);
-	if (config.height) svg.setAttribute('height', config.height);
-	if (config.viewBox) svg.setAttribute('viewBox', config.viewBox);
-	if (config.className) svg.setAttribute('class', config.className);
-	
-	// Default attributes for all SVGs
-	svg.setAttribute('fill', 'none');
-	svg.setAttribute('stroke', 'currentColor');
-	svg.setAttribute('stroke-width', '2');
-	svg.setAttribute('stroke-linecap', 'round');
-	svg.setAttribute('stroke-linejoin', 'round');
-	
-	// Add paths
-	if (config.paths) {
-		config.paths.forEach(pathData => {
-			const path = document.createElementNS('http://www.w3.org/2000/svg', 'path');
-			path.setAttribute('d', pathData);
-			svg.appendChild(path);
-		});
-	}
-	
-	// Add lines
-	if (config.lines) {
-		config.lines.forEach(lineData => {
-			const line = document.createElementNS('http://www.w3.org/2000/svg', 'line');
-			line.setAttribute('x1', lineData.x1);
-			line.setAttribute('y1', lineData.y1);
-			line.setAttribute('x2', lineData.x2);
-			line.setAttribute('y2', lineData.y2);
-			svg.appendChild(line);
-		});
-	}
-	
-	return svg;
-}
+import { pushUndo, undoLast, redoLast } from './undo-manager';
 
 export type AnyHighlightData = TextHighlightData | ElementHighlightData;
 
@@ -103,7 +53,6 @@ export interface HighlighterAPI {
 	updatePageDomainSettings: typeof updatePageDomainSettings;
 	clearHighlights: typeof clearHighlights;
 	saveHighlights: typeof saveHighlights;
-	updateHighlighterMenu: typeof updateHighlighterMenu;
 	removeExistingHighlights: () => void;
 	ensureHighlighterCSS: () => void;
 }
@@ -162,8 +111,6 @@ let originalLinkClickHandlers: WeakMap<HTMLElement, (event: MouseEvent) => void>
 // Highlight/comment changes feed into the shared, cross-tool undo stack
 // (undo-manager) rather than a private history, so Ctrl+Z reverts the user's
 // most recent action whether it was a highlight, a comment, or a pencil stroke.
-// Keep the highlighter menu's undo/redo buttons in sync with that shared state.
-onUndoHistoryChange(() => updateUndoRedoButtons());
 
 // Block elements highlighted as a whole unit rather than as the text inside
 // them. Click one (in highlighter mode) to highlight the whole block; when a
@@ -231,11 +178,12 @@ export function updateHighlights(newHighlights: AnyHighlightData[]) {
 	addToHistory('add', oldHighlights, newHighlights);
 }
 
-// Toggle highlighter mode. When active: mouse/touch listeners that create
-// highlights from selections and block-clicks are attached, and the floating
-// menu appears. When inactive: creation is off, but the hover-delete affordance
-// stays available as long as any highlights exist (managed independently via
-// syncHoverListener, which checks highlights.length).
+// Toggle the highlighter tool. When active: mouse/touch listeners that create
+// highlights from selections and block-clicks are attached. When inactive:
+// creation is off, but the hover-delete affordance stays available as long as
+// any highlights exist (managed independently via syncHoverListener, which
+// checks highlights.length). The tool's UI is the annotation toolbar
+// (annotation-toolbar.ts), which syncs to the body class this sets.
 export function toggleHighlighterMenu(isActive: boolean) {
 	document.body.classList.toggle('obsidian-highlighter-active', isActive);
 	if (isActive) {
@@ -246,7 +194,6 @@ export function toggleHighlighterMenu(isActive: boolean) {
 		document.addEventListener('keydown', handleKeyDown);
 		document.addEventListener('click', suppressPageClicksWhileHighlighting, true);
 		disableLinkClicks();
-		createHighlighterMenu();
 		addBrowserClassToHtml();
 		document.body.dataset.obsidianColor = currentHighlightColor;
 		browser.runtime.sendMessage({ action: "highlighterModeChanged", isActive: true });
@@ -265,18 +212,9 @@ export function toggleHighlighterMenu(isActive: boolean) {
 		document.removeEventListener('keydown', handleKeyDown);
 		document.removeEventListener('click', suppressPageClicksWhileHighlighting, true);
 		enableLinkClicks();
-		removeHighlighterMenu();
 		browser.runtime.sendMessage({ action: "highlighterModeChanged", isActive: false });
 	}
 	syncHoverListener();
-}
-
-export function canUndo(): boolean {
-	return mgrCanUndo();
-}
-
-export function canRedo(): boolean {
-	return mgrCanRedo();
 }
 
 // Restore a highlights snapshot recorded in an undo entry, then re-render.
@@ -284,218 +222,6 @@ function restoreHighlights(snapshot: AnyHighlightData[]) {
 	highlights = [...snapshot];
 	bumpHighlightsVersion();
 	commitHighlightChanges();
-}
-
-// The highlighter menu's undo/redo buttons act on the shared stack — they may
-// revert a pencil stroke too, which is intentional (one chronological history).
-export function undo() {
-	undoLast();
-}
-
-export function redo() {
-	redoLast();
-}
-
-function updateUndoRedoButtons() {
-	const undoButton = document.getElementById('obsidian-undo-highlights');
-	const redoButton = document.getElementById('obsidian-redo-highlights');
-
-	if (undoButton) {
-		undoButton.classList.toggle('active', canUndo());
-		undoButton.setAttribute('aria-disabled', (!canUndo()).toString());
-	}
-
-	if (redoButton) {
-		redoButton.classList.toggle('active', canRedo());
-		redoButton.setAttribute('aria-disabled', (!canRedo()).toString());
-	}
-}
-
-async function handleClipButtonClick(e: Event) {
-	e.preventDefault();
-	const browserType = await detectBrowser();
-
-	try {
-		const response = await browser.runtime.sendMessage({action: "openPopup"});
-		if (response && typeof response === 'object' && 'success' in response) {
-			if (!response.success) {
-				throw new Error((response as { error?: string }).error || 'Unknown error');
-			}
-		} else {
-			throw new Error('Invalid response from background script');
-		}
-	} catch (error) {
-		console.error('Error opening popup:', error);
-		if (browserType === 'firefox') {
-			alert("Additional permissions required. To open Web Clipper from the highlighter, go to about:config and set this to true:\n\nextensions.openPopupWithoutUserGesture.enabled");
-		} else {
-			console.error('Failed to open popup:', error);
-		}
-	}
-}
-
-export function createHighlighterMenu() {
-	// Check if the menu already exists
-	let menu = document.querySelector('.obsidian-highlighter-menu');
-	
-	// If the menu doesn't exist, create it
-	if (!menu) {
-		menu = document.createElement('div');
-		menu.className = 'obsidian-highlighter-menu';
-		document.body.appendChild(menu);
-	}
-	
-	const highlightCount = highlights.length;
-	const highlightText = `${highlightCount}`;
-
-	menu.textContent = '';
-	
-	// Add clip button or no highlights message
-	if (highlightCount > 0) {
-		const clipButton = document.createElement('button');
-		clipButton.id = 'obsidian-clip-button';
-		clipButton.className = 'mod-cta';
-		clipButton.textContent = 'Clip highlights';
-		menu.appendChild(clipButton);
-		
-		// Add clear highlights button
-		const clearButton = document.createElement('button');
-		clearButton.id = 'obsidian-clear-highlights';
-		clearButton.textContent = highlightText + ' ';
-		
-		// Add trash icon
-		const trashSvg = createSVG({
-			width: '16',
-			height: '16',
-			viewBox: '0 0 24 24',
-			className: 'lucide lucide-trash-2',
-			paths: [
-				'M3 6h18',
-				'M19 6v14c0 1-1 2-2 2H7c-1 0-2-1-2-2V6',
-				'M8 6V4c0-1 1-2 2-2h4c1 0 2 1 2 2v2'
-			],
-			lines: [
-				{x1: '10', y1: '11', x2: '10', y2: '17'},
-				{x1: '14', y1: '11', x2: '14', y2: '17'}
-			]
-		});
-		clearButton.appendChild(trashSvg);
-		menu.appendChild(clearButton);
-	} else {
-		const noHighlights = document.createElement('span');
-		noHighlights.className = 'no-highlights';
-		noHighlights.textContent = 'Select elements to highlight';
-		menu.appendChild(noHighlights);
-	}
-	
-	// Add undo button
-	const undoButton = document.createElement('button');
-	undoButton.id = 'obsidian-undo-highlights';
-	const undoSvg = createSVG({
-		width: '16',
-		height: '16',
-		viewBox: '0 0 24 24',
-		className: 'lucide lucide-undo-2',
-		paths: [
-			'M9 14 4 9l5-5',
-			'M4 9h10.5a5.5 5.5 0 0 1 5.5 5.5v0a5.5 5.5 0 0 1-5.5 5.5H11'
-		]
-	});
-	undoButton.appendChild(undoSvg);
-	menu.appendChild(undoButton);
-	
-	// Add redo button
-	const redoButton = document.createElement('button');
-	redoButton.id = 'obsidian-redo-highlights';
-	const redoSvg = createSVG({
-		width: '16',
-		height: '16',
-		viewBox: '0 0 24 24',
-		className: 'lucide lucide-redo-2',
-		paths: [
-			'm15 14 5-5-5-5',
-			'M20 9H9.5A5.5 5.5 0 0 0 4 14.5v0A5.5 5.5 0 0 0 9.5 20H13'
-		]
-	});
-	redoButton.appendChild(redoSvg);
-	menu.appendChild(redoButton);
-	
-	// Add exit button
-	const exitButton = document.createElement('button');
-	exitButton.id = 'obsidian-exit-highlighter';
-	const exitSvg = createSVG({
-		width: '16',
-		height: '16',
-		viewBox: '0 0 24 24',
-		className: 'lucide lucide-x',
-		paths: [
-			'M18 6 6 18',
-			'm6 6 12 12'
-		]
-	});
-	exitButton.appendChild(exitSvg);
-	menu.appendChild(exitButton);
-
-	// Add event listeners to the buttons we just created
-	if (highlightCount > 0) {
-		// Use the clearButton and clipButton we already created
-		const clearButtonEl = menu.querySelector('#obsidian-clear-highlights') as HTMLButtonElement;
-		const clipButtonEl = menu.querySelector('#obsidian-clip-button') as HTMLButtonElement;
-
-		if (clearButtonEl) {
-			clearButtonEl.addEventListener('click', clearHighlights);
-			clearButtonEl.addEventListener('touchend', (e) => {
-				e.preventDefault();
-				clearHighlights();
-			});
-		}
-
-		if (clipButtonEl) {
-			clipButtonEl.addEventListener('click', handleClipButtonClick);
-			clipButtonEl.addEventListener('touchend', (e) => {
-				e.preventDefault();
-				handleClipButtonClick(e);
-			});
-		}
-	}
-
-	// Use the buttons we already created
-	const exitButtonEl = menu.querySelector('#obsidian-exit-highlighter') as HTMLButtonElement;
-	const undoButtonEl = menu.querySelector('#obsidian-undo-highlights') as HTMLButtonElement;
-	const redoButtonEl = menu.querySelector('#obsidian-redo-highlights') as HTMLButtonElement;
-
-	if (exitButtonEl) {
-		exitButtonEl.addEventListener('click', exitHighlighterMode);
-		exitButtonEl.addEventListener('touchend', (e) => {
-			e.preventDefault();
-			exitHighlighterMode();
-		});
-	}
-
-	if (undoButtonEl) {
-		undoButtonEl.addEventListener('click', undo);
-		undoButtonEl.addEventListener('touchend', (e) => {
-			e.preventDefault();
-			undo();
-		});
-	}
-
-	if (redoButtonEl) {
-		redoButtonEl.addEventListener('click', redo);
-		redoButtonEl.addEventListener('touchend', (e) => {
-			e.preventDefault();
-			redo();
-		});
-	}
-
-	updateUndoRedoButtons();
-}
-
-function removeHighlighterMenu() {
-	const menu = document.querySelector('.obsidian-highlighter-menu');
-	if (menu) {
-		menu.remove();
-	}
 }
 
 // While highlighter mode is active, a click on the page is a highlight gesture,
@@ -510,7 +236,7 @@ function suppressPageClicksWhileHighlighting(event: MouseEvent) {
 	const target = event.target as Element | null;
 	// Let our own injected UI handle its own clicks normally.
 	if (target?.closest(
-		'.obsidian-highlighter-menu, .obsidian-highlight-action-menu, .obsidian-comment-box, .obsidian-selection-action, .obsidian-reader-settings'
+		'.obsidian-annotation-toolbar, .obsidian-highlight-action-menu, .obsidian-comment-box, .obsidian-selection-action, .obsidian-reader-settings'
 	)) {
 		return;
 	}
@@ -671,8 +397,19 @@ export function handleTextSelection(selection: Selection, notes?: string[]) {
 			}
 		}
 
-		const firstXpath = newHighlightDatas[0].xpath;
-		returnedId = currentBatchHighlights.find(h => h.xpath === firstXpath)?.id;
+		// Resolve which highlight the first new piece ended up as. Match by id
+		// first — an xpath lookup is wrong when the same block already holds an
+		// unrelated highlight (same xpath, different range) and would hand back
+		// that older highlight, e.g. attaching a Ctrl+select comment to the wrong
+		// thread. Only if the piece was absorbed by a merge (its id is gone) fall
+		// back to the merged highlight whose range now covers it.
+		const first = newHighlightDatas[0];
+		returnedId = currentBatchHighlights.find(h => h.id === first.id)?.id
+			?? currentBatchHighlights.find(h =>
+				h.xpath === first.xpath &&
+				(h.type !== 'text' || first.type !== 'text' ||
+					(h.startOffset <= first.startOffset && h.endOffset >= first.endOffset))
+			)?.id;
 
 		highlights = currentBatchHighlights;
 		bumpHighlightsVersion();
@@ -1179,7 +916,6 @@ export function applyHighlights() {
 function commitHighlightChanges() {
 	applyHighlights();
 	saveHighlights();
-	updateHighlighterMenu();
 }
 
 export function updateHighlightColor(id: string, color: 'yellow' | 'red' | 'green') {
@@ -1277,7 +1013,6 @@ browser.storage.onChanged.addListener((changes, area) => {
 	bumpHighlightsVersion();
 	invalidateHighlightCache();
 	applyHighlights();
-	updateHighlighterMenu();
 });
 
 export async function loadHighlights() {
@@ -1385,21 +1120,17 @@ export function clearHighlights() {
 		syncHoverListener();
 		console.log('Highlights cleared for:', url);
 		browser.runtime.sendMessage({ action: "highlightsCleared" });
-		updateHighlighterMenu();
 		addToHistory('remove', oldHighlights, []);
 	});
 }
 
-export function updateHighlighterMenu() {
-	removeHighlighterMenu();
-	if (document.body.classList.contains('obsidian-highlighter-active')) {
-		createHighlighterMenu();
-	}
-}
-
 function handleKeyDown(event: KeyboardEvent) {
 	if (event.key === 'Escape' && document.body.classList.contains('obsidian-highlighter-active')) {
-		exitHighlighterMode();
+		// Step down to the Select tool, keeping annotation mode (and its toolbar)
+		// active. Full exit is the toolbar's × button. (Usually content.ts's own
+		// Escape handler runs first and detaches this listener by toggling the
+		// tool off; this branch is the fallback when that handler isn't present.)
+		toggleHighlighterMenu(false);
 	} else if (event.key === '1' || event.key === '2' || event.key === '3') {
 		if (document.body.classList.contains('obsidian-highlighter-active')) {
 			const colors: Array<'yellow' | 'red' | 'green'> = ['yellow', 'red', 'green'];
@@ -1409,16 +1140,6 @@ function handleKeyDown(event: KeyboardEvent) {
 	}
 }
 
-function exitHighlighterMode() {
-	console.log('Exiting highlighter mode');
-	toggleHighlighterMenu(false);
-	browser.runtime.sendMessage({ action: "setHighlighterMode", isActive: false });
-
-	// Remove highlight overlays if "Always show highlights" is off
-	if (!generalSettings.alwaysShowHighlights) {
-		removeExistingHighlights();
-	}
-}
 
 function addToHistory(type: 'add' | 'remove', oldHighlights: AnyHighlightData[], newHighlights: AnyHighlightData[]) {
 	// Push onto the shared cross-tool stack. Snapshots are the arrays captured

@@ -16,10 +16,6 @@
 	overflow: auto !important;
 	height: auto !important;
 
-	.obsidian-highlighter-menu {
-		display: none !important;
-	}
-
 	&.theme-light:not(.no-blend-images) {
 		img, svg {
 			mix-blend-mode: multiply;

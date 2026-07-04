@@ -23,6 +23,9 @@
 	"addVaultPlaceholder": {
 		"message": "Press enter to add a vault"
 	},
+	"clipThisPage": {
+		"message": "Clip this page"
+	},
 	"advanced": {
 		"message": "Advanced"
 	},

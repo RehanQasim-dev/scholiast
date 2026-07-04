@@ -1,6 +1,7 @@
 import browser from './utils/browser-polyfill';
 import * as highlighter from './utils/highlighter';
 import * as pencil from './utils/pencil-overlays';
+import * as annotationToolbar from './utils/annotation-toolbar';
 import { undoLast, redoLast } from './utils/undo-manager';
 import { removeExistingHighlights } from './utils/highlighter-overlays';
 import { loadSettings, generalSettings } from './utils/storage-utils';
@@ -34,6 +35,10 @@ declare global {
 	const myGeneration = window.obsidianClipperGeneration;
 
 	debugLog('Clipper', 'Initializing content script, generation', myGeneration);
+
+	// Keeps the annotation toolbar in sync with tool state (body classes) no
+	// matter which entry point toggles a tool.
+	annotationToolbar.initAnnotationToolbar();
 
 	let isHighlighterMode = false;
 	const iframeId = 'obsidian-clipper-iframe';
@@ -321,7 +326,13 @@ declare global {
 		} else if (request.action === "setHighlighterMode") {
 			isHighlighterMode = request.isActive;
 			ensureHighlighterCSS();
-			highlighter.toggleHighlighterMenu(isHighlighterMode);
+			// The extension's mode toggle enters/exits ANNOTATION MODE (toolbar +
+			// last-used tool), not just the highlighter tool.
+			if (isHighlighterMode) {
+				annotationToolbar.enterAnnotationMode();
+			} else {
+				annotationToolbar.exitAnnotationMode();
+			}
 			updateHasHighlights();
 			sendResponse({ success: true });
 			return true;
@@ -500,7 +511,6 @@ declare global {
 		updatePageDomainSettings: highlighter.updatePageDomainSettings,
 		clearHighlights: highlighter.clearHighlights,
 		saveHighlights: highlighter.saveHighlights,
-		updateHighlighterMenu: highlighter.updateHighlighterMenu,
 		removeExistingHighlights,
 		ensureHighlighterCSS: () => { ensureHighlighterCSS(); },
 	} satisfies highlighter.HighlighterAPI;
@@ -598,32 +608,33 @@ declare global {
 		// listener above (so they don't leak to YouTube's own shortcuts).
 
 		if (e.key === 'h' || e.key === 'H') {
-			// Highlighter and pencil are mutually exclusive (their pointer handlers
-			// would otherwise fight), so leaving pencil mode first.
-			if (pencil.isPencilActive()) pencil.togglePencilMode(false);
-			if (!document.body.classList.contains('obsidian-highlighter-active')) {
-				// Make sure the stylesheet is present before activating — without it
-				// the highlighter cursor, floating menu, and highlight colors have no
-				// styles, so the mode appears not to turn on at all.
-				ensureHighlighterCSS();
-				highlighter.toggleHighlighterMenu(true);
+			// Toggle the highlighter tool (enters annotation mode if needed).
+			// Make sure the stylesheet is present before activating — without it
+			// the highlighter cursor, toolbar, and highlight colors have no
+			// styles, so the mode appears not to turn on at all.
+			ensureHighlighterCSS();
+			if (document.body.classList.contains('obsidian-highlighter-active')) {
+				annotationToolbar.setTool('select');
+			} else {
+				annotationToolbar.setTool('highlight');
 			}
 		} else if (e.key === 'p' || e.key === 'P') {
-			// Toggle the freehand pencil tool. Leaving highlighter mode first so the
-			// two tools don't both react to the same drags.
+			// Toggle the freehand pen tool (enters annotation mode if needed).
+			ensureHighlighterCSS();
 			if (pencil.isPencilActive()) {
-				pencil.togglePencilMode(false);
+				annotationToolbar.setTool('select');
 			} else {
-				if (document.body.classList.contains('obsidian-highlighter-active')) {
-					highlighter.toggleHighlighterMenu(false);
-				}
-				pencil.togglePencilMode(true);
+				annotationToolbar.setTool('pen');
 			}
 		} else if (e.key === 'Escape') {
+			// Excalidraw-style: Escape steps down one level — active tool → Select;
+			// already on Select → exit annotation mode. Pencil handles its own
+			// Escape (exits + clears selection); the observer syncs the toolbar.
 			if (document.body.classList.contains('obsidian-highlighter-active')) {
-				highlighter.toggleHighlighterMenu(false);
+				annotationToolbar.setTool('select');
+			} else if (!pencil.isPencilActive() && annotationToolbar.isAnnotationModeActive()) {
+				annotationToolbar.exitAnnotationMode();
 			}
-			// Pencil mode handles its own Escape (exits + clears selection).
 		}
 	});
 

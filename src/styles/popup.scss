@@ -282,6 +282,33 @@
 	display: none;
 }
 
+/* Quick-actions state: the popup opens compact — action icons + a "Clip this
+   page" button — and the clipper (with its expensive content extraction) loads
+   only when that button is pressed. The class sits on both <html id="popup">
+   (to release the fixed height) and <body id="popup-container">. */
+#quick-actions {
+	display: none;
+}
+#popup.quick-state {
+	height: auto;
+	min-height: 0;
+}
+#popup-container.quick-state {
+	#quick-actions {
+		display: block;
+		padding: calc(var(--popup-padding) * 0.5);
+
+		#start-clip-btn {
+			width: 100%;
+		}
+	}
+	.clipper,
+	#template-container,
+	#show-variables {
+		display: none;
+	}
+}
+
 #popup-header {
 	display: flex;
 	flex-direction: row;

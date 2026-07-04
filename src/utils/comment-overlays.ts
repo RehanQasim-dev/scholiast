@@ -202,14 +202,18 @@ export function renderCommentBoxes() {
 		// below would otherwise strand an orphaned comment thread on the page.
 		for (const box of activeCommentBoxes.values()) box.remove();
 		activeCommentBoxes.clear();
+		document.body.classList.remove('obsidian-draft-open');
+		window.dispatchEvent(new CustomEvent('obsidian-draft-state', { detail: false }));
 		return;
 	}
 
 	const newActiveBoxes = new Map<string, HTMLElement>();
-	const leftLayoutItems: { id: string, top: number, height: number, el: HTMLElement }[] = [];
+	// All boxes live in a single right-side column, stacked in document order of
+	// their highlights. A single fixed side (vs. per-box best-fit) means boxes
+	// never land over left-side page chrome (nav / table of contents) and the
+	// column reads top-to-bottom in the same order as the annotations.
 	const rightLayoutItems: { id: string, top: number, height: number, el: HTMLElement }[] = [];
 
-	let maxLeftDeficit = 0;
 	let maxRightDeficit = 0;
 	const spaceNeeded = COMMENT_BOX_WIDTH + COMMENT_BOX_MARGIN * 2;
 
@@ -236,43 +240,16 @@ export function renderCommentBoxes() {
 		box.style.display = '';
 
 		const top = rect.top + window.scrollY;
-		
-		let side = 'right';
-		const availableLeft = rect.left;
-		const availableRight = window.innerWidth - rect.right;
-		
-		// If left has more space and enough space for a box, use left. Otherwise default right.
-		if (availableLeft > availableRight && availableLeft >= spaceNeeded) {
-			side = 'left';
-		} else if (availableRight < spaceNeeded && availableLeft > availableRight) {
-			// Even if neither has enough, pick the one with more space to minimize shift
-			side = 'left';
-		}
 
-		if (side === 'left') {
-			const deficit = spaceNeeded - availableLeft;
-			if (deficit > maxLeftDeficit) maxLeftDeficit = deficit;
-			leftLayoutItems.push({ id: highlight.id, top, height: boxHeight, el: box });
-		} else {
-			const deficit = spaceNeeded - availableRight;
-			if (deficit > maxRightDeficit) maxRightDeficit = deficit;
-			rightLayoutItems.push({ id: highlight.id, top, height: boxHeight, el: box });
-		}
+		const availableRight = window.innerWidth - rect.right;
+		const deficit = spaceNeeded - availableRight;
+		if (deficit > maxRightDeficit) maxRightDeficit = deficit;
+		rightLayoutItems.push({ id: highlight.id, top, height: boxHeight, el: box });
 	}
 
 	preserveScrollPosition(() => {
 		const contentArea = guessMainContentArea(document.body);
-		let finalLeftMargin = 0;
 		let finalRightMargin = 0;
-
-		if (maxLeftDeficit > 0) {
-			if (contentArea) {
-				const freeSpace = Math.max(0, contentArea.left);
-				finalLeftMargin = Math.max(0, maxLeftDeficit - freeSpace);
-			} else {
-				finalLeftMargin = maxLeftDeficit;
-			}
-		}
 
 		if (maxRightDeficit > 0) {
 			if (contentArea) {
@@ -283,7 +260,6 @@ export function renderCommentBoxes() {
 			}
 		}
 
-		if (finalLeftMargin > 0) document.body.style.marginLeft = `${finalLeftMargin}px`;
 		if (finalRightMargin > 0) document.body.style.marginRight = `${finalRightMargin}px`;
 	});
 
@@ -295,19 +271,8 @@ export function renderCommentBoxes() {
 	}
 	activeCommentBoxes = newActiveBoxes;
 
-	// Layout resolution for Left
-	leftLayoutItems.sort((a, b) => a.top - b.top);
-	let currentYLeft = 0;
-	for (const item of leftLayoutItems) {
-		const targetY = item.top;
-		const actualY = Math.max(currentYLeft, targetY);
-		item.el.style.top = `${actualY}px`;
-		item.el.style.left = `${COMMENT_BOX_MARGIN}px`;
-		item.el.style.right = 'auto';
-		currentYLeft = actualY + item.height + COMMENT_BOX_GAP;
-	}
-
-	// Layout resolution for Right
+	// Stack the column: each box sits at its highlight's top, pushed down just
+	// enough to clear the box above it.
 	rightLayoutItems.sort((a, b) => a.top - b.top);
 	let currentYRight = 0;
 	for (const item of rightLayoutItems) {
@@ -318,6 +283,14 @@ export function renderCommentBoxes() {
 		item.el.style.left = 'auto';
 		currentYRight = actualY + item.height + COMMENT_BOX_GAP;
 	}
+
+	// Reflect draft state outward: the toolbar dims its tool buttons, and the
+	// body class swaps the highlighter cursor back to the normal text cursor
+	// (annotation is suspended — the selection is for copying into the draft).
+	// renderCommentBoxes runs on every editor mutation, so this stays current.
+	const draftOpen = hasUnsavedCommentText();
+	document.body.classList.toggle('obsidian-draft-open', draftOpen);
+	window.dispatchEvent(new CustomEvent('obsidian-draft-state', { detail: draftOpen }));
 
 	// Determine overflow for collapsed comments to show gradient
 	requestAnimationFrame(() => {
@@ -555,11 +528,17 @@ function createCommentBox(highlight: AnyHighlightData): HTMLElement {
 		if (e.key === 'Escape') {
 			e.preventDefault();
 			e.stopPropagation(); // don't let highlighter mode exit on Escape
+			// Explicit-commit model: Escape DISCARDS the draft (save is Enter or
+			// the ↑ button). New comment → editor closes, text gone; edit → the
+			// note reverts to its saved text.
 			if (isNew) {
-				saveComment(highlight.id, ta.value.trim());
+				ta.value = '';
+				stopAddingComment(highlight.id);
+				if (focusedHighlightId === highlight.id) focusedHighlightId = null;
+				renderCommentBoxes();
 			} else if (editingNoteKey) {
-				const { highlightId, index } = parseNoteKey(editingNoteKey);
-				saveEditedComment(highlightId, index, ta.value.trim());
+				editingNoteKey = null;
+				renderCommentBoxes();
 			}
 			return;
 		}
@@ -690,42 +669,54 @@ function updateCommentBox(box: HTMLElement, highlight: AnyHighlightData) {
 
 	// part of `html`, so skipping the rebuild preserves whatever the user has
 	// typed and keeps the Save/Cancel buttons attached across re-renders.
-	if (boxRenderCache.get(box) === html) return;
+	if (boxRenderCache.get(box) === html) {
+		syncDraftClass(box);
+		return;
+	}
 	boxRenderCache.set(box, html);
 	box.innerHTML = html;
+	syncDraftClass(box);
+}
+
+// A box whose reply editor holds draft text keeps that editor visible even
+// when the box isn't focused (drafts persist across click-away). Recomputed on
+// every render from the live textarea value — after an innerHTML rebuild the
+// textarea is fresh/empty, so the class drops off automatically.
+function syncDraftClass(box: HTMLElement) {
+	const ta = box.querySelector(':scope > .obsidian-comment-editor textarea.new-comment-textarea') as HTMLTextAreaElement | null;
+	box.classList.toggle('has-draft', !!ta && ta.value.trim().length > 0);
 }
 
 window.addEventListener('obsidian-add-comment', ((e: CustomEvent) => {
 	startAddingComment(e.detail);
 }) as EventListener);
 
-// Commit every open editor — used when the user interacts outside the comment
-// boxes. Reads each editor's current text and saves it (empty text just closes
-// the editor, same as Cancel).
-function commitOpenEditors() {
-	if (focusedHighlightId) {
-		const ta = activeCommentBoxes.get(focusedHighlightId)?.querySelector('textarea.new-comment-textarea') as HTMLTextAreaElement | null;
-		if (ta && ta.value.trim()) {
-			saveComment(focusedHighlightId, ta.value.trim());
+// --- Draft model ---------------------------------------------------------------
+// A comment editor with text in it is a DRAFT. Drafts never save or die
+// silently: they persist across clicks/scrolls/selections until the user
+// explicitly submits (Enter / ↑ button) or discards (Escape). While a draft is
+// open, highlight creation is suspended (the highlighter checks
+// hasUnsavedCommentText() and calls flashDraftAttention() instead). Only
+// EMPTY editors are cleaned up on click-away.
+
+// True while any visible comment editor holds uncommitted text.
+export function hasUnsavedCommentText(): boolean {
+	for (const box of activeCommentBoxes.values()) {
+		const tas = box.querySelectorAll('textarea.new-comment-textarea, textarea.edit-comment-textarea');
+		for (const ta of Array.from(tas) as HTMLTextAreaElement[]) {
+			if (ta.offsetParent !== null && ta.value.trim()) return true;
 		}
 	}
-	// Snapshot ids first: saveComment() mutates editingHighlightIds mid-loop.
-	for (const id of Array.from(editingHighlightIds)) {
-		const ta = activeCommentBoxes.get(id)?.querySelector('textarea.new-comment-textarea') as HTMLTextAreaElement | null;
-		if (ta && ta.value.trim()) {
-			saveComment(id, ta.value.trim());
-		}
-	}
-	if (editingNoteKey) {
-		const { highlightId, index } = parseNoteKey(editingNoteKey);
-		const ta = activeCommentBoxes.get(highlightId)?.querySelector('textarea.edit-comment-textarea') as HTMLTextAreaElement | null;
-		if (ta) {
-			saveEditedComment(highlightId, index, ta.value.trim());
-		} else {
-			editingNoteKey = null;
-			renderCommentBoxes();
-		}
-	}
+	return false;
+}
+
+// The original (saved) text of the note being edited, for detecting whether an
+// open edit editor has actually been changed.
+function originalTextForNoteKey(noteKey: string): string | undefined {
+	const { highlightId, index } = parseNoteKey(noteKey);
+	const rep = highlights.find(h => h.id === highlightId);
+	const ref = rep ? groupNotes(rep)[index] : undefined;
+	return ref ? parseNoteString(ref.note).text : undefined;
 }
 
 document.addEventListener('mousedown', (e) => {
@@ -733,28 +724,49 @@ document.addEventListener('mousedown', (e) => {
 	const box = target?.closest('.obsidian-comment-box') as HTMLElement | null;
 
 	if (!box) {
-		let changed = false;
-		if (editingHighlightIds.size > 0 || editingNoteKey || focusedHighlightId) {
-			commitOpenEditors();
-			changed = true;
+		if (editingHighlightIds.size === 0 && !editingNoteKey && !focusedHighlightId && expandedCommentIndexes.size === 0) {
+			return;
 		}
-		if (focusedHighlightId) {
-			focusedHighlightId = null;
-			changed = true;
-		}
-		if (expandedCommentIndexes.size > 0) {
-			expandedCommentIndexes.clear();
-			changed = true;
-		}
-		if (changed) renderCommentBoxes();
+		// Defer the cleanup until after mouseup: tearing boxes down on mousedown
+		// re-runs the layout (body margin shifts), which moves the text under the
+		// cursor mid-selection-drag and breaks highlight creation. Deferring keeps
+		// the layout frozen for the whole drag. Only editors open NOW are
+		// considered — one opened by this very gesture (Ctrl+drag → new comment
+		// box) must survive.
+		//
+		// No commit happens here: drafts (editors with text) stay open. Only
+		// EMPTY new-comment editors and UNCHANGED edit editors are closed.
+		const staleEditing = new Set(editingHighlightIds);
+		const staleFocused = focusedHighlightId;
+		const staleNoteKey = editingNoteKey;
+		window.addEventListener('mouseup', () => {
+			setTimeout(() => {
+				for (const id of staleEditing) {
+					if (!editingHighlightIds.has(id)) continue;
+					const ta = activeCommentBoxes.get(id)?.querySelector('textarea.new-comment-textarea') as HTMLTextAreaElement | null;
+					if (!ta || !ta.value.trim()) stopAddingComment(id);
+				}
+				if (staleNoteKey && editingNoteKey === staleNoteKey) {
+					const ta = activeCommentBoxes.get(parseNoteKey(staleNoteKey).highlightId)
+						?.querySelector('textarea.edit-comment-textarea') as HTMLTextAreaElement | null;
+					const original = originalTextForNoteKey(staleNoteKey);
+					// An edit that hasn't diverged from the saved text isn't a draft —
+					// close it (nothing to lose). A changed edit stays open.
+					if (!ta || ta.value.trim() === '' || ta.value.trim() === original) {
+						editingNoteKey = null;
+					}
+				}
+				if (focusedHighlightId === staleFocused) focusedHighlightId = null;
+				expandedCommentIndexes.clear();
+				renderCommentBoxes();
+			}, 0);
+		}, { once: true, capture: true });
 		return;
 	}
 
 	const highlightId = Array.from(activeCommentBoxes.entries()).find(([_, b]) => b === box)?.[0];
 	if (highlightId && focusedHighlightId !== highlightId) {
-		if (editingHighlightIds.size > 0 || editingNoteKey || focusedHighlightId) {
-			commitOpenEditors();
-		}
+		// Focus moves to this box; drafts elsewhere stay open untouched.
 		focusedHighlightId = highlightId;
 		renderCommentBoxes();
 	}

@@ -452,6 +452,14 @@ function cancelDrawing(): void {
 function onPointerDown(event: PointerEvent): void {
 	if (event.button !== 0 || !isEligible()) return;
 
+	// Never draw over our own UI (toolbar, comment boxes, menus).
+	const uiTarget = event.target;
+	if (uiTarget instanceof Element && uiTarget.closest(
+		'.obsidian-annotation-toolbar, .obsidian-comment-box, .obsidian-highlight-action-menu'
+	)) {
+		return;
+	}
+
 	if (selecting) {
 		// Defer committing to a marquee until the pointer actually drags, so a
 		// plain Ctrl+click that misses a stroke still reaches the page.
