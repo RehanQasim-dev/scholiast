@@ -192,8 +192,8 @@ function renderConversation() {
 	const selStart = inputEl?.selectionStart ?? null;
 	const selEnd = inputEl?.selectionEnd ?? null;
 
-	// Clean up abandoned empty notes/frames when focus shifts away from them
-	items = items.filter(i => i.id === focusId || i.notes.length > 0);
+	// Clean up abandoned empty notes when focus shifts away from them
+	items = items.filter(i => i.id === focusId || !(i.kind === 'note' && i.notes.length === 0));
 
 	listEl.replaceChildren();
 	if (items.length === 0) {
