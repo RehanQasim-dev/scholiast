@@ -790,7 +790,8 @@ body[data-ob-comment-size="large"] .obsidian-comment-box { --ob-font: 17px; }
 
 		.obsidian-comment-timestamp {
 			font-size: 11px;
-			color: var(--ob-muted);
+			color: var(--ob-text);
+			opacity: 0.75;
 			font-weight: 500;
 		}
 

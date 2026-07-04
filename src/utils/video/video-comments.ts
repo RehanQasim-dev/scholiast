@@ -1,5 +1,5 @@
 import {
-	VideoItem, loadVideoData, upsertVideoItem, genVideoId
+	VideoItem, loadVideoData, upsertVideoItem, genVideoId, removeVideoItem
 } from './video-storage';
 import { renderMarkupSvg } from './video-markup';
 import { makeVideoNote, parseVideoNote, renderNoteHtml, formatVideoTime } from './video-notes';
@@ -37,7 +37,10 @@ export interface OpenCommentsOpts {
 let active = false;
 let opts: OpenCommentsOpts | null = null;
 let items: VideoItem[] = [];
+
 let focusId: string | null = null;
+let editingNoteKey: { itemId: string, index: number } | null = null;
+
 
 let root: HTMLElement | null = null;
 let listEl: HTMLElement | null = null;
@@ -126,6 +129,29 @@ function build() {
 	window.addEventListener('keydown', onKeyDown, true);
 	window.addEventListener('keyup', onKeyUpShield, true);
 	window.addEventListener('keypress', onKeyUpShield, true);
+	window.addEventListener('mousedown', onMouseDownOutside, true);
+}
+
+function onMouseDownOutside(e: MouseEvent) {
+	if (!active) return;
+	const target = e.target as HTMLElement | null;
+	const thread = target?.closest('.ob-vidc-thread');
+
+	if (!thread) {
+		const staleFocusId = focusId;
+		if (staleFocusId === null) return;
+
+		// Defer to mouseup to avoid interrupting drags
+		window.addEventListener('mouseup', () => {
+			setTimeout(() => {
+				if (focusId !== staleFocusId) return; // focus changed mid-drag
+				if (inputEl && inputEl.value.trim().length > 0) return; // draft stays open
+				focusId = null;
+	editingNoteKey = null;
+				renderConversation();
+			}, 0);
+		}, { once: true, capture: true });
+	}
 }
 
 // --- Rendering ---------------------------------------------------------------
@@ -133,45 +159,29 @@ function build() {
 function anchorHeader(item: VideoItem): HTMLElement {
 	const head = document.createElement('div');
 	head.className = 'ob-vidc-anchor';
-	const stamp = item.kind === 'transcript' && item.timeEnd != null
+	const stamp = item.timeEnd != null 
 		? `${formatVideoTime(item.videoTime)}–${formatVideoTime(item.timeEnd)}`
 		: formatVideoTime(item.videoTime);
 
 	if (item.kind === 'frame' && item.frame) {
 		const thumb = document.createElement('div');
 		thumb.className = 'ob-vidc-thumb';
-		const img = document.createElement('img');
-		if (item.frame.dataUrl) img.src = item.frame.dataUrl;
-		else loadFrameImage(item.id).then(u => { 
-			if (u) { 
-				img.src = u; 
-				item.frame!.dataUrl = u; // Cache it so it doesn't blink on re-renders
-			} 
-		});
-		thumb.appendChild(img);
-		if (item.markup) {
-			const ov = document.createElement('div');
-			ov.className = 'ob-vidc-thumb-markup';
-			ov.appendChild(renderMarkupSvg(item.markup, item.frame.w, item.frame.h));
-			thumb.appendChild(ov);
-		}
+		thumb.style.backgroundImage = `url(${item.frame.dataUrl})`;
 		head.appendChild(thumb);
 	} else if (item.kind === 'transcript' && item.quote) {
 		const q = document.createElement('div');
-		q.className = 'ob-vidc-quote' + (item.color ? ' ' + item.color : '');
+		q.className = 'ob-vidc-quote';
 		q.textContent = item.quote;
+		if (item.color) q.style.borderLeftColor = `var(--ob-hl-${item.color})`;
 		head.appendChild(q);
 	}
 
 	const chip = document.createElement('span');
 	chip.className = 'ob-vidc-stamp';
 	chip.textContent = stamp;
-	chip.title = 'Seek to this moment';
-	chip.addEventListener('click', () => seekTo(item.videoTime));
 	head.appendChild(chip);
 	return head;
 }
-
 function renderConversation() {
 	if (!listEl) return;
 	// Preserve an in-progress reply across a re-render: openComments rebuilds the
@@ -206,43 +216,169 @@ function renderConversation() {
 			renderConversation();
 		});
 
-		card.appendChild(anchorHeader(item));
+		const anchorHead = anchorHeader(item);
+		card.appendChild(anchorHead);
 
 		const msgs = document.createElement('div');
 		msgs.className = 'ob-vidc-msgs';
-		for (const note of item.notes) {
+		for (let index = 0; index < item.notes.length; index++) {
+			const note = item.notes[index];
 			const parsed = parseVideoNote(note);
 			const bubble = document.createElement('div');
 			bubble.className = 'ob-vid-msg';
-			const body = document.createElement('div');
-			body.className = 'ob-vid-msg-body';
-			body.innerHTML = renderNoteHtml(parsed.text);
-			bubble.appendChild(body);
-
-			let timeEl: HTMLElement | null = null;
+			
+			let head: HTMLElement;
+			if (index === 0) {
+				head = anchorHead;
+			} else {
+				head = document.createElement('div');
+				head.className = 'ob-vid-msg-header';
+			}
+			
+			const actionsContainer = document.createElement('div');
+			actionsContainer.style.display = 'flex';
+			actionsContainer.style.alignItems = 'center';
+			actionsContainer.style.marginLeft = 'auto';
+			
 			if (parsed.timestamp) {
-				timeEl = document.createElement('div');
+				const timeEl = document.createElement('span');
 				timeEl.className = 'ob-vid-msg-time';
 				timeEl.textContent = clockTime(parsed.timestamp);
-				bubble.appendChild(timeEl);
+				actionsContainer.appendChild(timeEl);
+			}
+			
+			const actions = document.createElement('div');
+			actions.className = 'obsidian-comment-actions-inline';
+			
+			const editBtn = document.createElement('button');
+			editBtn.className = 'obsidian-comment-edit';
+			editBtn.title = 'Edit comment';
+			editBtn.innerHTML = `<svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 20h9"/><path d="M16.5 3.5a2.12 2.12 0 0 1 3 3L7 19l-4 1 1-4Z"/></svg>`;
+			editBtn.addEventListener('click', (ev) => {
+				ev.stopPropagation();
+				editingNoteKey = { itemId: item.id, index };
+				renderConversation();
+			});
+			actions.appendChild(editBtn);
+
+			const delBtn = document.createElement('button');
+			delBtn.className = 'obsidian-comment-delete';
+			delBtn.title = 'Delete comment';
+			delBtn.innerHTML = `<svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 6 6 18"/><path d="m6 6 12 12"/></svg>`;
+			delBtn.addEventListener('click', async (ev) => {
+				ev.stopPropagation();
+				item.notes.splice(index, 1);
+				if (item.notes.length === 0 && item.kind === 'note') {
+					items = items.filter(i => i.id !== item.id);
+					if (opts) await removeVideoItem(opts.watchUrl, item.id);
+				} else {
+					if (opts) await upsertVideoItem(opts.watchUrl, opts.videoId, opts.videoTitle, item);
+				}
+				renderConversation();
+			});
+			actions.appendChild(delBtn);
+
+			if (index === 0) {
+				const threadDelBtn = document.createElement('button');
+				threadDelBtn.className = 'obsidian-comment-thread-delete';
+				threadDelBtn.title = 'Delete comment thread';
+				threadDelBtn.innerHTML = `<svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 6h18"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/></svg>`;
+				threadDelBtn.addEventListener('click', async (ev) => {
+					ev.stopPropagation();
+					items = items.filter(i => i.id !== item.id);
+					if (opts) await removeVideoItem(opts.watchUrl, item.id);
+					renderConversation();
+				});
+				actions.appendChild(threadDelBtn);
+			}
+			
+			actionsContainer.appendChild(actions);
+			
+			if (index === 0) {
+				const chip = head.querySelector('.ob-vidc-stamp');
+				if (chip && chip.parentNode) {
+					const row = document.createElement('div');
+					row.style.display = 'flex';
+					row.style.alignItems = 'center';
+					row.style.width = '100%';
+					chip.parentNode.insertBefore(row, chip);
+					row.appendChild(chip);
+					row.appendChild(actionsContainer);
+				} else {
+					head.appendChild(actionsContainer);
+				}
+			} else {
+				head.appendChild(actionsContainer);
+				bubble.appendChild(head);
 			}
 
-			requestAnimationFrame(() => {
-				if (body.scrollHeight - body.clientHeight > 4) {
-					const more = document.createElement('button');
-					more.type = 'button';
-					more.className = 'ob-vid-msg-more';
-					more.textContent = 'Show more';
-					more.addEventListener('click', (ev) => {
-						ev.stopPropagation();
-						const open = bubble.classList.toggle('is-open');
-						more.textContent = open ? 'Show less' : 'Show more';
-					});
-					// Keep order: text · Show more · time.
-					if (timeEl) bubble.insertBefore(more, timeEl);
-					else bubble.appendChild(more);
-				}
-			});
+			const isEditing = editingNoteKey && editingNoteKey.itemId === item.id && editingNoteKey.index === index;
+			
+			if (isEditing) {
+				const wrap = document.createElement('div');
+				wrap.className = 'ob-vid-inline-input-wrap';
+				const editTa = document.createElement('textarea');
+				editTa.className = 'ob-vid-input edit-comment-textarea';
+				editTa.value = parsed.text;
+				
+				const resize = () => {
+					editTa.style.height = 'auto';
+					editTa.style.height = `${Math.min(editTa.scrollHeight, 140)}px`;
+				};
+				editTa.addEventListener('input', resize);
+				
+				editTa.addEventListener('keydown', async (ev) => {
+					ev.stopPropagation();
+					if (ev.key === 'Escape') {
+						ev.preventDefault();
+						editingNoteKey = null;
+						renderConversation();
+					} else if (ev.key === 'Enter' && !ev.shiftKey) {
+						if (ev.isComposing) return;
+						ev.preventDefault();
+						const text = editTa.value.trim();
+						if (text) {
+							// Update note with edited timestamp
+							const ts = parsed.timestamp || Date.now();
+							item.notes[index] = `<!--timestamp:${ts}--><!--edited:${Date.now()}-->\n\n${text}`;
+							if (opts) await upsertVideoItem(opts.watchUrl, opts.videoId, opts.videoTitle, item);
+						}
+						editingNoteKey = null;
+						renderConversation();
+					}
+				});
+				
+				wrap.appendChild(editTa);
+				bubble.appendChild(wrap);
+				
+				setTimeout(() => {
+					editTa.focus({ preventScroll: true });
+					editTa.selectionStart = editTa.value.length;
+					editTa.selectionEnd = editTa.value.length;
+					resize();
+				}, 60);
+			} else {
+				const body = document.createElement('div');
+				body.className = 'ob-vid-msg-body';
+				body.innerHTML = renderNoteHtml(parsed.text);
+				bubble.appendChild(body);
+	
+				requestAnimationFrame(() => {
+					if (body.scrollHeight - body.clientHeight > 4) {
+						const more = document.createElement('button');
+						more.type = 'button';
+						more.className = 'ob-vid-msg-more';
+						more.textContent = 'Show more';
+						more.addEventListener('click', (ev) => {
+							ev.stopPropagation();
+							const open = bubble.classList.toggle('is-open');
+							more.textContent = open ? 'Show less' : 'Show more';
+						});
+						bubble.appendChild(more);
+					}
+				});
+			}
+
 			msgs.appendChild(bubble);
 		}
 		card.appendChild(msgs);
@@ -328,10 +464,15 @@ function onKeyUpShield(e: KeyboardEvent) {
 
 function onKeyDown(e: KeyboardEvent) {
 	if (!active) return;
-	const inChat = !!(e.target as HTMLElement)?.classList?.contains('ob-vid-input');
+	const target = e.target as HTMLElement;
+	const inChat = !!target?.classList?.contains('ob-vid-input');
 	if (inChat) {
 		// Typing: shield everything from YouTube's shortcuts (Space, etc.).
 		e.stopPropagation();
+		if (target.classList.contains('edit-comment-textarea')) {
+			// Edit textarea handles its own Escape and Enter
+			return;
+		}
 		if (e.key === 'Escape') { e.preventDefault(); teardown(); }
 		else if (e.key === 'Enter' && !e.shiftKey) { 
 			if (e.isComposing) return;
@@ -352,6 +493,7 @@ function teardown() {
 	window.removeEventListener('keydown', onKeyDown, true);
 	window.removeEventListener('keyup', onKeyUpShield, true);
 	window.removeEventListener('keypress', onKeyUpShield, true);
+	window.removeEventListener('mousedown', onMouseDownOutside, true);
 
 	if (root) unmountHost(root);
 	disengagePlayerStage();
@@ -359,6 +501,7 @@ function teardown() {
 	active = false;
 	items = [];
 	focusId = null;
+	editingNoteKey = null;
 	opts = null;
 
 	if (o?.resumeOnClose && o.wasPlaying && o.video) o.video.play().catch(() => {});

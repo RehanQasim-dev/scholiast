@@ -300,7 +300,6 @@ $ob-vid-meta: 11.5px;
 	gap: 8px;
 	padding: 14px;
 	// Newest at the bottom; older scroll up.
-	justify-content: flex-end;
 	min-height: 0;
 }
 
@@ -338,9 +337,9 @@ $ob-vid-meta: 11.5px;
 
 // Quiet creation time under each comment.
 .ob-vid-msg-time {
-	margin-top: 3px;
+	margin-right: 8px;
 	font-size: $ob-vid-meta;
-	color: $ob-vid-faint;
+	color: $ob-vid-muted;
 	font-variant-numeric: tabular-nums;
 }
 
@@ -382,14 +381,14 @@ $ob-vid-meta: 11.5px;
 	scrollbar-width: thin;
 	scrollbar-color: $ob-vid-accent transparent;
 	&::-webkit-scrollbar {
-		width: 2px;
+		width: 1px;
 	}
 	&::-webkit-scrollbar-track {
 		background: transparent;
 	}
 	&::-webkit-scrollbar-thumb {
 		background: $ob-vid-accent;
-		border-radius: 2px;
+		border-radius: 1px;
 	}
 }
 
@@ -721,4 +720,57 @@ $ob-vid-meta: 11.5px;
 	&.yellow { border-left-color: #facc15; }
 	&.red { border-left-color: #fb7185; }
 	&.green { border-left-color: #4ac582; }
+}
+
+// Actions inline for video comments
+.obsidian-comment-actions-inline {
+	display: flex;
+	gap: 4px;
+	opacity: 0;
+	pointer-events: none;
+	transition: opacity 0.12s ease;
+
+	button {
+		background: transparent;
+		border: none;
+		color: $ob-vid-faint;
+		cursor: pointer;
+		padding: 2px;
+		border-radius: 4px;
+		display: flex;
+		opacity: 1;
+
+		&:hover {
+			background: rgba(255, 255, 255, 0.12);
+			opacity: 1;
+			color: $ob-vid-text;
+		}
+
+		&.obsidian-comment-delete:hover, &.obsidian-comment-thread-delete:hover {
+			background: rgba(244, 114, 128, 0.15);
+			color: #f47280;
+		}
+	}
+}
+
+.ob-vid-msg-header {
+	position: relative;
+	display: flex;
+	align-items: center;
+	gap: 6px;
+	width: 100%;
+	min-height: 16px;
+	margin-bottom: 3px;
+}
+
+.ob-vid-inline-input-wrap {
+	flex: 0 0 auto;
+	padding: 4px 0;
+	margin-top: 4px;
+}
+.ob-vidc-thread:hover .obsidian-comment-actions-inline,
+.ob-vidc-thread:hover .obsidian-comment-actions-inline,
+.ob-vid-msg:hover .obsidian-comment-actions-inline {
+	opacity: 1;
+	pointer-events: auto;
 }
