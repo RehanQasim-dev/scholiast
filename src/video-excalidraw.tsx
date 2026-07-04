@@ -29,6 +29,7 @@ function App() {
 	const [activePopup, setActivePopup] = useState<string | null>(null);
 	const [tempSelectedValue, setTempSelectedValue] = useState<any>(null);
 	const [activeToolType, setActiveToolType] = useState<string>('selection');
+	const [dimOpacity, setDimOpacity] = useState<number>(15);
 	
 	// Vertical bands (px) reserved at the top/bottom of the iframe for the native
 	// toolbar and our properties bar — the captured frame is fit into the region
@@ -90,6 +91,13 @@ function App() {
 			width: frameSize.w, height: frameSize.h, seed: 1, groupIds: [],
 			frameId: null, roundness: null, boundElements: [], updated: Date.now(),
 			link: null, locked: true, fileId: fileId, scale: [1, 1]
+		}, {
+			type: 'rectangle', version: 1, versionNonce: Date.now(), isDeleted: false,
+			id: 'bg-dim', backgroundColor: '#000000', fillStyle: 'solid', strokeWidth: 0, strokeStyle: 'solid',
+			strokeColor: 'transparent', roughness: 0, opacity: dimOpacity, angle: 0, x: 0, y: 0,
+			width: frameSize.w, height: frameSize.h, seed: 1, groupIds: [],
+			frameId: null, roundness: null, boundElements: [], updated: Date.now(),
+			link: null, locked: true
 		}];
 
 		// Place the frame deterministically (no fitToViewport, which pads/scales
@@ -228,6 +236,16 @@ function App() {
 	};
 
 
+
+	useEffect(() => {
+		if (!excalidrawAPI) return;
+		const elements = excalidrawAPI.getSceneElements();
+		const dimEl = elements.find((el: any) => el.id === 'bg-dim');
+		if (dimEl && dimEl.opacity !== dimOpacity) {
+			const updated = elements.map((el: any) => el.id === 'bg-dim' ? { ...el, opacity: dimOpacity, version: (el.version || 1) + 1, versionNonce: Date.now() } : el);
+			excalidrawAPI.updateScene({ elements: updated });
+		}
+	}, [dimOpacity, excalidrawAPI]);
 
 	const handleExcalidrawChange = (elements: readonly any[], state: any) => {
 		if (lockedViewRef.current && excalidrawAPI) {
@@ -548,6 +566,12 @@ function App() {
 						<OptionGroup options={opacities} currentVal={appState.currentItemOpacity} propKey="currentItemOpacity" />
 					</div>
 				)}
+
+				<div style={{ pointerEvents: 'auto', position: 'absolute', bottom: 12, right: 12, display: 'flex', alignItems: 'center', gap: '8px', background: 'var(--ob-vid-surface)', padding: '6px 12px', borderRadius: '4px', border: '1px solid var(--ob-vid-border)', color: 'var(--ob-vid-text)' }}>
+					<label style={{ fontSize: '12px', fontWeight: 600 }}>Dim</label>
+					<input type="range" min="0" max="50" value={dimOpacity} onChange={(e) => setDimOpacity(parseInt(e.target.value))} style={{ width: '80px', accentColor: 'var(--ob-vid-accent)' }} />
+					<span style={{ fontSize: '12px', minWidth: '3ch', textAlign: 'right' }}>{dimOpacity}%</span>
+				</div>
 			</div>}
 		</>
 	);

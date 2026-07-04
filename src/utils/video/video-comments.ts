@@ -80,7 +80,7 @@ export async function openComments(o: OpenCommentsOpts): Promise<void> {
 	}
 	loaded.sort((a, b) => a.videoTime - b.videoTime);
 	items = loaded;
-	if (!o.focusItemId) focusId = items.length ? items[items.length - 1].id : focusId;
+	if (!o.focusItemId && !focusId) focusId = null;
 	renderConversation();
 }
 
