@@ -26,6 +26,9 @@
 	"clipThisPage": {
 		"message": "Clip this page"
 	},
+	"tags": {
+		"message": "Tags"
+	},
 	"advanced": {
 		"message": "Advanced"
 	},

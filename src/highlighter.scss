@@ -107,31 +107,31 @@ body.obsidian-highlighter-active {
 
 	&[data-obsidian-color="yellow"]:not(.obsidian-highlighter-hover-suppress):not(.obsidian-draft-open),
 	&:not([data-obsidian-color]):not(.obsidian-highlighter-hover-suppress):not(.obsidian-draft-open) {
-		&, * { cursor: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='32' height='32' viewBox='0 0 24 24'><g stroke='%23ffffff' stroke-width='1.5' stroke-linecap='round' stroke-linejoin='round'><path d='m9 11-6 6v3h9l3-3' fill='%23ffeb00'/><path d='m22 12-4.6 4.6a2 2 0 0 1-2.8 0l-5.2-5.2a2 2 0 0 1 0-2.8L14 4' fill='%23000000'/></g></svg>") 0 32, text !important; }
-		figure, picture, img, a, table, pre { cursor: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='32' height='32' viewBox='0 0 24 24'><g stroke='%23ffffff' stroke-width='1.5' stroke-linecap='round' stroke-linejoin='round'><path d='m9 11-6 6v3h9l3-3' fill='%23ffeb00'/><path d='m22 12-4.6 4.6a2 2 0 0 1-2.8 0l-5.2-5.2a2 2 0 0 1 0-2.8L14 4' fill='%23000000'/></g></svg>") 0 32, crosshair !important; }
+		&, * { cursor: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='32' height='32' viewBox='0 0 24 24'><g stroke='%23ffffff' stroke-width='1.5' stroke-linecap='round' stroke-linejoin='round'><path d='m9 11-6 6v3h9l3-3' fill='%23d29600'/><path d='m22 12-4.6 4.6a2 2 0 0 1-2.8 0l-5.2-5.2a2 2 0 0 1 0-2.8L14 4' fill='%23000000'/></g></svg>") 0 32, text !important; }
+		figure, picture, img, a, table, pre { cursor: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='32' height='32' viewBox='0 0 24 24'><g stroke='%23ffffff' stroke-width='1.5' stroke-linecap='round' stroke-linejoin='round'><path d='m9 11-6 6v3h9l3-3' fill='%23d29600'/><path d='m22 12-4.6 4.6a2 2 0 0 1-2.8 0l-5.2-5.2a2 2 0 0 1 0-2.8L14 4' fill='%23000000'/></g></svg>") 0 32, crosshair !important; }
 	}
 
 	&[data-obsidian-color="red"]:not(.obsidian-highlighter-hover-suppress):not(.obsidian-draft-open) {
-		&, * { cursor: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='32' height='32' viewBox='0 0 24 24'><g stroke='%23ffffff' stroke-width='1.5' stroke-linecap='round' stroke-linejoin='round'><path d='m9 11-6 6v3h9l3-3' fill='%23ff6384'/><path d='m22 12-4.6 4.6a2 2 0 0 1-2.8 0l-5.2-5.2a2 2 0 0 1 0-2.8L14 4' fill='%23000000'/></g></svg>") 0 32, text !important; }
-		figure, picture, img, a, table, pre { cursor: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='32' height='32' viewBox='0 0 24 24'><g stroke='%23ffffff' stroke-width='1.5' stroke-linecap='round' stroke-linejoin='round'><path d='m9 11-6 6v3h9l3-3' fill='%23ff6384'/><path d='m22 12-4.6 4.6a2 2 0 0 1-2.8 0l-5.2-5.2a2 2 0 0 1 0-2.8L14 4' fill='%23000000'/></g></svg>") 0 32, crosshair !important; }
+		&, * { cursor: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='32' height='32' viewBox='0 0 24 24'><g stroke='%23ffffff' stroke-width='1.5' stroke-linecap='round' stroke-linejoin='round'><path d='m9 11-6 6v3h9l3-3' fill='%23dc3c5a'/><path d='m22 12-4.6 4.6a2 2 0 0 1-2.8 0l-5.2-5.2a2 2 0 0 1 0-2.8L14 4' fill='%23000000'/></g></svg>") 0 32, text !important; }
+		figure, picture, img, a, table, pre { cursor: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='32' height='32' viewBox='0 0 24 24'><g stroke='%23ffffff' stroke-width='1.5' stroke-linecap='round' stroke-linejoin='round'><path d='m9 11-6 6v3h9l3-3' fill='%23dc3c5a'/><path d='m22 12-4.6 4.6a2 2 0 0 1-2.8 0l-5.2-5.2a2 2 0 0 1 0-2.8L14 4' fill='%23000000'/></g></svg>") 0 32, crosshair !important; }
 	}
 
 	&[data-obsidian-color="green"]:not(.obsidian-highlighter-hover-suppress):not(.obsidian-draft-open) {
-		&, * { cursor: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='32' height='32' viewBox='0 0 24 24'><g stroke='%23ffffff' stroke-width='1.5' stroke-linecap='round' stroke-linejoin='round'><path d='m9 11-6 6v3h9l3-3' fill='%234bc078'/><path d='m22 12-4.6 4.6a2 2 0 0 1-2.8 0l-5.2-5.2a2 2 0 0 1 0-2.8L14 4' fill='%23000000'/></g></svg>") 0 32, text !important; }
-		figure, picture, img, a, table, pre { cursor: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='32' height='32' viewBox='0 0 24 24'><g stroke='%23ffffff' stroke-width='1.5' stroke-linecap='round' stroke-linejoin='round'><path d='m9 11-6 6v3h9l3-3' fill='%234bc078'/><path d='m22 12-4.6 4.6a2 2 0 0 1-2.8 0l-5.2-5.2a2 2 0 0 1 0-2.8L14 4' fill='%23000000'/></g></svg>") 0 32, crosshair !important; }
+		&, * { cursor: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='32' height='32' viewBox='0 0 24 24'><g stroke='%23ffffff' stroke-width='1.5' stroke-linecap='round' stroke-linejoin='round'><path d='m9 11-6 6v3h9l3-3' fill='%232da05f'/><path d='m22 12-4.6 4.6a2 2 0 0 1-2.8 0l-5.2-5.2a2 2 0 0 1 0-2.8L14 4' fill='%23000000'/></g></svg>") 0 32, text !important; }
+		figure, picture, img, a, table, pre { cursor: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='32' height='32' viewBox='0 0 24 24'><g stroke='%23ffffff' stroke-width='1.5' stroke-linecap='round' stroke-linejoin='round'><path d='m9 11-6 6v3h9l3-3' fill='%232da05f'/><path d='m22 12-4.6 4.6a2 2 0 0 1-2.8 0l-5.2-5.2a2 2 0 0 1 0-2.8L14 4' fill='%23000000'/></g></svg>") 0 32, crosshair !important; }
 	}
 	// Selection tint matches the active highlight color — except while a draft
 	// is open (annotation suspended): then selection is for copying text into
 	// the draft and keeps the browser's native selection color.
 	&[data-obsidian-color="yellow"]:not(.obsidian-draft-open) *::selection,
 	&:not([data-obsidian-color]):not(.obsidian-draft-open) *::selection {
-		background-color: rgba(255, 235, 0, 0.35) !important;
+		background-color: rgba(210, 150, 0, 0.4) !important;
 	}
 	&[data-obsidian-color="red"]:not(.obsidian-draft-open) *::selection {
-		background-color: rgba(255, 0, 0, 0.45);
+		background-color: rgba(220, 60, 90, 0.4);
 	}
 	&[data-obsidian-color="green"]:not(.obsidian-draft-open) *::selection {
-		background-color: rgba(0, 255, 0, 0.35);
+		background-color: rgba(45, 160, 95, 0.4);
 	}
 	&[data-obsidian-color="black"]:not(.obsidian-draft-open) *::selection {
 		background-color: rgba(0, 0, 0, 0.35);
@@ -140,46 +140,34 @@ body.obsidian-highlighter-active {
 	.obsidian-highlight-overlay {
 		cursor: pointer;
 		pointer-events: auto;
-		background-color: rgba(255, 235, 0, 0.35); // Default yellow
+		background-color: rgba(210, 150, 0, 0.4); // Default yellow
 		&.color-red {
-			background-color: rgba(255, 99, 132, 0.35);
+			background-color: rgba(220, 60, 90, 0.4);
 		}
 		&.color-green {
-			background-color: rgba(75, 192, 120, 0.35);
+			background-color: rgba(45, 160, 95, 0.4);
 		}
 		&.color-black {
-			background-color: rgba(0, 0, 0, 0.35);
+			background-color: rgba(0, 0, 0, 0.4);
 		}
 	}
 }
 
-// Readability over wash-out. A flat translucent band painted behind arbitrary
-// page text lowers its contrast and makes it harder to read on many sites. To
-// instead REWARD the highlighted text — keep its own color but make it crisper
-// and more prominent — every base highlight does two things:
-//   1. A lighter background tint (0.28) so less of the text's contrast is eaten.
-//   2. `text-shadow` in `currentColor` — which resolves to the text's *original*
-//      color since we never override `color` — giving a faux-bold / sharpened
-//      edge that makes the highlighted text "lift off" the page and read clearer
-//      without changing its hue. (font-weight isn't supported on ::highlight();
-//      text-shadow is, so this is how we add weight.)
-$ob-hl-lift: 0 0 0.35px currentColor, 0 0 0.35px currentColor;
-
+// Full-height translucent band behind the text, exactly like Hypothesis, Medium,
+// Kindle, etc. NO text-shadow on the glyphs: shadows can only blur or fatten
+// letters, never sharpen them, so the crispest + most readable highlight is a
+// translucent fill (which preserves the text's own contrast) over untouched text.
 ::highlight(obsidian-highlight-yellow) {
-	background-color: rgba(255, 235, 0, 0.28);
-	text-shadow: $ob-hl-lift;
+	background-color: rgba(210, 150, 0, 0.5);
 }
 ::highlight(obsidian-highlight-red) {
-	background-color: rgba(255, 99, 132, 0.28);
-	text-shadow: $ob-hl-lift;
+	background-color: rgba(220, 60, 90, 0.5);
 }
 ::highlight(obsidian-highlight-green) {
-	background-color: rgba(75, 192, 120, 0.28);
-	text-shadow: $ob-hl-lift;
+	background-color: rgba(45, 160, 95, 0.5);
 }
 ::highlight(obsidian-highlight-black) {
-	background-color: rgba(0, 0, 0, 0.28);
-	text-shadow: $ob-hl-lift;
+	background-color: rgba(0, 0, 0, 0.4);
 }
 
 // Active emphasis (shown while hovering the associated comment box). The
@@ -190,21 +178,21 @@ $ob-hl-lift: 0 0 0.35px currentColor, 0 0 0.35px currentColor;
 ::highlight(obsidian-highlight-active-yellow) {
 	background-color: transparent;
 	text-decoration: underline;
-	text-decoration-color: #f5b800;
+	text-decoration-color: #d29600;
 	text-decoration-thickness: 2px;
 	text-underline-offset: 1px;
 }
 ::highlight(obsidian-highlight-active-red) {
 	background-color: transparent;
 	text-decoration: underline;
-	text-decoration-color: #ff3355;
+	text-decoration-color: #dc3c5a;
 	text-decoration-thickness: 2px;
 	text-underline-offset: 1px;
 }
 ::highlight(obsidian-highlight-active-green) {
 	background-color: transparent;
 	text-decoration: underline;
-	text-decoration-color: #1fad54;
+	text-decoration-color: #2da05f;
 	text-decoration-thickness: 2px;
 	text-underline-offset: 1px;
 }
@@ -235,10 +223,10 @@ $ob-hl-lift: 0 0 0.35px currentColor, 0 0 0.35px currentColor;
 		transform: scale(1.2) !important;
 	}
 	
-	&.color-yellow { background-color: rgb(255, 235, 0) !important; }
-	&.color-red { background-color: rgb(255, 99, 132) !important; }
-	&.color-green { background-color: rgb(75, 192, 120) !important; }
-	&.color-black { background-color: rgb(50, 50, 50) !important; }
+	&.color-yellow { background-color: rgb(210, 150, 0) !important; }
+	&.color-red { background-color: rgb(220, 60, 90) !important; }
+	&.color-green { background-color: rgb(45, 160, 95) !important; }
+	&.color-black { background-color: rgb(0, 0, 0) !important; }
 }
 
 // Element highlight overlay (figure, img, table, pre, picture). Always
@@ -269,7 +257,7 @@ body.obsidian-highlight-overlays-hidden {
 
 	&.obsidian-highlight-overlay-dark {
 		mix-blend-mode: screen;
-		background-color: rgba(255, 235, 0, 0.25);
+		background-color: rgba(210, 150, 0, 0.3);
 	}
 
 	// Image highlights: outline only, no color wash over the picture.
@@ -573,9 +561,22 @@ body[data-ob-comment-size="large"] .obsidian-comment-box { --ob-font: 17px; }
 	box-sizing: border-box;
 	transition: box-shadow 0.15s ease, border-color 0.15s ease;
 
-	&[data-color="yellow"] { --ob-comment-color: 245, 184, 0; }
-	&[data-color="red"]    { --ob-comment-color: 255, 99, 132; }
-	&[data-color="green"]  { --ob-comment-color: 63, 174, 107; }
+	&[data-color="yellow"] { --ob-comment-color: 210, 150, 0; }
+	&[data-color="red"]    { --ob-comment-color: 220, 60, 90; }
+	&[data-color="green"]  { --ob-comment-color: 45, 160, 95; }
+
+	// Diagram preview: scale to fit within the box width AND a fixed height cap,
+	// preserving aspect ratio, so a tall drawing can't blow up the box.
+	.obsidian-comment-diagram-img {
+		display: block;
+		max-width: 100%;
+		max-height: 110px;
+		width: auto;
+		height: auto;
+		margin: 0 auto;
+		border-radius: 4px;
+		cursor: pointer;
+	}
 
 	// Emphasized when its highlight (or the box itself) is hovered: the
 	// color-matched border brightens to solid so the user can tell — at a glance,
@@ -583,6 +584,16 @@ body[data-ob-comment-size="large"] .obsidian-comment-box { --ob-font: 17px; }
 	&.is-active {
 		border-color: rgb(var(--ob-comment-color));
 		box-shadow: 0 0 0 2px rgba(var(--ob-comment-color), 0.32), 0 6px 20px rgba(0, 0, 0, 0.12);
+	}
+
+	// A focused box owns an open editor (reply / new-comment field) and may show
+	// the tag-autocomplete dropdown, which hangs below the box via position:
+	// absolute and so sits outside the box's own height. All boxes share the
+	// same base z-index (9), so on equal z-index a later-in-DOM box below wins
+	// the paint order and would cover this box's dropdown (and any transiently
+	// grown editor). Lift the focused box above its siblings so both paint on top.
+	&.is-focused {
+		z-index: 20;
 	}
 
 	// Empty (composing a brand-new comment): collapse the outer card so it's a
@@ -649,6 +660,59 @@ body[data-ob-comment-size="large"] .obsidian-comment-box { --ob-font: 17px; }
 		border-radius: 4px;
 		font-weight: 500;
 		display: inline-block;
+	}
+
+	// Tag autocomplete dropdown. Positioned in JS (see positionTagMenu): its left
+	// edge aligns to the `#` being typed, and it's clamped to the viewport. Width
+	// hugs the longest tag (max-content) within readable min/max bounds; at most
+	// 3 rows are shown before it scrolls.
+	.obsidian-tag-autocomplete {
+		position: absolute;
+		z-index: 30;
+		width: max-content;
+		min-width: 120px;
+		max-width: 240px;
+		max-height: 78px; // exactly 3 rows (~26px each); scrolls beyond
+		overflow-y: auto;
+		overflow-x: hidden;
+		background: rgba(var(--ob-box-bg), 0.98);
+		border: 1px solid rgba(255, 255, 255, 0.14);
+		border-radius: 8px;
+		box-shadow: 0 6px 20px rgba(0, 0, 0, 0.35);
+
+		// Sleek, thin scrollbar tinted with the accent — barely there until the
+		// pointer is over it.
+		scrollbar-width: thin;
+		scrollbar-color: rgba(137, 93, 244, 0.45) transparent;
+		&::-webkit-scrollbar {
+			width: 3px;
+		}
+		&::-webkit-scrollbar-track {
+			background: transparent;
+		}
+		&::-webkit-scrollbar-thumb {
+			background: rgba(137, 93, 244, 0.4);
+			border-radius: 3px;
+		}
+		&::-webkit-scrollbar-thumb:hover {
+			background: rgba(137, 93, 244, 0.65);
+		}
+
+		.obsidian-tag-option {
+			padding: 5px 10px;
+			font-size: 13px;
+			color: var(--ob-text);
+			cursor: pointer;
+			white-space: nowrap;
+			overflow: hidden;
+			text-overflow: ellipsis;
+
+			&.is-selected,
+			&:hover {
+				background: rgba(137, 93, 244, 0.25);
+				color: #A68AF9;
+			}
+		}
 	}
 
 	.obsidian-comment-item {

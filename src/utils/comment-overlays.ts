@@ -2,6 +2,7 @@ import { AnyHighlightData, highlights, saveHighlights, updateHighlights } from '
 import { getElementByXPath } from './dom-utils';
 import { textHighlightRanges, setActiveHighlight } from './highlighter-overlays';
 import { loadDiagramImage, deleteDiagramImage } from './video/frame-store';
+import { getAll } from './page-store';
 
 const COMMENT_BOX_WIDTH = 320;
 const COMMENT_BOX_MARGIN = 20;
@@ -306,6 +307,216 @@ export function renderCommentBoxes() {
 	});
 }
 
+// --- Tag autocomplete ----------------------------------------------------------
+// Typing `#` in a comment editor pops a small dropdown of known tags (collected
+// from every page's saved comments), filtered by the prefix typed so far.
+// Nested tags use slashes (#question/important). Enter/Tab or click inserts;
+// arrows navigate; Escape closes the menu without touching the draft.
+
+const KNOWN_TAG_RE = /(^|\s)#([A-Za-z0-9_-]+(?:\/[A-Za-z0-9_-]+)*)/g;
+// The (possibly partial) #token immediately before the caret.
+const TAG_TOKEN_RE = /(^|\s)#([A-Za-z0-9_/-]*)$/;
+
+let tagMenuEl: HTMLDivElement | null = null;
+let tagMenuTags: string[] = [];
+let tagMenuIndex = 0;
+let tagMenuTa: HTMLTextAreaElement | null = null;
+// All tags across every page; invalidated whenever a comment is saved.
+let knownTagsCache: string[] | null = null;
+
+async function collectKnownTags(): Promise<string[]> {
+	if (knownTagsCache) return knownTagsCache;
+	const tags = new Set<string>();
+	const addFrom = (notes?: string[]) => {
+		for (const n of notes || []) {
+			const clean = n.replace(/<!--[^>]*-->/g, ' ');
+			KNOWN_TAG_RE.lastIndex = 0;
+			let m: RegExpExecArray | null;
+			while ((m = KNOWN_TAG_RE.exec(clean))) tags.add(m[2]);
+		}
+	};
+	for (const h of highlights) addFrom(h.notes);
+	try {
+		const all = await getAll<{ highlights?: AnyHighlightData[] }>('hl');
+		for (const page of Object.values(all)) {
+			for (const h of page.highlights || []) addFrom(h.notes);
+		}
+	} catch { /* storage unavailable — fall back to current page's tags */ }
+	knownTagsCache = [...tags].sort();
+	return knownTagsCache;
+}
+
+function hideTagMenu() {
+	tagMenuEl?.remove();
+	tagMenuEl = null;
+	tagMenuTags = [];
+	tagMenuIndex = 0;
+	tagMenuTa = null;
+}
+
+// Pixel position of the caret INSIDE a textarea, relative to the textarea's own
+// border box. A textarea exposes no caret coordinates, so we mirror it: a hidden
+// div cloned with the same box + text metrics, filled with the text up to the
+// caret and a marker span at the caret. The span's offset IS the caret position.
+function getCaretCoordinates(ta: HTMLTextAreaElement, position: number): { left: number, top: number, height: number } {
+	const div = document.createElement('div');
+	const computed = getComputedStyle(ta);
+	const style = div.style;
+	style.position = 'absolute';
+	style.visibility = 'hidden';
+	style.whiteSpace = 'pre-wrap';
+	style.wordWrap = 'break-word';
+	style.top = '0';
+	style.left = '0';
+	// Copy every property that affects where a glyph lands, so the mirror wraps
+	// identically to the real textarea.
+	const props = ['boxSizing', 'width', 'paddingTop', 'paddingRight', 'paddingBottom', 'paddingLeft',
+		'borderTopWidth', 'borderRightWidth', 'borderBottomWidth', 'borderLeftWidth',
+		'fontStyle', 'fontVariant', 'fontWeight', 'fontStretch', 'fontSize', 'fontFamily',
+		'lineHeight', 'textAlign', 'textTransform', 'textIndent', 'letterSpacing', 'wordSpacing', 'tabSize'];
+	for (const p of props) (style as any)[p] = (computed as any)[p];
+
+	div.textContent = ta.value.slice(0, position);
+	const span = document.createElement('span');
+	// Non-empty content so the span has a box even at end-of-text.
+	span.textContent = ta.value.slice(position) || '.';
+	div.appendChild(span);
+
+	// Append inside the editor so inherited font/width context matches.
+	(ta.parentElement || document.body).appendChild(div);
+	const coords = { left: span.offsetLeft, top: span.offsetTop, height: parseFloat(computed.lineHeight) || 18 };
+	div.remove();
+	return coords;
+}
+
+// Place the menu just under the caret line, aligned to the `#`. Clamp to the
+// viewport horizontally (the box hugs the right edge, so overflow is the common
+// case → shift left) and flip above the line if it would fall off the bottom.
+function positionTagMenu(ta: HTMLTextAreaElement) {
+	if (!tagMenuEl) return;
+	const editor = ta.closest('.obsidian-comment-editor') as HTMLElement | null;
+	if (!editor) return;
+	const VIEWPORT_MARGIN = 8;
+
+	// Left edge of the `#` token (start of the current tag), not the caret, so the
+	// menu aligns with the tag being typed.
+	const caret = ta.selectionStart ?? ta.value.length;
+	const m = ta.value.slice(0, caret).match(TAG_TOKEN_RE);
+	const hashPos = m ? caret - m[2].length - 1 : caret; // -1 for the '#'
+	const c = getCaretCoordinates(ta, Math.max(0, hashPos));
+
+	// Caret coords are relative to the textarea; offset by the textarea's own
+	// position within the editor to get editor-relative coordinates.
+	let left = ta.offsetLeft + c.left;
+	let top = ta.offsetTop + c.top + c.height + 2;
+
+	tagMenuEl.style.left = `${left}px`;
+	tagMenuEl.style.top = `${top}px`;
+	tagMenuEl.style.right = 'auto';
+
+	// Measure and clamp against the viewport (rect is viewport-relative, and left
+	// is editor-relative, so adjust left by the same delta 1:1).
+	const rect = tagMenuEl.getBoundingClientRect();
+	const overflowRight = rect.right - (window.innerWidth - VIEWPORT_MARGIN);
+	if (overflowRight > 0) {
+		left -= overflowRight;
+		tagMenuEl.style.left = `${left}px`;
+	}
+	const newRect = tagMenuEl.getBoundingClientRect();
+	if (newRect.left < VIEWPORT_MARGIN) {
+		left += VIEWPORT_MARGIN - newRect.left;
+		tagMenuEl.style.left = `${left}px`;
+	}
+	// Flip above the caret line if the dropdown would spill off the bottom.
+	const finalRect = tagMenuEl.getBoundingClientRect();
+	if (finalRect.bottom > window.innerHeight - VIEWPORT_MARGIN) {
+		top = ta.offsetTop + c.top - finalRect.height - 2;
+		tagMenuEl.style.top = `${top}px`;
+	}
+}
+
+function showTagMenu(ta: HTMLTextAreaElement, matches: string[]) {
+	const editor = ta.closest('.obsidian-comment-editor') as HTMLElement | null;
+	if (!editor) return;
+	if (!tagMenuEl || tagMenuTa !== ta) {
+		hideTagMenu();
+		tagMenuEl = document.createElement('div');
+		tagMenuEl.className = 'obsidian-tag-autocomplete';
+		// mousedown would blur the textarea and trigger click-away handling.
+		tagMenuEl.addEventListener('mousedown', (e) => e.preventDefault());
+		editor.appendChild(tagMenuEl);
+		tagMenuTa = ta;
+	}
+	tagMenuTags = matches;
+	tagMenuIndex = Math.min(tagMenuIndex, matches.length - 1);
+	tagMenuEl.replaceChildren();
+	matches.forEach((tag, i) => {
+		const opt = document.createElement('div');
+		opt.className = 'obsidian-tag-option' + (i === tagMenuIndex ? ' is-selected' : '');
+		opt.textContent = '#' + tag;
+		opt.addEventListener('click', () => insertTagCompletion(ta, tag));
+		tagMenuEl!.appendChild(opt);
+	});
+	positionTagMenu(ta);
+	// Keep the highlighted option in view when navigating past the 3 visible rows.
+	tagMenuEl.children[tagMenuIndex]?.scrollIntoView({ block: 'nearest' });
+}
+
+function insertTagCompletion(ta: HTMLTextAreaElement, tag: string) {
+	const caret = ta.selectionStart ?? ta.value.length;
+	const m = ta.value.slice(0, caret).match(TAG_TOKEN_RE);
+	if (m) {
+		const start = caret - m[2].length;
+		ta.value = ta.value.slice(0, start) + tag + ' ' + ta.value.slice(caret);
+		const pos = start + tag.length + 1;
+		ta.setSelectionRange(pos, pos);
+	}
+	hideTagMenu();
+	ta.focus({ preventScroll: true });
+	autosizeTextarea(ta);
+	renderCommentBoxes();
+}
+
+// Refresh the dropdown for the token under the caret (or hide it).
+function updateTagAutocomplete(ta: HTMLTextAreaElement) {
+	const m = ta.value.slice(0, ta.selectionStart ?? ta.value.length).match(TAG_TOKEN_RE);
+	if (!m) { hideTagMenu(); return; }
+	const prefix = m[2].toLowerCase();
+	collectKnownTags().then(all => {
+		// The user may have kept typing while tags loaded — re-verify the token.
+		const m2 = ta.value.slice(0, ta.selectionStart ?? ta.value.length).match(TAG_TOKEN_RE);
+		if (!m2 || m2[2].toLowerCase() !== prefix) return;
+		const matches = all.filter(t => t.toLowerCase().startsWith(prefix) && t.toLowerCase() !== prefix).slice(0, 30);
+		if (matches.length === 0) { hideTagMenu(); return; }
+		showTagMenu(ta, matches);
+	});
+}
+
+// Keyboard handling while the menu is open. Returns true when the key was
+// consumed (the editor's own Enter/Escape behavior must not run).
+function tagMenuHandleKey(e: KeyboardEvent, ta: HTMLTextAreaElement): boolean {
+	if (!tagMenuEl || !tagMenuEl.isConnected || tagMenuTa !== ta || tagMenuTags.length === 0) return false;
+	if (e.key === 'ArrowDown' || e.key === 'ArrowUp') {
+		e.preventDefault();
+		const dir = e.key === 'ArrowDown' ? 1 : -1;
+		tagMenuIndex = (tagMenuIndex + dir + tagMenuTags.length) % tagMenuTags.length;
+		showTagMenu(ta, tagMenuTags);
+		return true;
+	}
+	if (e.key === 'Enter' || e.key === 'Tab') {
+		e.preventDefault();
+		insertTagCompletion(ta, tagMenuTags[tagMenuIndex]);
+		return true;
+	}
+	if (e.key === 'Escape') {
+		e.preventDefault();
+		e.stopPropagation();
+		hideTagMenu();
+		return true;
+	}
+	return false;
+}
+
 // Grow a textarea to fit its content so the whole comment is visible without
 // an inner scrollbar while typing.
 function autosizeTextarea(ta: HTMLTextAreaElement) {
@@ -488,6 +699,7 @@ function createCommentBox(highlight: AnyHighlightData): HTMLElement {
 		if (ta instanceof HTMLTextAreaElement &&
 			(ta.classList.contains('edit-comment-textarea') || ta.classList.contains('new-comment-textarea'))) {
 			autosizeTextarea(ta);
+			updateTagAutocomplete(ta);
 
 			const editorDiv = ta.closest('.obsidian-comment-editor');
 			if (editorDiv) {
@@ -512,6 +724,10 @@ function createCommentBox(highlight: AnyHighlightData): HTMLElement {
 		const isNew = ta.classList.contains('new-comment-textarea');
 		const isEdit = ta.classList.contains('edit-comment-textarea');
 		if (!isNew && !isEdit) return;
+
+		// Tag autocomplete owns the keys while its menu is open (Enter picks a
+		// tag instead of saving; Escape closes the menu instead of discarding).
+		if (tagMenuHandleKey(e, ta)) return;
 
 		if (e.key === 'Enter' && !e.shiftKey) {
 			if (e.isComposing) return;
@@ -602,7 +818,7 @@ function updateCommentBox(box: HTMLElement, highlight: AnyHighlightData) {
 			if (diagramMatch) {
 				const diagramId = diagramMatch[1];
 				const src = localDiagramCache.get(diagramId) || '';
-				displayHtml = `<img class="obsidian-comment-diagram-img" data-diagram-id="${diagramId}" style="width: 100%; border-radius: 4px; cursor: pointer; display: block;" src="${src}" alt="Diagram"/>`;
+				displayHtml = `<img class="obsidian-comment-diagram-img" data-diagram-id="${diagramId}" src="${src}" alt="Diagram"/>`;
 				if (!src) {
 					// Image lives in IndexedDB now — fetch + cache, then re-render.
 					loadDiagramImage(diagramId).then(dataUrl => {
@@ -616,51 +832,48 @@ function updateCommentBox(box: HTMLElement, highlight: AnyHighlightData) {
 			} else {
 				displayHtml = escapeHtml(parsed.text);
 				displayHtml = renderInlineMarkdown(displayHtml);
-				displayHtml = displayHtml.replace(/(^|\s)(#[a-zA-Z0-9_-]+)/g, '$1<span class="obsidian-inline-tag">$2</span>');
+				displayHtml = displayHtml.replace(/(^|\s)(#[a-zA-Z0-9_-]+(?:\/[a-zA-Z0-9_-]+)*)/g, '$1<span class="obsidian-inline-tag">$2</span>');
 			}
 
-			if (isEditingThisNote) {
-				html += `
-					<div class="obsidian-comment-item">
-						<div class="obsidian-comment-editor sleek-input is-editing">
-							<textarea class="edit-comment-textarea" rows="1">${escapeHtml(parsed.text)}</textarea>
-							<div class="obsidian-comment-editor-actions">
-								<button class="obsidian-comment-delete" data-index="${index}" aria-label="Delete">
-									<svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 6 6 18"/><path d="m6 6 12 12"/></svg>
-								</button>
-							</div>
+			// Threaded layout: a header line (colored dot on the thread rail +
+			// timestamp + hover actions) that stays IDENTICAL whether or not this
+			// note is being edited — so entering edit mode only swaps the text line
+			// for an inline editor and nothing jumps. The body beneath the header is
+			// either the rendered text or the edit textarea.
+			const bodyHtml = isEditingThisNote
+				? `<div class="obsidian-comment-editor sleek-input is-editing">
+						<textarea class="edit-comment-textarea" rows="1">${escapeHtml(parsed.text)}</textarea>
+					</div>`
+				: `<div class="obsidian-comment-text" data-index="${index}">${displayHtml}</div>`;
+			html += `
+				<div class="obsidian-comment-item">
+					<div class="obsidian-comment-item-header">
+						<span class="obsidian-comment-dot"></span>
+						${parsed.timestamp ? `<span class="obsidian-comment-timestamp">${formatTime(parsed.timestamp)}</span>` : '<span class="obsidian-comment-timestamp"></span>'}
+						<div class="obsidian-comment-actions-inline">
+							<button class="obsidian-comment-edit" data-index="${index}" aria-label="Edit comment">
+								<svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 20h9"/><path d="M16.5 3.5a2.12 2.12 0 0 1 3 3L7 19l-4 1 1-4Z"/></svg>
+							</button>
+							<button class="obsidian-comment-delete" data-index="${index}" aria-label="Delete comment">
+								<svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 6 6 18"/><path d="m6 6 12 12"/></svg>
+							</button>
+							${index === 0 ? `<button class="obsidian-comment-thread-delete" aria-label="Delete comment thread" title="Delete comment thread">
+								<svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 6h18"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/></svg>
+							</button>` : ''}
 						</div>
 					</div>
-				`;
-			} else {
-				// Threaded layout: a header line (colored dot on the thread rail +
-				// timestamp + hover actions), with the comment text beneath it.
-				html += `
-					<div class="obsidian-comment-item">
-						<div class="obsidian-comment-item-header">
-							<span class="obsidian-comment-dot"></span>
-							${parsed.timestamp ? `<span class="obsidian-comment-timestamp">${formatTime(parsed.timestamp)}</span>` : '<span class="obsidian-comment-timestamp"></span>'}
-							<div class="obsidian-comment-actions-inline">
-								<button class="obsidian-comment-edit" data-index="${index}" aria-label="Edit comment">
-									<svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 20h9"/><path d="M16.5 3.5a2.12 2.12 0 0 1 3 3L7 19l-4 1 1-4Z"/></svg>
-								</button>
-								<button class="obsidian-comment-delete" data-index="${index}" aria-label="Delete comment">
-									<svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 6 6 18"/><path d="m6 6 12 12"/></svg>
-								</button>
-								${index === 0 ? `<button class="obsidian-comment-thread-delete" aria-label="Delete comment thread" title="Delete comment thread">
-									<svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 6h18"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/></svg>
-								</button>` : ''}
-							</div>
-						</div>
-						<div class="obsidian-comment-text" data-index="${index}">${displayHtml}</div>
-					</div>
-				`;
-			}
+					${bodyHtml}
+				</div>
+			`;
 		});
 		html += `</div>`;
 	}
 
-	html += editorHtml;
+	// While a note in this thread is being edited, hide the reply/new-comment
+	// field — an inline edit editor is already open, so a second editor below it
+	// is confusing and redundant.
+	const isEditingNoteInThisBox = editingNoteKey?.startsWith(`${highlight.id}-`) ?? false;
+	if (!isEditingNoteInThisBox) html += editorHtml;
 
 	// Only touch the DOM when the rendered content actually changed. An open
 	// editor's textarea value (and the add-comment editor's emptiness) is not
@@ -724,6 +937,7 @@ document.addEventListener('mousedown', (e) => {
 	const box = target?.closest('.obsidian-comment-box') as HTMLElement | null;
 
 	if (!box) {
+		hideTagMenu();
 		if (editingHighlightIds.size === 0 && !editingNoteKey && !focusedHighlightId && expandedCommentIndexes.size === 0) {
 			return;
 		}
@@ -773,6 +987,8 @@ document.addEventListener('mousedown', (e) => {
 }, true);
 
 function saveComment(highlightId: string, text: string) {
+	hideTagMenu();
+	knownTagsCache = null; // the new comment may introduce new tags
 	if (!text) {
 		stopAddingComment(highlightId);
 		if (focusedHighlightId === highlightId) {
@@ -800,6 +1016,8 @@ function saveComment(highlightId: string, text: string) {
 }
 
 function saveEditedComment(highlightId: string, index: number, text: string) {
+	hideTagMenu();
+	knownTagsCache = null;
 	editingNoteKey = null;
 	if (!text) {
 		renderCommentBoxes();

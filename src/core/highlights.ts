@@ -422,6 +422,7 @@ function navigate(nav: NavSelection) {
 	currentNav = nav;
 	updateUrlFromNav();
 	updateSidebarActiveState();
+	renderTagsPanel();
 	renderMain();
 
 	// Close mobile sidebar
@@ -585,6 +586,8 @@ function renderSidebar() {
 	}
 
 	if (needsIcons) createIcons({ icons });
+
+	renderTagsPanel();
 }
 
 function createDomainNode(domain: string): CachedDomainNode {
@@ -678,6 +681,131 @@ function toggleDomainExpand(domain: string) {
 	}
 }
 
+// --- Tag & color filters (sidebar tags panel) ---
+// Tags come from #tag tokens in comment text; nesting via slashes
+// (#question/important). Clicking a tag or color swatch in the panel filters
+// the main pane ON TOP of the current nav/search filters. A parent tag matches
+// all its descendants.
+
+type HLColor = 'yellow' | 'red' | 'green';
+let activeTagFilter: string | null = null;
+let activeColorFilter: HLColor | null = null;
+
+const NOTE_TAG_RE = /(^|\s)#([A-Za-z0-9_-]+(?:\/[A-Za-z0-9_-]+)*)/g;
+
+function tagsOfNotes(notes?: string[]): string[] {
+	if (!notes || notes.length === 0) return [];
+	const out: string[] = [];
+	for (const note of notes) {
+		const clean = note.replace(/<!--[^>]*-->/g, ' ');
+		NOTE_TAG_RE.lastIndex = 0;
+		let m: RegExpExecArray | null;
+		while ((m = NOTE_TAG_RE.exec(clean))) out.push(m[2].toLowerCase());
+	}
+	return out;
+}
+
+function unitMatchesTagFilters(unit: RenderUnit): boolean {
+	if (activeColorFilter) {
+		const hasColor = unit.entries.some(e =>
+			!(e.data as VideoCarrier).__video && ((e.data.color as HLColor) || 'yellow') === activeColorFilter);
+		if (!hasColor) return false;
+	}
+	if (activeTagFilter) {
+		const tags = unit.entries.flatMap(e => tagsOfNotes(e.data.notes));
+		const ok = tags.some(t => t === activeTagFilter || t.startsWith(activeTagFilter + '/'));
+		if (!ok) return false;
+	}
+	return true;
+}
+
+// The render units for the main pane: nav + search scope, then tag/color.
+function getVisibleUnits(): RenderUnit[] {
+	const units = collapseGroupsForRender(getVisibleEntries());
+	if (!activeTagFilter && !activeColorFilter) return units;
+	return units.filter(unitMatchesTagFilters);
+}
+
+function renderTagsPanel() {
+	const colorList = document.getElementById('highlights-color-list');
+	const tagList = document.getElementById('highlights-tag-list');
+	if (!colorList || !tagList) return;
+
+	// Scope counts to the current nav + search (NOT the tag/color filters
+	// themselves, so the panel always lists everything selectable).
+	const units = collapseGroupsForRender(getVisibleEntries());
+
+	// Color rows
+	const colorCounts: Record<HLColor, number> = { yellow: 0, red: 0, green: 0 };
+	for (const u of units) {
+		const seen = new Set<HLColor>();
+		for (const e of u.entries) {
+			if ((e.data as VideoCarrier).__video) continue;
+			seen.add(((e.data.color as HLColor) || 'yellow'));
+		}
+		seen.forEach(c => { if (colorCounts[c] !== undefined) colorCounts[c]++; });
+	}
+	colorList.replaceChildren();
+	(['yellow', 'red', 'green'] as HLColor[]).forEach(color => {
+		const li = document.createElement('li');
+		li.className = 'nav-tag nav-color';
+		li.classList.toggle('active', activeColorFilter === color);
+		const dot = document.createElement('span');
+		dot.className = `tag-color-dot color-${color}`;
+		const name = document.createElement('span');
+		name.className = 'nav-tag-name';
+		name.textContent = color.charAt(0).toUpperCase() + color.slice(1);
+		const count = document.createElement('span');
+		count.className = 'nav-count';
+		count.textContent = String(colorCounts[color]);
+		li.append(dot, name, count);
+		li.addEventListener('click', () => {
+			activeColorFilter = activeColorFilter === color ? null : color;
+			renderTagsPanel();
+			renderMain();
+		});
+		colorList.appendChild(li);
+	});
+
+	// Nested tag tree. Each unit contributes once to every ancestor path of its
+	// tags, so #question/important counts under both "question" and
+	// "question/important". Alphabetical sort yields parent-before-child order.
+	const counts = new Map<string, number>();
+	for (const u of units) {
+		const paths = new Set<string>();
+		for (const t of new Set(u.entries.flatMap(e => tagsOfNotes(e.data.notes)))) {
+			let path = '';
+			for (const part of t.split('/')) {
+				path = path ? `${path}/${part}` : part;
+				paths.add(path);
+			}
+		}
+		for (const p of paths) counts.set(p, (counts.get(p) || 0) + 1);
+	}
+	tagList.replaceChildren();
+	for (const path of [...counts.keys()].sort()) {
+		const depth = path.split('/').length - 1;
+		const li = document.createElement('li');
+		li.className = 'nav-tag';
+		li.style.paddingInlineStart = `${10 + depth * 14}px`;
+		li.classList.toggle('active', activeTagFilter === path);
+		li.title = '#' + path;
+		const name = document.createElement('span');
+		name.className = 'nav-tag-name';
+		name.textContent = '#' + (depth ? path.slice(path.lastIndexOf('/') + 1) : path);
+		const count = document.createElement('span');
+		count.className = 'nav-count';
+		count.textContent = String(counts.get(path));
+		li.append(name, count);
+		li.addEventListener('click', () => {
+			activeTagFilter = activeTagFilter === path ? null : path;
+			renderTagsPanel();
+			renderMain();
+		});
+		tagList.appendChild(li);
+	}
+}
+
 // --- Main content ---
 
 // Collapse group members (from a multi-block selection) into a single render
@@ -743,7 +871,7 @@ function getVisibleEntries(): { entry: HighlightEntry; pageUrl: string; domain: 
 // Returns true if the incremental update succeeded, false to fall back to renderMain().
 function updateMainIncremental(): boolean {
 	const listEl = document.getElementById('highlights-list')!;
-	const newFlatEntries = collapseGroupsForRender(getVisibleEntries());
+	const newFlatEntries = getVisibleUnits();
 
 	const oldKeys = new Set<string>();
 	for (let i = 0; i < renderedCount; i++) {
@@ -838,7 +966,7 @@ function renderMain() {
 	renderedCount = 0;
 	currentPageGroup = null;
 
-	flatEntries = collapseGroupsForRender(getVisibleEntries());
+	flatEntries = getVisibleUnits();
 
 	// Breadcrumb
 	renderBreadcrumb();

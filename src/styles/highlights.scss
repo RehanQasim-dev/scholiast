@@ -61,6 +61,95 @@
 	}
 }
 
+// Sidebar becomes a flex column so the tags panel pins to the bottom-left
+// corner while the sources list scrolls independently above it.
+#highlights-sidebar {
+	display: flex;
+	flex-direction: column;
+	overflow: hidden;
+
+	#highlights-domain-list {
+		flex: 1 1 auto;
+		min-height: 0;
+		overflow-y: auto;
+	}
+}
+
+#highlights-tags-panel {
+	flex-shrink: 0;
+	margin-top: auto;
+	max-height: 45%;
+	overflow-y: auto;
+	border-top: 1px solid var(--background-modifier-border);
+	padding-top: 10px;
+
+	#highlights-tags-title {
+		font-size: var(--font-ui-smaller);
+		font-weight: 600;
+		color: var(--text-muted);
+		text-transform: uppercase;
+		letter-spacing: 0.04em;
+		padding: 0 10px 6px;
+	}
+
+	ul {
+		@extend .nav-list;
+		gap: 1px;
+	}
+
+	#highlights-color-list {
+		margin-bottom: 4px;
+	}
+
+	.nav-tag {
+		display: flex;
+		align-items: center;
+		gap: 6px;
+		padding: 4px 10px;
+		border-radius: 6px;
+		color: var(--text-muted);
+		font-size: var(--font-ui-small);
+		cursor: pointer;
+		user-select: none;
+		-webkit-user-select: none;
+		transition: background-color 0.12s ease, color 0.12s ease;
+
+		&:hover {
+			background-color: var(--background-modifier-hover);
+			color: var(--text-normal);
+		}
+		&.active {
+			background-color: var(--background-modifier-hover);
+			color: var(--text-normal);
+			font-weight: 600;
+		}
+
+		.nav-tag-name {
+			flex: 1;
+			min-width: 0;
+			overflow: hidden;
+			text-overflow: ellipsis;
+			white-space: nowrap;
+		}
+
+		.nav-count {
+			flex-shrink: 0;
+			font-size: var(--font-ui-smaller);
+			color: var(--text-faint);
+		}
+
+		.tag-color-dot {
+			flex-shrink: 0;
+			width: 10px;
+			height: 10px;
+			border-radius: 50%;
+			&.color-yellow { background: rgb(245, 184, 0); }
+			&.color-red    { background: rgb(255, 99, 132); }
+			&.color-green  { background: rgb(63, 174, 107); }
+		}
+	}
+}
+
 #highlights-domain-list {
 	@extend .nav-list;
 	gap: 1px;

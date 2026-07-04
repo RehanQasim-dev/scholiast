@@ -57,6 +57,13 @@ module.exports = (env, argv) => {
 			filename: '[name].js',
 			module: false,
 		},
+		// Persistent on-disk cache: module compilation is reused across runs, so a
+		// small change only recompiles what changed instead of the whole tree.
+		// Invalidated automatically when this config changes.
+		cache: {
+			type: 'filesystem',
+			buildDependencies: { config: [__filename] }
+		},
 		devtool: isProduction ? false : 'source-map',
 		optimization: {
 			minimize: true,
@@ -115,6 +122,9 @@ module.exports = (env, argv) => {
 						{
 							loader: 'ts-loader',
 							options: {
+								// Skip type-checking during the build (the slowest part of
+								// ts-loader); rely on the editor / `tsc` for types. Big speedup.
+								transpileOnly: true,
 								compilerOptions: {
 									module: 'ES2020'
 								}

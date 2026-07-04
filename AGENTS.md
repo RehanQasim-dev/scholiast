@@ -214,6 +214,13 @@ exists** — the sharded keys are the only format. The shapes below are the per-
   dashboard; **`Ctrl`+click** opens the real website in a new tab. In the highlights panel, clicking a
   page title opens the real website in a new tab. Navigation levels: all → domain → page, with breadcrumbs.
 - Export (JSON/Markdown) and delete, scoped to all / domain / page.
+- **Tags panel** (sidebar bottom-left): lists three **color rows** (yellow/red/green) and a **nested
+  tag tree** built from `#tag` tokens in comment text (nesting via slashes, e.g. `#question/important`;
+  a parent tag matches all descendants). Clicking a tag or color filters the main pane *on top of* the
+  current nav/search scope (click again to clear); counts are scoped to the current selection.
+- **Tag autocomplete**: typing `#` in a comment editor (live page) pops a dropdown of known tags from
+  all pages' comments, filtered by prefix; arrows navigate, Enter/Tab/click inserts, Escape closes
+  (without touching the draft).
 
 ### 3.5 Google Drive sync (per-page)
 - Google OAuth via `browser.identity`; connect/disconnect from settings.

@@ -68,9 +68,10 @@ function App() {
 				<button onClick={save}>Save & Close</button>
 			</div>
 			<div style={{ height: '100%' }}>
-				<Excalidraw 
+				<Excalidraw
 					initialData={initialData}
-					excalidrawAPI={(api: any) => setExcalidrawAPI(api)} 
+					excalidrawAPI={(api: any) => setExcalidrawAPI(api)}
+					theme="dark"
 				/>
 			</div>
 		</>

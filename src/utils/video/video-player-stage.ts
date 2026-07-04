@@ -17,7 +17,7 @@ import { getPlayerContainer } from './youtube-detect';
 // fullscreen element is an ancestor, the host sits outside the scaled subtree and
 // needs no counter-scale.
 
-const PANEL_MIN = 320, PANEL_MAX = 460;
+const PANEL_MIN = 280, PANEL_MAX = 800;
 
 let player: HTMLElement | null = null;
 let dim: HTMLElement | null = null;
@@ -31,6 +31,18 @@ let base = { left: 0, top: 0, width: 0, height: 0 };
 let savedHtmlOverflow = '';
 const hosts = new Set<HTMLElement>();
 let scriptInjected = false;
+
+let customWidth: number | null = null;
+try {
+	const w = sessionStorage.getItem('ob-vid-panel-width');
+	if (w) customWidth = parseInt(w, 10);
+} catch (e) {}
+
+export function setCustomPanelWidth(w: number) {
+	customWidth = w;
+	try { sessionStorage.setItem('ob-vid-panel-width', w.toString()); } catch(e) {}
+	relayoutAll();
+}
 
 function injectPatchScript() {
 	if (scriptInjected) return;
@@ -68,8 +80,10 @@ function measureBase() {
 		player.style.transition = prevTransition;
 		base = { left: r.left, top: r.top, width: r.width, height: r.height };
 	}
-	panelW = Math.min(Math.max(PANEL_MIN, Math.round(window.innerWidth * 0.34)), PANEL_MAX);
-	panelW = Math.min(panelW, base.width * 0.5);
+	panelW = customWidth || Math.min(Math.max(280, Math.round(window.innerWidth * 0.34)), 420);
+	panelW = Math.max(PANEL_MIN, Math.min(panelW, PANEL_MAX));
+	// Allow the panel to consume up to 70% of the video width if the user explicitly drags it that large
+	panelW = Math.min(panelW, base.width * 0.7);
 	scaleVal = Math.max(0.2, (base.width - panelW) / base.width);
 }
 
@@ -167,6 +181,31 @@ export function engagePlayerStage(): void {
 
 export function mountHost(host: HTMLElement): void {
 	host.classList.add('ob-vps-host');
+	
+	const resizer = document.createElement('div');
+	resizer.className = 'ob-vps-resizer';
+	let startX = 0;
+	let startW = 0;
+	
+	const onMove = (e: MouseEvent) => {
+		const dx = startX - e.clientX; 
+		setCustomPanelWidth(Math.min(Math.max(PANEL_MIN, startW + dx), PANEL_MAX));
+	};
+	const onUp = () => {
+		document.removeEventListener('mousemove', onMove, true);
+		document.removeEventListener('mouseup', onUp, true);
+		document.body.style.cursor = '';
+	};
+	resizer.addEventListener('mousedown', (e) => {
+		startX = e.clientX;
+		startW = panelW;
+		document.addEventListener('mousemove', onMove, true);
+		document.addEventListener('mouseup', onUp, true);
+		document.body.style.cursor = 'col-resize';
+		e.preventDefault();
+	});
+	host.appendChild(resizer);
+
 	hosts.add(host);
 	hostMountTarget().appendChild(host);
 	layoutHost(host);

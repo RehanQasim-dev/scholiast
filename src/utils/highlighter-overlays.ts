@@ -886,6 +886,22 @@ function handleHighlightHover(event: MouseEvent) {
 			document.body.classList.remove('obsidian-highlighter-hover-suppress');
 		}
 
+		// Pointer is on the action menu itself: keep the menu alive and LOCKED to
+		// its current target. The menu's pixels can overlap a neighboring
+		// highlight's text rects, and the geometric hit-test below would otherwise
+		// retarget the menu to that neighbor (after the dwell delay) while the
+		// user is simply reaching for a button — so their click would act on the
+		// wrong annotation.
+		if (onButton) {
+			if (actionMenuHideTimeout) {
+				clearTimeout(actionMenuHideTimeout);
+				actionMenuHideTimeout = null;
+			}
+			clearPendingSwitch();
+			emphasizeCommentBox(currentActionTargetId);
+			return;
+		}
+
 		// Emphasize the comment box tied to whatever highlight the cursor is on,
 		// so it's easy to see which note goes with which highlight. Only the
 		// highlighted text triggers this — hovering or typing in the box itself

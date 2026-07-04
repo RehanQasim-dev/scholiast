@@ -1,9 +1,10 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { createRoot } from 'react-dom/client';
 import { Excalidraw } from '@excalidraw/excalidraw';
 import * as Icons from './excalidraw-icons';
 
 function App() {
+	const lockedViewRef = useRef<{scrollX: number, scrollY: number, zoom: number} | null>(null);
 	const [excalidrawAPI, setExcalidrawAPI] = useState<any>(null);
 	const [frameDataUrl, setFrameDataUrl] = useState<string | null>(null);
 	const [frameSize, setFrameSize] = useState({ w: 0, h: 0 });
@@ -50,8 +51,20 @@ function App() {
 			}
 		};
 		window.addEventListener('message', handleMessage);
+		
+		const blockWheel = (e: WheelEvent) => {
+			if (!e.ctrlKey) { // let pinch-to-zoom through if they really want, but lockedView will snap it back
+				e.preventDefault();
+				e.stopPropagation();
+			}
+		};
+		window.addEventListener('wheel', blockWheel, { passive: false });
+		
 		window.parent.postMessage({ type: 'EXCALIDRAW_READY' }, '*');
-		return () => window.removeEventListener('message', handleMessage);
+		return () => {
+			window.removeEventListener('message', handleMessage);
+			window.removeEventListener('wheel', blockWheel);
+		};
 	}, [excalidrawAPI]);
 
 	useEffect(() => {
@@ -89,9 +102,13 @@ function App() {
 		const offX = (W - dispW) / 2;
 		const offY = TOP_BAND + (regionH - dispH) / 2;
 
+		const scrollX = offX / zoom;
+		const scrollY = offY / zoom;
+		lockedViewRef.current = { scrollX, scrollY, zoom };
+
 		excalidrawAPI.updateScene({
 			elements,
-			appState: { zoom: { value: zoom }, scrollX: offX / zoom, scrollY: offY / zoom }
+			appState: { zoom: { value: zoom }, scrollX, scrollY }
 		});
 		excalidrawAPI.setActiveTool({ type: 'freedraw' });
 
@@ -129,6 +146,11 @@ function App() {
 		const handleKeyDown = (e: KeyboardEvent) => {
 			if (document.activeElement?.tagName === 'INPUT' || document.activeElement?.tagName === 'TEXTAREA' || document.activeElement?.getAttribute('contenteditable') === 'true') {
 				if (e.key === 'Escape') return;
+				return;
+			}
+			if (e.code === 'Space') {
+				e.preventDefault();
+				e.stopPropagation();
 				return;
 			}
 			const k = e.key.toLowerCase();
@@ -208,6 +230,21 @@ function App() {
 
 
 	const handleExcalidrawChange = (elements: readonly any[], state: any) => {
+		if (lockedViewRef.current && excalidrawAPI) {
+			const lv = lockedViewRef.current;
+			if (Math.abs(state.scrollX - lv.scrollX) > 0.5 || 
+				Math.abs(state.scrollY - lv.scrollY) > 0.5 || 
+				Math.abs(state.zoom.value - lv.zoom) > 0.01) {
+				excalidrawAPI.updateScene({
+					appState: { 
+						scrollX: lv.scrollX, 
+						scrollY: lv.scrollY, 
+						zoom: { value: lv.zoom } 
+					}
+				});
+			}
+		}
+
 		const trackedStateKeys = [
 			'currentItemStrokeColor', 'currentItemBackgroundColor',
 			'currentItemFillStyle', 'currentItemStrokeWidth', 'currentItemStrokeStyle',

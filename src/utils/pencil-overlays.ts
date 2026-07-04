@@ -21,9 +21,9 @@ import { getPage, setPage, removePage } from './page-store';
 export type PencilColor = 'yellow' | 'red' | 'green';
 
 const COLOR_HEX: Record<PencilColor, string> = {
-	yellow: '#f5b800',
-	red: '#ff6384',
-	green: '#3fae6b',
+	yellow: '#d29600',
+	red: '#dc3c5a',
+	green: '#2da05f',
 };
 
 const ACCENT = '#895DF4';
@@ -181,9 +181,9 @@ function ensurePencilStyle(): void {
 	const style = document.createElement('style');
 	style.id = 'obsidian-pencil-style';
 	style.textContent = `
-		.obsidian-pencil-active:not(.obsidian-pencil-selecting), .obsidian-pencil-active:not(.obsidian-pencil-selecting) * { cursor: ${pencilCursor('%23f5b800')} !important; }
-		.obsidian-pencil-active[data-obsidian-pencil-color="red"]:not(.obsidian-pencil-selecting), .obsidian-pencil-active[data-obsidian-pencil-color="red"]:not(.obsidian-pencil-selecting) * { cursor: ${pencilCursor('%23ff6384')} !important; }
-		.obsidian-pencil-active[data-obsidian-pencil-color="green"]:not(.obsidian-pencil-selecting), .obsidian-pencil-active[data-obsidian-pencil-color="green"]:not(.obsidian-pencil-selecting) * { cursor: ${pencilCursor('%233fae6b')} !important; }
+		.obsidian-pencil-active:not(.obsidian-pencil-selecting), .obsidian-pencil-active:not(.obsidian-pencil-selecting) * { cursor: ${pencilCursor('%23d29600')} !important; }
+		.obsidian-pencil-active[data-obsidian-pencil-color="red"]:not(.obsidian-pencil-selecting), .obsidian-pencil-active[data-obsidian-pencil-color="red"]:not(.obsidian-pencil-selecting) * { cursor: ${pencilCursor('%23dc3c5a')} !important; }
+		.obsidian-pencil-active[data-obsidian-pencil-color="green"]:not(.obsidian-pencil-selecting), .obsidian-pencil-active[data-obsidian-pencil-color="green"]:not(.obsidian-pencil-selecting) * { cursor: ${pencilCursor('%232da05f')} !important; }
 		.obsidian-pencil-selecting, .obsidian-pencil-selecting * { cursor: crosshair !important; }
 		.obsidian-pencil-active, .obsidian-pencil-marqueeing { -webkit-user-select: none !important; user-select: none !important; }
 		.obsidian-pencil-marqueeing * { -webkit-user-select: none !important; user-select: none !important; }

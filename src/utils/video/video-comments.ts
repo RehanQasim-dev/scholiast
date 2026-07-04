@@ -142,7 +142,12 @@ function anchorHeader(item: VideoItem): HTMLElement {
 		thumb.className = 'ob-vidc-thumb';
 		const img = document.createElement('img');
 		if (item.frame.dataUrl) img.src = item.frame.dataUrl;
-		else loadFrameImage(item.id).then(u => { if (u) img.src = u; });
+		else loadFrameImage(item.id).then(u => { 
+			if (u) { 
+				img.src = u; 
+				item.frame!.dataUrl = u; // Cache it so it doesn't blink on re-renders
+			} 
+		});
 		thumb.appendChild(img);
 		if (item.markup) {
 			const ov = document.createElement('div');
@@ -176,6 +181,10 @@ function renderConversation() {
 	const hadFocus = document.activeElement === inputEl;
 	const selStart = inputEl?.selectionStart ?? null;
 	const selEnd = inputEl?.selectionEnd ?? null;
+
+	// Clean up abandoned empty notes when focus shifts away from them
+	items = items.filter(i => i.id === focusId || !(i.kind === 'note' && i.notes.length === 0));
+
 	listEl.replaceChildren();
 	if (items.length === 0) {
 		const empty = document.createElement('div');
