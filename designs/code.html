@@ -1,0 +1,379 @@
+<!DOCTYPE html>
+
+<html class="dark" lang="en"><head>
+<meta charset="utf-8"/>
+<meta content="width=device-width, initial-scale=1.0" name="viewport"/>
+<title>AnnotatePro - Domain Detail View</title>
+<script src="https://cdn.tailwindcss.com?plugins=forms,container-queries"></script>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com" rel="preconnect"/>
+<link crossorigin="" href="https://fonts.gstatic.com" rel="preconnect"/>
+<link href="https://fonts.googleapis.com/css2?family=Geist:wght@400;500;600;700&amp;family=Libre+Caslon+Text:wght@400;700&amp;display=swap" rel="stylesheet"/>
+<script id="tailwind-config">
+        tailwind.config = {
+          darkMode: "class",
+          theme: {
+            extend: {
+              "colors": {
+                      "secondary-container": "#454a4f",
+                      "surface": "#111317",
+                      "inverse-surface": "#e2e2e8",
+                      "on-surface": "#e2e2e8",
+                      "inverse-primary": "#5c5f60",
+                      "on-tertiary-fixed": "#221b00",
+                      "on-error-container": "#ffdad6",
+                      "on-primary-container": "#626566",
+                      "secondary-fixed-dim": "#c3c7cd",
+                      "on-error": "#690005",
+                      "surface-container-high": "#282a2e",
+                      "on-secondary-fixed": "#171c20",
+                      "secondary": "#c3c7cd",
+                      "on-tertiary-fixed-variant": "#554600",
+                      "secondary-fixed": "#dfe3e9",
+                      "on-tertiary-container": "#776300",
+                      "tertiary-fixed-dim": "#e9c400",
+                      "error": "#ffb4ab",
+                      "surface-bright": "#37393e",
+                      "on-primary-fixed-variant": "#454748",
+                      "on-tertiary": "#3b2f00",
+                      "on-background": "#e2e2e8",
+                      "primary-fixed-dim": "#c5c7c8",
+                      "tertiary": "#ffffff",
+                      "on-surface-variant": "#c4c7c8",
+                      "inverse-on-surface": "#2f3035",
+                      "background": "#111317",
+                      "surface-container-lowest": "#0c0e12",
+                      "error-container": "#93000a",
+                      "on-primary-fixed": "#191c1d",
+                      "tertiary-fixed": "#ffe171",
+                      "on-secondary-fixed-variant": "#43474c",
+                      "on-secondary-container": "#b4b9bf",
+                      "on-secondary": "#2c3136",
+                      "surface-container": "#1e2024",
+                      "tertiary-container": "#ffe171",
+                      "surface-tint": "#c5c7c8",
+                      "surface-dim": "#111317",
+                      "outline": "#8e9193",
+                      "primary-container": "#e1e3e4",
+                      "primary-fixed": "#e1e3e4",
+                      "surface-container-low": "#1a1c20",
+                      "surface-variant": "#333539",
+                      "outline-variant": "#444749",
+                      "primary": "#ffffff",
+                      "on-primary": "#2e3132",
+                      "surface-container-highest": "#333539"
+              },
+              "borderRadius": {
+                      "DEFAULT": "0.25rem",
+                      "lg": "0.5rem",
+                      "xl": "0.75rem",
+                      "full": "9999px"
+              },
+              "spacing": {
+                      "sm": "8px",
+                      "xl": "40px",
+                      "md": "16px",
+                      "base": "4px",
+                      "lg": "24px",
+                      "container-max": "1200px",
+                      "xs": "4px",
+                      "gutter": "24px"
+              },
+              "fontFamily": {
+                      "display-lg": ["Libre Caslon Text"],
+                      "body-reading": ["Libre Caslon Text"],
+                      "label-caps": ["Geist"],
+                      "display-lg-mobile": ["Libre Caslon Text"],
+                      "body-main": ["Geist"],
+                      "code": ["jetbrainsMono"],
+                      "headline-md": ["Geist"]
+              },
+              "fontSize": {
+                      "display-lg": ["48px", {"lineHeight": "1.1", "letterSpacing": "-0.02em", "fontWeight": "400"}],
+                      "body-reading": ["18px", {"lineHeight": "1.7", "fontWeight": "400"}],
+                      "label-caps": ["12px", {"lineHeight": "1", "letterSpacing": "0.05em", "fontWeight": "600"}],
+                      "display-lg-mobile": ["32px", {"lineHeight": "1.2", "fontWeight": "400"}],
+                      "body-main": ["16px", {"lineHeight": "1.6", "fontWeight": "400"}],
+                      "code": ["14px", {"lineHeight": "1.5", "fontWeight": "400"}],
+                      "headline-md": ["24px", {"lineHeight": "1.4", "letterSpacing": "-0.01em", "fontWeight": "500"}]
+              }
+            },
+          },
+        }
+      </script>
+<style>
+        body {
+            background-color: theme('colors.background');
+            color: theme('colors.on-surface');
+        }
+        ::-webkit-scrollbar {
+            width: 8px;
+        }
+        ::-webkit-scrollbar-track {
+            background: transparent;
+        }
+        ::-webkit-scrollbar-thumb {
+            background: theme('colors.surface-container-highest');
+            border-radius: 4px;
+        }
+        ::-webkit-scrollbar-thumb:hover {
+            background: theme('colors.outline');
+        }
+    </style>
+</head>
+<body class="antialiased min-h-screen flex flex-col font-body-main text-body-main">
+<!-- TopNavBar (Mobile Only) -->
+<header class="bg-surface/80 dark:bg-surface/80 backdrop-blur-xl docked full-width top-0 border-b border-outline-variant/10 fixed top-0 w-full z-50 flex justify-between items-center px-lg py-sm max-w-full md:hidden">
+<div class="flex items-center gap-md">
+<span class="material-symbols-outlined text-primary dark:text-on-surface cursor-pointer">menu</span>
+</div>
+<div class="flex items-center gap-md">
+<span class="material-symbols-outlined text-primary dark:text-on-surface cursor-pointer">notifications</span>
+<span class="material-symbols-outlined text-primary dark:text-on-surface cursor-pointer">settings</span>
+<img alt="User profile" class="w-8 h-8 rounded-full border border-outline-variant/20" src="https://lh3.googleusercontent.com/aida-public/AB6AXuA4qzKO1VJQstWRpDguVyym9e12rczN6XG3jHqk40G0JRvysCjJmVA03nbF26JAW2h6CSa7tMBlF_CITPrRJqxsxXmF33cAId-B--suj51xXMkpRlJk3YRqqCnM2os5BXeEEZa_A_RtYo27EtFieWuanqem4FagGCHVICx3_Eo5i_SpY7KqWfyRHL7Tdau5iONXsELO24ioGsK6GqJhO6YNf__0yg9u7EQ2Pu7A7HZhd4k9XTBW7rXHHXhUDiRKSaLLBstqxKPGtIgt"/>
+</div>
+</header>
+<div class="flex flex-1 pt-16 md:pt-0">
+<!-- SideNavBar -->
+<nav class="bg-surface-container-low dark:bg-surface-container-low/90 backdrop-blur-lg docked full-height left-0 w-64 border-r border-outline-variant/10 fixed left-0 top-0 h-full z-40 hidden md:flex flex-col p-md">
+<div class="mb-lg flex items-center gap-md cursor-pointer hover:bg-surface-container-highest transition-all p-sm rounded-lg">
+<img alt="Project Workspace" class="w-10 h-10 rounded-lg" src="https://lh3.googleusercontent.com/aida-public/AB6AXuC4zcPJcjngl6al-P4HX8oWhTlOk0PaG_OdmiAztbp7EXl2fHfsTPSt9vztFnYgKiBL9TnmOlIJ-V-Fv2dGBhFcU9QlAMPXTjl0jpsE2924e8craCxAc1NUjsfr-9IKau5pwLcoQ1d4u-sUTXME7mTlpVzKSWNjyiTEbKydwReuiPXWvvtvkiAGOkLyzAaT_JAsgPL5kWnwopOYAS_xBlu_CuAAxdM2buLCOY1ffMdmEKWYtexc4koZLUU43Af_fdJvPHjceHC_jea_"/>
+<div>
+<p class="font-label-caps text-label-caps text-on-surface-variant">1,240 Annotations</p>
+</div>
+<span class="material-symbols-outlined text-on-surface-variant ml-auto text-sm">unfold_more</span>
+</div>
+<!-- Search Sources Input -->
+<div class="relative mb-md">
+<span class="material-symbols-outlined absolute left-2 top-1/2 -translate-y-1/2 text-[16px] text-on-surface-variant">search</span>
+<input class="w-full bg-surface-container-highest border-none rounded-lg py-1.5 pl-8 pr-2 text-xs text-on-surface placeholder:text-on-surface-variant/50 focus:ring-1 focus:ring-[rgb(140,115,250)]" placeholder="Search sources..." type="text"/>
+</div>
+<div class="flex-1 overflow-y-auto space-y-sm pr-xs"><!-- youtube.com (Collapsed) -->
+<div class="group">
+<a class="flex items-center gap-md px-sm py-[6px] text-on-surface-variant hover:bg-surface-container-high rounded-lg hover:text-primary transition-colors font-label-caps text-label-caps" href="#">
+<img alt="" class="w-4 h-4" src="https://lh3.googleusercontent.com/aida-public/AB6AXuD2s1uDic581v844leR9f0iO6nD86ep8Omg3AOobucNQXCul4pg-k27ffOeh_Wbct9qVvzdX11YQ70JCZgDMKaRST9kwaghODrBUJ9zXIzfusRCqwYgJIfSZ3KmSeWrHoXKkkP0ggWFVZvAbtvT9wOq_TI4mOcYAuE_8OLagr9ylk09Dh_5gICWBF2AL45k8Kfzr8kambJD0X3Ee9fm1i0IAIaQcZ_36K_xX2N81jXdksLwZfX_NwWii8FfzK-JW5DoqSSTm2Gyz5aZ"/>
+<span class="flex-1">youtube.com</span>
+<span class="text-[10px] opacity-70">12</span>
+<span class="material-symbols-outlined text-sm ml-xs opacity-0 group-hover:opacity-100">chevron_right</span>
+</a>
+</div>
+<!-- en.wikipedia.org (Active/Expanded) -->
+<div class="group">
+<a class="flex items-center gap-md px-sm py-[6px] bg-secondary-container text-on-secondary-container rounded-lg font-bold font-label-caps text-label-caps transition-transform active:scale-95 duration-150" href="#" style="background-color: rgb(140, 115, 250); color: rgb(255, 255, 255);">
+<img alt="" class="w-4 h-4 brightness-0 invert" src="https://lh3.googleusercontent.com/aida-public/AB6AXuCaRSo_6J01ijMaXPbYofWVTOJ0ee_zyF8IzkP7Jw27f6sbH46gRbJlCN93K2MyjYPHi-URTfl0KQq5iRguWUecX9kQICev_IsFhkIu3D6I5ry90JIwQ_45ZHLAarQVPBv-YYm0s07Em0i8Q6q_7vTCwDFaBHOqEi_aL5ol7kWRe4yqrj411WqqVhR-habzkQQM8ar5s9WRhlTIxPFPCFbZHMylu56iX-BLxjJMb4WNKt37OIadOWZMfUlIKELRijbzOd6wJOKz3eMQ"/>
+<span class="flex-1">en.wikipedia.org</span>
+<span class="text-[10px]">42</span>
+<span class="material-symbols-outlined text-sm ml-xs">expand_more</span>
+</a>
+<!-- Nested Pages (Level 2) -->
+<div class="ml-md mt-xs space-y-xs border-l border-outline-variant/10 pl-sm">
+<a class="flex items-center gap-sm px-sm py-[4px] text-on-surface-variant hover:bg-surface-container-high rounded-lg hover:text-primary transition-colors font-label-caps text-[11px]" href="#">
+<span class="material-symbols-outlined text-[14px]">description</span>
+            History of Rome
+        </a>
+<a class="flex items-center gap-sm px-sm py-[4px] text-on-surface-variant hover:bg-surface-container-high rounded-lg hover:text-primary transition-colors font-label-caps text-[11px]" href="#">
+<span class="material-symbols-outlined text-[14px]">description</span>
+            Quantum Mechanics
+        </a>
+<a class="flex items-center gap-sm px-sm py-[4px] text-on-surface-variant hover:bg-surface-container-high rounded-lg hover:text-primary transition-colors font-label-caps text-[11px]" href="#">
+<span class="material-symbols-outlined text-[14px]">description</span>
+            Stoicism
+        </a>
+</div>
+</div>
+<!-- github.com (Collapsed) -->
+<div class="group">
+<a class="flex items-center gap-md px-sm py-[6px] text-on-surface-variant hover:bg-surface-container-high rounded-lg hover:text-primary transition-colors font-label-caps text-label-caps" href="#">
+<img alt="" class="w-4 h-4" src="https://lh3.googleusercontent.com/aida-public/AB6AXuCB4ctbF5ATjj4-IjV9dEwq6jM_b8Ry5hUtj9bucytGuJ2EfaSFfCZ93NNeoJBNmWo8sWllGEPjeMxLuAj1wTs58zuGBw_ppEdD5YmX0joRMH75iqEUKLwhBwAIZY0m6ZvxNYm-BkVdnfZMj_Gs6AoE1-ieLan18FzUeiZDAWpmq4EafrLtKKu3lAJSnyzvXhyKu2p-AdkCUZZXjh1ZLeT6MIbicRULjNU4nhyb8SOc6wb_T3p_Zf_UpkdE6jAxv7JzV3wHxTTnTUbR"/>
+<span class="flex-1">github.com</span>
+<span class="text-[10px] opacity-70">8</span>
+<span class="material-symbols-outlined text-sm ml-xs opacity-0 group-hover:opacity-100">chevron_right</span>
+</a>
+</div></div><div class="mt-lg pt-lg border-t border-outline-variant/10">
+<p class="font-label-caps text-label-caps text-on-surface-variant mb-md px-sm">TAGS</p>
+<div class="space-y-xs">
+<!-- Parent Tag -->
+<div class="group">
+<a class="flex items-center gap-md px-sm py-[6px] text-on-surface-variant hover:bg-surface-container-high rounded-lg hover:text-primary transition-colors font-label-caps text-label-caps" href="#">
+<span class="material-symbols-outlined text-[16px]">tag</span>
+                research
+                <span class="material-symbols-outlined text-sm ml-auto opacity-0 group-hover:opacity-100">expand_more</span>
+</a>
+<!-- Nested Children -->
+<div class="ml-md mt-xs space-y-xs border-l border-outline-variant/10 pl-sm">
+<a class="flex items-center gap-md px-sm py-[4px] bg-secondary-container/20 text-primary rounded-lg font-bold font-label-caps text-label-caps transition-transform active:scale-95" href="#" style="color: rgb(140, 115, 250);">
+<span class="material-symbols-outlined text-[14px]">tag</span>
+                    ai
+                </a>
+<a class="flex items-center gap-md px-sm py-[4px] text-on-surface-variant hover:bg-surface-container-high rounded-lg hover:text-primary transition-colors font-label-caps text-label-caps" href="#">
+<span class="material-symbols-outlined text-[14px]">tag</span>
+                    machine-learning
+                </a>
+</div>
+</div>
+</div>
+</div>
+<div class="mt-auto pt-lg border-t border-outline-variant/10 space-y-sm">
+<a class="flex items-center gap-md px-sm py-[6px] text-on-surface-variant hover:bg-surface-container-high dark:hover:bg-surface-container-high rounded-lg hover:text-primary dark:hover:text-on-surface transition-colors font-label-caps text-label-caps" href="#">
+<span class="material-symbols-outlined text-[18px]">settings</span>
+                    Settings
+                </a>
+<a class="flex items-center gap-md px-sm py-[6px] text-on-surface-variant hover:bg-surface-container-high dark:hover:bg-surface-container-high rounded-lg hover:text-primary dark:hover:text-on-surface transition-colors font-label-caps text-label-caps" href="#">
+<span class="material-symbols-outlined text-[18px]">help</span>
+                    Help
+                </a>
+</div>
+</nav>
+<!-- Main Content Area -->
+<main class="flex-1 md:ml-64 flex flex-col w-full bg-background relative pb-24">
+<!-- Context Header -->
+<div class="sticky top-0 z-30 bg-surface/80 backdrop-blur-xl border-b border-outline-variant/10 px-lg py-md flex flex-col gap-md lg:flex-row lg:justify-between lg:items-center">
+<div>
+<!-- Breadcrumbs -->
+<div class="flex items-center gap-sm font-label-caps text-label-caps text-on-surface-variant mb-xs">
+<span class="hover:text-on-surface cursor-pointer transition-colors">All Annotations</span>
+<span class="material-symbols-outlined text-[14px]">chevron_right</span>
+<span class="text-primary flex items-center gap-xs" style="color: rgb(140, 115, 250);">
+<span class="material-symbols-outlined text-[14px]">description</span>
+                            Wikipedia.org
+                        </span>
+</div>
+<div class="flex items-center gap-md">
+<h2 class="font-headline-md text-headline-md text-on-surface">Wikipedia Annotations</h2>
+<!-- Inlined Header Icons -->
+<div class="flex items-center gap-sm ml-md text-on-surface-variant">
+<button class="hover:text-on-surface transition-colors" title="Reader Mode">
+<span class="material-symbols-outlined text-[20px]">book</span>
+</button>
+<button class="hover:text-on-surface transition-colors" title="Sync">
+<span class="material-symbols-outlined text-[20px]">refresh</span>
+</button>
+</div>
+</div>
+</div>
+<div class="flex items-center gap-md">
+<button class="flex items-center gap-sm px-md py-sm bg-transparent border border-outline-variant/50 text-on-surface rounded-DEFAULT hover:bg-surface-container transition-colors font-label-caps text-label-caps group">
+<span class="material-symbols-outlined text-[18px] group-hover:text-primary transition-colors">sync</span>
+                        Sync
+                    </button>
+<button class="flex items-center gap-sm px-md py-sm bg-primary text-on-primary rounded-DEFAULT hover:opacity-90 transition-opacity font-label-caps text-label-caps" style="background-color: rgb(140, 115, 250);">
+<span class="material-symbols-outlined text-[18px]">chrome_reader_mode</span>
+                        Reader Mode
+                    </button>
+</div>
+</div>
+<!-- Content Workspace -->
+<div class="flex-1 w-full max-w-[800px] mx-auto p-lg lg:p-xl space-y-xl">
+<!-- Collapsed Page Item -->
+<div class="border border-outline-variant/20 rounded-xl bg-surface-container-lowest p-md hover:border-outline-variant/50 transition-colors cursor-pointer flex justify-between items-center">
+<div class="flex items-center gap-md">
+<div class="w-10 h-10 bg-surface-container-highest rounded-lg flex items-center justify-center border border-outline-variant/10">
+<span class="material-symbols-outlined text-on-surface-variant">auto_stories</span>
+</div>
+<div>
+<h3 class="font-body-main text-body-main text-on-surface font-semibold">Quantum Mechanics</h3>
+<p class="font-label-caps text-label-caps text-on-surface-variant mt-xs">12 Annotations • Last edited 2d ago</p>
+</div>
+</div>
+<span class="material-symbols-outlined text-on-surface-variant">chevron_right</span>
+</div>
+<!-- Expanded Page Item -->
+<div class="border border-outline-variant/20 rounded-xl bg-surface-container-lowest p-md">
+<div class="flex justify-between items-start mb-lg border-b border-outline-variant/10 pb-md">
+<div class="flex items-center gap-md">
+<div class="w-10 h-10 bg-primary/10 rounded-lg flex items-center justify-center border border-primary/20" style="background-color: rgba(140, 115, 250, 0.1); border-color: rgba(140, 115, 250, 0.2);">
+<span class="material-symbols-outlined text-primary" style="color: rgb(140, 115, 250);">history_edu</span>
+</div>
+<div>
+<h3 class="font-body-main text-body-main text-on-surface font-bold text-lg">History of Rome</h3>
+<a class="font-label-caps text-label-caps text-primary/70 hover:text-primary mt-xs flex items-center gap-xs" href="#" style="color: rgb(140, 115, 250);">
+                                    en.wikipedia.org/wiki/History_of_Rome
+                                    <span class="material-symbols-outlined text-[12px]">open_in_new</span>
+</a>
+</div>
+</div>
+<span class="material-symbols-outlined text-on-surface-variant cursor-pointer hover:text-on-surface transition-colors">expand_less</span>
+</div>
+<!-- Annotation Cards List -->
+<div class="space-y-lg pl-lg border-l border-outline-variant/10 ml-sm">
+<!-- Annotation Card 1 (Yellow Highlight) -->
+<div class="relative group">
+<!-- Semantic dot indicator -->
+<div class="absolute -left-[29px] top-4 w-2 h-2 rounded-full bg-yellow-500 border border-surface shadow-[0_0_8px_rgba(234,179,8,0.5)]"></div>
+<div class="bg-surface-container p-md rounded-lg border border-outline-variant/10 shadow-sm transition-all hover:border-outline-variant/30 flex flex-col">
+<p class="font-body-reading text-body-reading text-on-surface/90 italic border-l-2 border-yellow-500/50 pl-md bg-yellow-500/5 py-sm pr-sm rounded-r-md">
+                                    "The Roman Empire was the post-Republican period of ancient Rome. As a polity, it included large territorial holdings around the Mediterranean Sea in Europe, North Africa, and Western Asia."
+                                </p>
+<div class="mt-md pl-md ml-xs border-l border-outline-variant/10 space-y-md">
+<div class="flex gap-sm items-start"><div><div class="flex items-center gap-sm mb-xs"><span class="font-label-caps text-label-caps text-on-surface-variant text-[10px]">2 hours ago</span></div><p class="font-body-main text-[14px] text-on-surface-variant">Need to cross-reference this territorial claim with the maps from the Oxford Classical Dictionary for the upcoming lecture.</p></div></div>
+</div>
+<!-- Card Actions -->
+<div class="flex justify-end items-center gap-sm mt-md opacity-0 group-hover:opacity-100 transition-opacity">
+<button class="p-1 hover:bg-surface-variant rounded transition-colors" title="Copy">
+<span class="material-symbols-outlined text-[18px] text-on-surface-variant hover:text-on-surface">content_copy</span>
+</button>
+<button class="p-1 hover:bg-error-container rounded transition-colors" title="Delete">
+<span class="material-symbols-outlined text-[18px] text-on-surface-variant hover:text-error">delete</span>
+</button>
+</div>
+</div>
+</div>
+<!-- Annotation Card 2 (Red Highlight) -->
+<div class="relative group">
+<!-- Semantic dot indicator -->
+<div class="absolute -left-[29px] top-4 w-2 h-2 rounded-full bg-red-500 border border-surface shadow-[0_0_8px_rgba(239,68,68,0.5)]"></div>
+<div class="bg-surface-container p-md rounded-lg border border-outline-variant/10 shadow-sm transition-all hover:border-outline-variant/30 flex flex-col">
+<div class="space-y-sm">
+<p class="font-body-reading text-body-reading text-on-surface/90 italic border-l-2 border-red-500/50 pl-md bg-red-500/5 py-sm pr-sm rounded-r-md">
+                                        "The city of Rome was founded in 753 BC, according to tradition."
+                                    </p>
+<div class="flex items-center justify-center py-xs">
+<span class="material-symbols-outlined text-outline-variant text-[16px]">more_vert</span>
+</div>
+<!-- Green highlight variation -->
+<p class="font-body-reading text-body-reading text-on-surface/90 italic border-l-2 border-green-500/50 pl-md bg-green-500/5 py-sm pr-sm rounded-r-md">
+                                        "However, archaeological evidence suggests human occupation of the area dates back much further."
+                                    </p>
+</div>
+<div class="mt-md pl-md ml-xs border-l border-outline-variant/10 space-y-md">
+<div class="flex gap-sm items-start"><div class="w-full"><div class="flex items-center gap-sm mb-xs"><span class="font-label-caps text-label-caps text-on-surface-variant text-[10px]">5 hours ago</span></div><p class="font-body-main text-[14px] text-on-surface-variant">This juxtaposition is key for the intro section. Let's make sure we highlight the tension between myth and archaeology clearly.</p></div></div>
+<!-- Quick Reply -->
+<div class="flex gap-sm items-center mt-sm"><input class="bg-transparent border-b border-outline-variant/30 text-sm py-1 px-2 w-full focus:outline-none focus:border-primary focus:border-b-2 transition-all placeholder:text-on-surface-variant/50 text-on-surface" placeholder="Reply..." type="text"/></div>
+</div>
+<!-- Card Actions -->
+<div class="flex justify-end items-center gap-sm mt-md opacity-0 group-hover:opacity-100 transition-opacity">
+<button class="p-1 hover:bg-surface-variant rounded transition-colors" title="Copy">
+<span class="material-symbols-outlined text-[18px] text-on-surface-variant hover:text-on-surface">content_copy</span>
+</button>
+<button class="p-1 hover:bg-error-container rounded transition-colors" title="Delete">
+<span class="material-symbols-outlined text-[18px] text-on-surface-variant hover:text-error">delete</span>
+</button>
+</div>
+</div>
+</div>
+</div>
+</div>
+<!-- Collapsed Page Item -->
+<div class="border border-outline-variant/20 rounded-xl bg-surface-container-lowest p-md hover:border-outline-variant/50 transition-colors cursor-pointer flex justify-between items-center opacity-70">
+<div class="flex items-center gap-md">
+<div class="w-10 h-10 bg-surface-container-highest rounded-lg flex items-center justify-center border border-outline-variant/10">
+<span class="material-symbols-outlined text-on-surface-variant">auto_stories</span>
+</div>
+<div>
+<h3 class="font-body-main text-body-main text-on-surface font-semibold">Stoicism</h3>
+<p class="font-label-caps text-label-caps text-on-surface-variant mt-xs">3 Annotations • Last edited 1w ago</p>
+</div>
+</div>
+<span class="material-symbols-outlined text-on-surface-variant">chevron_right</span>
+</div>
+</div>
+</main>
+</div>
+<!-- Footer -->
+<footer class="bg-surface-container-highest dark:bg-surface-container-highest/95 backdrop-blur-md docked full-width bottom-0 rounded-t-xl border-t border-outline-variant/20 shadow-lg fixed bottom-0 right-0 left-0 md:left-64 z-50 flex justify-end items-center gap-lg px-xl py-md">
+<span class="font-label-caps text-label-caps text-on-surface mr-auto hidden sm:block">© 2024 Annotation Manager</span>
+<a class="font-label-caps text-label-caps text-on-surface-variant hover:text-on-surface transition-colors" href="#">Bulk Export</a>
+<a class="font-label-caps text-label-caps text-on-surface-variant hover:text-error dark:hover:text-error-container transition-colors" href="#">Bulk Delete</a>
+<button class="font-label-caps text-label-caps text-primary font-bold hover:opacity-80 transition-opacity active:translate-y-0.5 duration-200" style="color: rgb(140, 115, 250);">Selection Mode</button>
+</footer>
+</body></html>

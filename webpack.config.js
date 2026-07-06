@@ -46,6 +46,7 @@ module.exports = (env, argv) => {
 			content: './src/content.ts',
 			background: './src/background.ts',
 			style: './src/style.scss',
+			'highlights-tailwind': './src/highlights-tailwind.scss',
 			highlighter: './src/highlighter.scss',
 			reader: './src/reader.scss',
 			'reader-script': './src/reader-script.ts',
@@ -134,11 +135,24 @@ module.exports = (env, argv) => {
 					exclude: /node_modules/,
 				},
 				{
+					// Fonts referenced via url() in SCSS (e.g. highlights-tailwind.scss)
+					// are emitted to dist/fonts/ and their url() rewritten accordingly.
+					test: /\.woff2?$/,
+					type: 'asset/resource',
+					generator: { filename: 'fonts/[name][ext]' }
+				},
+				{
 					test: /\.scss$/,
 					use: [
 						MiniCssExtractPlugin.loader,
 						{
 							loader: 'css-loader',
+							options: {
+								sourceMap: !isProduction
+							}
+						},
+						{
+							loader: 'postcss-loader',
 							options: {
 								sourceMap: !isProduction
 							}

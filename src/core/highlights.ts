@@ -1,26 +1,16 @@
 import browser from '../utils/browser-polyfill';
 import { AnyHighlightData, StoredData, DomainSettings, collapseGroupsForExport, normalizeUrl } from '../utils/highlighter';
-import { translatePage, getMessage, setupLanguageAndDirection } from '../utils/i18n';
-import { addBrowserClassToHtml, detectBrowser } from '../utils/browser-detection';
 import DOMPurify from 'dompurify';
-import Defuddle from 'defuddle';
-import { createMarkdownContent } from 'defuddle/full';
-import { getFontCss } from '../utils/font-utils';
-import { ReaderSettings } from '../types/types';
 import dayjs from 'dayjs';
 import relativeTime from 'dayjs/plugin/relativeTime';
-import { createIcons } from 'lucide';
-import { icons } from '../icons/icons';
-import { initializeMenu } from '../managers/menu';
 import { loadAllVideoData, removeVideoItem, VideoItem } from '../utils/video/video-storage';
-import { createVideoItemCard } from './video-highlights';
 import { getPage, setPage, removePage, getAll, clearAll, anyPageChanged } from '../utils/page-store';
+import { detectBrowser } from '../utils/browser-detection';
 
 dayjs.extend(relativeTime);
 
 // A video annotation item is carried through the dashboard's HighlightEntry model
-// by stashing it on the entry data under this key; createHighlightItem routes any
-// entry carrying it to the video card renderer.
+// by stashing it on the entry data under this key.
 interface VideoCarrier { __video?: VideoItem }
 
 interface DomainGroup {
@@ -41,199 +31,99 @@ interface HighlightEntry {
 	url: string;
 }
 
-// Navigation state: what the user is viewing
 type NavSelection =
 	| { type: 'all' }
 	| { type: 'domain'; domain: string }
 	| { type: 'page'; domain: string; url: string };
 
 type SortOrder = 'az' | 'za' | 'new' | 'old';
+type HLColor = 'yellow' | 'red' | 'green';
+
+// One render unit — a single highlight, or a group sharing a groupId shown as one card.
+interface RenderUnit { entries: HighlightEntry[]; pageUrl: string; domain: string; title?: string }
 
 let allDomainGroups: DomainGroup[] = [];
 let domainSettingsMap: Record<string, DomainSettings> = {};
 let searchQueryWebsites = '';
 let searchQueryHighlights = '';
 let currentNav: NavSelection = { type: 'all' };
-let expandedSidebarDomains = new Set<string>();
-let sortOrder: SortOrder = 'az';
-const faviconCache = new Map<string, HTMLImageElement>();
+let sortOrder: SortOrder = 'new';
+let activeTagFilter: string | null = null;
+const expandedSidebarDomains = new Set<string>();
+const expandedPages = new Set<string>();
+// Comment currently being edited inline: `${pageUrl}::${highlightId}::${noteIndex}`.
+let editingComment: string | null = null;
 
-// Batched rendering
-const BATCH_SIZE = 50;
-// Each entry in flatEntries is one render unit — a single highlight, or a
-// group of highlights sharing a groupId that should render as one card.
-interface RenderUnit { entries: HighlightEntry[]; pageUrl: string; domain: string; title?: string }
-let flatEntries: RenderUnit[] = [];
-let renderedCount = 0;
-let currentPageGroup: HTMLElement | null = null;
-let observer: IntersectionObserver | null = null;
+// Design accent (purple) + per-color card classes (full literals so Tailwind's
+// scanner picks them up — never build these class strings dynamically).
+const ACCENT = '#8c73fa';
+const COLOR: Record<HLColor, { dot: string; quote: string }> = {
+	yellow: { dot: 'bg-yellow-500 shadow-[0_0_8px_rgba(234,179,8,0.5)]', quote: 'border-yellow-500/50 bg-yellow-500/5' },
+	red: { dot: 'bg-red-500 shadow-[0_0_8px_rgba(239,68,68,0.5)]', quote: 'border-red-500/50 bg-red-500/5' },
+	green: { dot: 'bg-green-500 shadow-[0_0_8px_rgba(34,197,94,0.5)]', quote: 'border-green-500/50 bg-green-500/5' },
+};
+
+// --- Small DOM helpers ---
+
+function el<K extends keyof HTMLElementTagNameMap>(
+	tag: K, className = '', text?: string
+): HTMLElementTagNameMap[K] {
+	const node = document.createElement(tag);
+	if (className) node.className = className;
+	if (text !== undefined) node.textContent = text;
+	return node;
+}
+
+function icon(name: string, className = ''): HTMLSpanElement {
+	const s = el('span', `material-symbols-outlined${className ? ' ' + className : ''}`);
+	s.textContent = name;
+	return s;
+}
+
+function $(id: string): HTMLElement { return document.getElementById(id)!; }
+
+// --- Bootstrap ---
 
 document.addEventListener('DOMContentLoaded', async () => {
-	await setupLanguageAndDirection();
-	await translatePage();
-	addBrowserClassToHtml();
-	await applyReaderTheme();
-
 	currentNav = readNavFromUrl();
 	await loadData();
-	// Auto-expand the domain in sidebar if navigating to a specific domain or page
 	if (currentNav.type === 'domain' || currentNav.type === 'page') {
 		expandedSidebarDomains.add(currentNav.domain);
 	}
-	renderSidebar();
-	renderMain();
+	if (currentNav.type === 'page') expandedPages.add(currentNav.url);
+	render();
 
-	const searchWebsites = document.getElementById('highlights-search-websites') as HTMLInputElement;
-	if (searchWebsites) {
-		searchWebsites.addEventListener('input', () => {
-			searchQueryWebsites = searchWebsites.value.toLowerCase().trim();
-			renderSidebar();
-			renderMain();
-		});
-	}
-
-	const searchHighlights = document.getElementById('highlights-search-highlights') as HTMLInputElement;
-	if (searchHighlights) {
-		searchHighlights.addEventListener('input', () => {
-			searchQueryHighlights = searchHighlights.value.toLowerCase().trim();
-			renderSidebar();
-			renderMain();
-		});
-	}
-
-	const deleteBtn = document.getElementById('delete-context-btn') as HTMLButtonElement;
-	deleteBtn.addEventListener('click', deleteCurrentContext);
-
-	const exportBtn = document.getElementById('export-context-btn') as HTMLButtonElement;
-	exportBtn.addEventListener('click', exportCurrentContext);
-
-	initializeMenu('highlights-sort-btn', 'highlights-sort-menu');
-	const sortMenu = document.getElementById('highlights-sort-menu')!;
-	sortMenu.querySelectorAll<HTMLElement>('.menu-item[data-sort]').forEach(item => {
-		item.addEventListener('click', () => {
-			const value = item.dataset.sort as SortOrder;
-			if (value === sortOrder) return;
-			sortOrder = value;
-			updateSortMenuActiveState();
-			renderSidebar();
-		});
+	const sourceSearch = $('hl-source-search') as HTMLInputElement;
+	sourceSearch.addEventListener('input', () => {
+		searchQueryWebsites = sourceSearch.value.toLowerCase().trim();
+		render();
 	});
-	updateSortMenuActiveState();
 
-	const sidebarTitle = document.getElementById('highlights-sidebar-title');
-	sidebarTitle?.addEventListener('click', () => navigate({ type: 'all' }));
+	$('hl-home').addEventListener('click', () => navigate({ type: 'all' }));
+	$('hl-export-btn').addEventListener('click', exportCurrentContext);
+	$('hl-delete-btn').addEventListener('click', deleteCurrentContext);
+	setupReplyFocusHandling();
 
-	const settingsLink = document.getElementById('highlights-settings-link');
-	settingsLink?.addEventListener('click', (e) => e.stopPropagation());
-
-	const navbarTitle = document.getElementById('highlights-navbar-title');
-	navbarTitle?.addEventListener('click', () => navigate({ type: 'all' }));
-
-	// Mobile hamburger
-	const hamburger = document.getElementById('highlights-hamburger');
-	const container = document.getElementById('highlights');
-	if (hamburger && container) {
-		hamburger.addEventListener('click', () => {
-			container.classList.toggle('sidebar-open');
-			hamburger.classList.toggle('is-active');
-		});
-	}
-
-	// Listen for storage changes
 	browser.storage.onChanged.addListener((changes, area) => {
 		if (area === 'local' && anyPageChanged(changes, ['hl', 'va'])) {
-			loadData().then(() => {
-				if (!updateSidebarCounts()) {
-					renderSidebar();
-				}
-				if (!updateMainIncremental()) {
-					renderMain();
-				}
-			});
-		}
-		if (area === 'sync' && changes.reader_settings) {
-			applyReaderTheme().then(() => {
-				reapplyThemeToPageGroups();
-			});
+			loadData().then(render);
 		}
 	});
-
-	// Set up sentinel observer for infinite scroll
-	const sentinel = document.getElementById('highlights-sentinel')!;
-	observer = new IntersectionObserver((entries) => {
-		if (entries[0].isIntersecting) {
-			renderNextBatch();
-		}
-	}, { rootMargin: '200px' });
-	observer.observe(sentinel);
-
-	createIcons({ icons });
 });
 
-// --- Reader theme ---
-
-let highlightThemeClasses: string[] = [];
-let highlightThemeAttr: { name: string; value: string } | null = null;
-
-async function applyReaderTheme() {
-	const data = await browser.storage.sync.get('reader_settings');
-	const settings = data.reader_settings as ReaderSettings | undefined;
-
-	const isDark = settings
-		? settings.appearance === 'dark' || (settings.appearance === 'auto' && window.matchMedia('(prefers-color-scheme: dark)').matches)
-		: window.matchMedia('(prefers-color-scheme: dark)').matches;
-
-	highlightThemeClasses = ['obsidian-reader-active', isDark ? 'theme-dark' : 'theme-light'];
-
-	if (settings) {
-		const effectiveTheme = isDark && settings.darkTheme !== 'same' ? settings.darkTheme : settings.lightTheme;
-		highlightThemeAttr = effectiveTheme && effectiveTheme !== 'default'
-			? { name: 'data-reader-theme', value: effectiveTheme }
-			: null;
-
-		// Font settings apply globally
-		const html = document.documentElement;
-		html.style.setProperty('--font-text-size', `${settings.fontSize}px`);
-		html.style.setProperty('--line-height-normal', settings.lineHeight.toString());
-
-		const fontCss = getFontCss(settings.defaultFont);
-		if (fontCss) {
-			document.body.style.setProperty('--font-text', fontCss);
-		}
-	}
-}
-
-function applyThemeToElement(el: HTMLElement) {
-	el.classList.remove('theme-dark', 'theme-light');
-	el.removeAttribute('data-reader-theme');
-	for (const cls of highlightThemeClasses) {
-		el.classList.add(cls);
-	}
-	if (highlightThemeAttr) {
-		el.setAttribute(highlightThemeAttr.name, highlightThemeAttr.value);
-	}
-}
-
-function reapplyThemeToPageGroups() {
-	const groups = document.querySelectorAll<HTMLElement>('.highlight-page-group');
-	groups.forEach(el => applyThemeToElement(el));
-}
-
-// --- Data loading ---
+// --- Data loading (unchanged pipeline) ---
 
 async function loadData() {
 	const allHighlights = await getAll<StoredData>('hl');
 	const result = await browser.storage.local.get('domains');
 	domainSettingsMap = (result.domains || {}) as Record<string, DomainSettings>;
 
-	// Merge entries that normalize to the same URL
 	const mergedMap = new Map<string, { stored: StoredData; originalKeys: string[] }>();
 	for (const [urlKey, stored] of Object.entries(allHighlights)) {
 		if (!stored.highlights || stored.highlights.length === 0) continue;
 		const normUrl = normalizeUrl(stored.url || urlKey);
 		const existing = mergedMap.get(normUrl);
 		if (existing) {
-			// Merge highlights, keep best title
 			existing.stored.highlights = [...existing.stored.highlights, ...stored.highlights];
 			if (!existing.stored.title && stored.title) existing.stored.title = stored.title;
 			existing.originalKeys.push(urlKey);
@@ -245,7 +135,6 @@ async function loadData() {
 		}
 	}
 
-	// Persist merges if any duplicates were found (one per-page key at a time)
 	for (const [normUrl, { stored, originalKeys }] of mergedMap) {
 		if (originalKeys.length > 1 || originalKeys[0] !== normUrl) {
 			for (const key of originalKeys) {
@@ -256,7 +145,6 @@ async function loadData() {
 	}
 
 	const domainMap = new Map<string, PageGroup[]>();
-
 	for (const [, { stored }] of mergedMap) {
 		let domain: string;
 		let path: string;
@@ -268,11 +156,7 @@ async function loadData() {
 			domain = stored.url;
 			path = '/';
 		}
-
-		if (!domainMap.has(domain)) {
-			domainMap.set(domain, []);
-		}
-
+		if (!domainMap.has(domain)) domainMap.set(domain, []);
 		domainMap.get(domain)!.push({
 			url: stored.url,
 			path,
@@ -281,34 +165,24 @@ async function loadData() {
 		});
 	}
 
-	allDomainGroups = Array.from(domainMap.entries())
-		.map(([domain, pages]) => ({
-			domain,
-			pages: pages.sort((a, b) => a.path.localeCompare(b.path)),
-			totalHighlights: pages.reduce((sum, p) => sum + p.highlights.length, 0),
-		}));
+	allDomainGroups = Array.from(domainMap.entries()).map(([domain, pages]) => ({
+		domain,
+		pages: pages.sort((a, b) => a.path.localeCompare(b.path)),
+		totalHighlights: pages.reduce((sum, p) => sum + p.highlights.length, 0),
+	}));
 
-	// Fold in YouTube video annotations as their own per-video page groups so they
-	// flow through the same sidebar/timeline/render pipeline as web highlights.
 	await mergeVideoIntoGroups();
 
-	// If current nav references something that no longer exists, reset
+	// Reset nav if it points at something no longer present.
 	const nav = currentNav;
-	if (nav.type === 'domain') {
-		if (!allDomainGroups.find(g => g.domain === nav.domain)) {
-			currentNav = { type: 'all' };
-		}
+	if (nav.type === 'domain' && !allDomainGroups.find(g => g.domain === nav.domain)) {
+		currentNav = { type: 'all' };
 	} else if (nav.type === 'page') {
 		const group = allDomainGroups.find(g => g.domain === nav.domain);
-		if (!group || !group.pages.find(p => p.url === nav.url)) {
-			currentNav = { type: 'all' };
-		}
+		if (!group || !group.pages.find(p => p.url === nav.url)) currentNav = { type: 'all' };
 	}
 }
 
-// Load YouTube video annotations and append each video as its own page group
-// (under its domain) so they render through the existing pipeline. Each video
-// item becomes a HighlightEntry carrying the VideoItem for the card renderer.
 async function mergeVideoIntoGroups(): Promise<void> {
 	const all = await loadAllVideoData();
 	const byDomain = new Map<string, PageGroup[]>();
@@ -320,7 +194,8 @@ async function mergeVideoIntoGroups(): Promise<void> {
 			url,
 			data: {
 				type: 'text', id: item.id, xpath: '', startOffset: 0, endOffset: 0,
-				content: '', notes: item.notes, __video: item,
+				content: item.quote || '', notes: item.notes, color: item.color as HLColor | undefined,
+				__video: item,
 			} as unknown as AnyHighlightData,
 		}));
 		const pg: PageGroup = { url, path: '/watch', title: data.title, highlights };
@@ -335,361 +210,49 @@ async function mergeVideoIntoGroups(): Promise<void> {
 	}
 }
 
-// --- Search ---
+// --- Filtering / search / sort ---
 
 function matchesSearch(entry: HighlightEntry): boolean {
 	if (!searchQueryHighlights) return true;
 	const content = entry.data.content?.toLowerCase() || '';
 	const notes = entry.data.notes?.join(' ').toLowerCase() || '';
-	const url = entry.url.toLowerCase();
-	return content.includes(searchQueryHighlights) || notes.includes(searchQueryHighlights) || url.includes(searchQueryHighlights);
+	return content.includes(searchQueryHighlights) || notes.includes(searchQueryHighlights) || entry.url.toLowerCase().includes(searchQueryHighlights);
 }
 
 function getFilteredGroups(): DomainGroup[] {
-	if (!searchQueryWebsites && !searchQueryHighlights) return sortGroups([...allDomainGroups]);
-
-	const filtered: DomainGroup[] = [];
-	for (const group of allDomainGroups) {
-		const normalized = group.domain.replace(/^www\./, '');
-		const siteName = domainSettingsMap[normalized]?.site?.toLowerCase() || '';
-		
-		const domainMatches = !searchQueryWebsites || group.domain.toLowerCase().includes(searchQueryWebsites) || siteName.includes(searchQueryWebsites);
-
-		if (!domainMatches) continue;
-
-		const filteredPages: PageGroup[] = [];
-		for (const page of group.pages) {
-			const titleMatches = !searchQueryHighlights || (page.title?.toLowerCase().includes(searchQueryHighlights) || false);
-
-			if (titleMatches) {
-				filteredPages.push(page);
-			} else {
-				const filteredHighlights = page.highlights.filter(matchesSearch);
-				if (filteredHighlights.length > 0 || !searchQueryHighlights) {
-					filteredPages.push({ ...page, highlights: filteredHighlights.length > 0 ? filteredHighlights : page.highlights });
-				}
-			}
-		}
-		if (filteredPages.length > 0) {
-			filtered.push({
-				...group,
-				pages: filteredPages,
-				totalHighlights: filteredPages.reduce((sum, p) => sum + p.highlights.length, 0),
-			});
-		}
+	let groups: DomainGroup[];
+	if (!searchQueryWebsites) {
+		groups = [...allDomainGroups];
+	} else {
+		groups = allDomainGroups.filter(group => {
+			const normalized = group.domain.replace(/^www\./, '');
+			const siteName = domainSettingsMap[normalized]?.site?.toLowerCase() || '';
+			return group.domain.toLowerCase().includes(searchQueryWebsites) || siteName.includes(searchQueryWebsites);
+		});
 	}
-	return sortGroups(filtered);
+	return sortGroups(groups);
 }
 
 function newestTimestamp(group: DomainGroup): number {
 	let max = 0;
-	for (const page of group.pages) {
-		for (const h of page.highlights) {
-			const t = parseInt(h.data.id) || 0;
-			if (t > max) max = t;
-		}
-	}
+	for (const page of group.pages) for (const h of page.highlights) { const t = parseInt(h.data.id) || 0; if (t > max) max = t; }
 	return max;
 }
-
 function oldestTimestamp(group: DomainGroup): number {
 	let min = Infinity;
-	for (const page of group.pages) {
-		for (const h of page.highlights) {
-			const t = parseInt(h.data.id) || Infinity;
-			if (t < min) min = t;
-		}
-	}
+	for (const page of group.pages) for (const h of page.highlights) { const t = parseInt(h.data.id) || Infinity; if (t < min) min = t; }
 	return min;
 }
-
 function sortGroups(groups: DomainGroup[]): DomainGroup[] {
 	switch (sortOrder) {
-		case 'az':
-			return groups.sort((a, b) => displayDomain(a.domain).localeCompare(displayDomain(b.domain)));
-		case 'za':
-			return groups.sort((a, b) => displayDomain(b.domain).localeCompare(displayDomain(a.domain)));
-		case 'new':
-			return groups.sort((a, b) => newestTimestamp(b) - newestTimestamp(a));
-		case 'old':
-			return groups.sort((a, b) => oldestTimestamp(a) - oldestTimestamp(b));
+		case 'az': return groups.sort((a, b) => displayDomain(a.domain).localeCompare(displayDomain(b.domain)));
+		case 'za': return groups.sort((a, b) => displayDomain(b.domain).localeCompare(displayDomain(a.domain)));
+		case 'new': return groups.sort((a, b) => newestTimestamp(b) - newestTimestamp(a));
+		case 'old': return groups.sort((a, b) => oldestTimestamp(a) - oldestTimestamp(b));
 	}
 }
 
-// --- Sidebar ---
-
-function navigate(nav: NavSelection) {
-	currentNav = nav;
-	updateUrlFromNav();
-	updateSidebarActiveState();
-	renderTagsPanel();
-	renderMain();
-
-	// Close mobile sidebar
-	const container = document.getElementById('highlights');
-	const hamburger = document.getElementById('highlights-hamburger');
-	container?.classList.remove('sidebar-open');
-	hamburger?.classList.remove('is-active');
-}
-
-function updateSortMenuActiveState() {
-	const menu = document.getElementById('highlights-sort-menu');
-	if (!menu) return;
-	menu.querySelectorAll<HTMLElement>('.menu-item[data-sort]').forEach(item => {
-		item.classList.toggle('is-active', item.dataset.sort === sortOrder);
-	});
-}
-
-function updateSidebarActiveState() {
-	const domainListEl = document.getElementById('highlights-domain-list')!;
-	domainListEl.querySelectorAll('.nav-domain').forEach(li => {
-		const domain = li.getAttribute('data-domain');
-		li.classList.toggle('active', currentNav.type === 'domain' && currentNav.domain === domain);
-	});
-	domainListEl.querySelectorAll('.nav-page').forEach(li => {
-		const url = li.getAttribute('data-url');
-		li.classList.toggle('active', currentNav.type === 'page' && (currentNav as { url: string }).url === url);
-	});
-}
-
-function updateUrlFromNav() {
-	const params = new URLSearchParams();
-	if (currentNav.type === 'domain') {
-		params.set('domain', currentNav.domain);
-	} else if (currentNav.type === 'page') {
-		params.set('domain', currentNav.domain);
-		params.set('url', currentNav.url);
-	}
-	const search = params.toString();
-	const newUrl = window.location.pathname + (search ? '?' + search : '');
-	window.history.replaceState({}, '', newUrl);
-}
-
-function readNavFromUrl(): NavSelection {
-	const params = new URLSearchParams(window.location.search);
-	const domain = params.get('domain')?.replace(/^www\./, '');
-	const url = params.get('url');
-	if (url && domain) {
-		return { type: 'page', domain, url };
-	} else if (domain) {
-		return { type: 'domain', domain };
-	}
-	return { type: 'all' };
-}
-
-function createPageSubItems(group: DomainGroup): HTMLElement[] {
-	const items: HTMLElement[] = [];
-	for (const page of group.pages) {
-		const isPageActive = currentNav.type === 'page'
-			&& (currentNav as { domain: string; url: string }).domain === group.domain
-			&& (currentNav as { url: string }).url === page.url;
-
-		const pageLi = document.createElement('li');
-		pageLi.className = 'nav-page' + (isPageActive ? ' active' : '');
-		pageLi.setAttribute('data-url', page.url);
-
-		const pageName = document.createElement('span');
-		pageName.className = 'nav-page-name';
-		pageName.textContent = page.title || displayPath(page.path);
-		pageName.title = page.url;
-		pageLi.appendChild(pageName);
-
-		const pageCount = document.createElement('span');
-		pageCount.className = 'nav-count';
-		pageCount.textContent = String(page.highlights.length);
-		pageLi.appendChild(pageCount);
-
-		pageLi.addEventListener('click', (e) => {
-			if (e.ctrlKey || e.metaKey) {
-				e.preventDefault();
-				window.open(page.url, '_blank');
-				return;
-			}
-			e.stopPropagation();
-			navigate({ type: 'page', domain: group.domain, url: page.url });
-		});
-
-		items.push(pageLi);
-	}
-	return items;
-}
-
-// Update sidebar counts in-place without a full rebuild.
-// Returns true if successful, false if a full renderSidebar() is needed.
-function updateSidebarCounts(): boolean {
-	const domainListEl = document.getElementById('highlights-domain-list')!;
-	const filtered = getFilteredGroups();
-	const groupMap = new Map<string, DomainGroup>();
-	const pageCountMap = new Map<string, number>();
-	for (const g of filtered) {
-		groupMap.set(g.domain, g);
-		for (const p of g.pages) pageCountMap.set(p.url, p.highlights.length);
-	}
-
-	// Check that rendered domains match filtered domains
-	const domainItems = Array.from(domainListEl.querySelectorAll<HTMLElement>('.nav-domain'));
-	if (domainItems.length !== filtered.length) return false;
-	for (const group of filtered) {
-		const cached = sidebarNodeCache.get(group.domain);
-		if (!cached) return false;
-		cached.countEl.textContent = String(group.totalHighlights);
-	}
-
-	// Page sub-items aren't cached, so query the DOM
-	const pageItems = Array.from(domainListEl.querySelectorAll<HTMLElement>('.nav-page'));
-	for (let i = 0; i < pageItems.length; i++) {
-		const count = pageCountMap.get(pageItems[i].getAttribute('data-url')!);
-		if (count !== undefined) {
-			const countEl = pageItems[i].querySelector('.nav-count');
-			if (countEl) countEl.textContent = String(count);
-		}
-	}
-
-	return true;
-}
-
-interface CachedDomainNode {
-	li: HTMLElement;
-	countEl: Element;
-	chevronWrap: Element;
-}
-const sidebarNodeCache = new Map<string, CachedDomainNode>();
-
-function renderSidebar() {
-	const domainListEl = document.getElementById('highlights-domain-list')!;
-	const filtered = getFilteredGroups();
-
-	// Detach children without destroying cached nodes
-	domainListEl.replaceChildren();
-
-	// Prune cache entries for domains no longer in data
-	const activeDomains = new Set(allDomainGroups.map(g => g.domain));
-	for (const domain of sidebarNodeCache.keys()) {
-		if (!activeDomains.has(domain)) sidebarNodeCache.delete(domain);
-	}
-
-	let needsIcons = false;
-
-	for (const group of filtered) {
-		let cached = sidebarNodeCache.get(group.domain);
-		if (!cached) {
-			cached = createDomainNode(group.domain);
-			sidebarNodeCache.set(group.domain, cached);
-			needsIcons = true;
-		}
-
-		const isDomainActive = currentNav.type === 'domain' && currentNav.domain === group.domain;
-		cached.li.classList.toggle('active', isDomainActive);
-		cached.countEl.textContent = String(group.totalHighlights);
-
-		domainListEl.appendChild(cached.li);
-	}
-
-	if (needsIcons) createIcons({ icons });
-
-	renderTagsPanel();
-}
-
-function createDomainNode(domain: string): CachedDomainNode {
-	const li = document.createElement('li');
-	li.className = 'nav-domain';
-	li.setAttribute('data-domain', domain);
-
-	// Sidebar is a flat sources list — no chevron trees. Clicking a source filters
-	// the main pane; its pages appear there as section headers, not in the sidebar.
-	// (chevronWrap kept off-DOM only to satisfy the cache shape.)
-	const chevronWrap = document.createElement('div');
-	chevronWrap.className = 'nav-chevron-wrap';
-
-	const normalized = domain.replace(/^www\./, '');
-	const domainSettings = domainSettingsMap[normalized];
-	const siteName = domainSettings?.site;
-
-	if (domainSettings?.favicon) {
-		let favicon = faviconCache.get(normalized);
-		if (!favicon) {
-			favicon = document.createElement('img');
-			favicon.className = 'nav-domain-favicon';
-			favicon.src = domainSettings.favicon;
-			favicon.width = 16;
-			favicon.height = 16;
-			favicon.onerror = () => {
-				const globe = document.createElement('i');
-				globe.className = 'nav-domain-favicon';
-				globe.setAttribute('data-lucide', 'globe');
-				favicon!.replaceWith(globe);
-				createIcons({ icons });
-			};
-			faviconCache.set(normalized, favicon);
-		}
-		li.appendChild(favicon.cloneNode(true));
-	} else {
-		const globe = document.createElement('i');
-		globe.className = 'nav-domain-favicon';
-		globe.setAttribute('data-lucide', 'globe');
-		li.appendChild(globe);
-	}
-
-	const name = document.createElement('span');
-	name.className = 'nav-domain-name';
-	name.textContent = siteName || displayDomain(domain);
-	if (siteName) name.title = displayDomain(domain);
-	li.appendChild(name);
-
-	const count = document.createElement('span');
-	count.className = 'nav-count';
-	li.appendChild(count);
-
-	li.addEventListener('click', (e) => {
-		if (e.ctrlKey || e.metaKey) {
-			e.preventDefault();
-			window.open(`https://${domain}`, '_blank');
-			return;
-		}
-		// Always filter the main pane to this source.
-		navigate({ type: 'domain', domain });
-	});
-
-	return { li, countEl: count, chevronWrap };
-}
-
-function toggleDomainExpand(domain: string) {
-	const cached = sidebarNodeCache.get(domain);
-	if (!cached) return;
-	const { li, chevronWrap } = cached;
-	if (expandedSidebarDomains.has(domain)) {
-		expandedSidebarDomains.delete(domain);
-		chevronWrap.classList.remove('is-expanded');
-		let next = li.nextElementSibling;
-		while (next && next.classList.contains('nav-page')) {
-			const toRemove = next;
-			next = next.nextElementSibling;
-			toRemove.remove();
-		}
-	} else {
-		expandedSidebarDomains.add(domain);
-		chevronWrap.classList.add('is-expanded');
-		const group = getFilteredGroups().find(g => g.domain === domain);
-		if (group) {
-			let insertAfter: Element = li;
-			for (const pageLi of createPageSubItems(group)) {
-				insertAfter.after(pageLi);
-				insertAfter = pageLi;
-			}
-			createIcons({ icons });
-		}
-	}
-}
-
-// --- Tag & color filters (sidebar tags panel) ---
-// Tags come from #tag tokens in comment text; nesting via slashes
-// (#question/important). Clicking a tag or color swatch in the panel filters
-// the main pane ON TOP of the current nav/search filters. A parent tag matches
-// all its descendants.
-
-type HLColor = 'yellow' | 'red' | 'green';
-let activeTagFilter: string | null = null;
-let activeColorFilter: HLColor | null = null;
+// --- Tags (#tag/subtag tokens in comment notes; nested via slashes) ---
 
 const NOTE_TAG_RE = /(^|\s)#([A-Za-z0-9_-]+(?:\/[A-Za-z0-9_-]+)*)/g;
 
@@ -705,126 +268,23 @@ function tagsOfNotes(notes?: string[]): string[] {
 	return out;
 }
 
-function unitMatchesTagFilters(unit: RenderUnit): boolean {
-	if (activeColorFilter) {
-		const hasColor = unit.entries.some(e =>
-			!(e.data as VideoCarrier).__video && ((e.data.color as HLColor) || 'yellow') === activeColorFilter);
-		if (!hasColor) return false;
-	}
-	if (activeTagFilter) {
-		const tags = unit.entries.flatMap(e => tagsOfNotes(e.data.notes));
-		const ok = tags.some(t => t === activeTagFilter || t.startsWith(activeTagFilter + '/'));
-		if (!ok) return false;
-	}
-	return true;
+function unitMatchesTagFilter(unit: RenderUnit): boolean {
+	if (!activeTagFilter) return true;
+	const tags = unit.entries.flatMap(e => tagsOfNotes(e.data.notes));
+	return tags.some(t => t === activeTagFilter || t.startsWith(activeTagFilter + '/'));
 }
 
-// The render units for the main pane: nav + search scope, then tag/color.
-function getVisibleUnits(): RenderUnit[] {
-	const units = collapseGroupsForRender(getVisibleEntries());
-	if (!activeTagFilter && !activeColorFilter) return units;
-	return units.filter(unitMatchesTagFilters);
-}
+// --- Render units ---
 
-function renderTagsPanel() {
-	const colorList = document.getElementById('highlights-color-list');
-	const tagList = document.getElementById('highlights-tag-list');
-	if (!colorList || !tagList) return;
-
-	// Scope counts to the current nav + search (NOT the tag/color filters
-	// themselves, so the panel always lists everything selectable).
-	const units = collapseGroupsForRender(getVisibleEntries());
-
-	// Color rows
-	const colorCounts: Record<HLColor, number> = { yellow: 0, red: 0, green: 0 };
-	for (const u of units) {
-		const seen = new Set<HLColor>();
-		for (const e of u.entries) {
-			if ((e.data as VideoCarrier).__video) continue;
-			seen.add(((e.data.color as HLColor) || 'yellow'));
-		}
-		seen.forEach(c => { if (colorCounts[c] !== undefined) colorCounts[c]++; });
-	}
-	colorList.replaceChildren();
-	(['yellow', 'red', 'green'] as HLColor[]).forEach(color => {
-		const li = document.createElement('li');
-		li.className = 'nav-tag nav-color';
-		li.classList.toggle('active', activeColorFilter === color);
-		const dot = document.createElement('span');
-		dot.className = `tag-color-dot color-${color}`;
-		const name = document.createElement('span');
-		name.className = 'nav-tag-name';
-		name.textContent = color.charAt(0).toUpperCase() + color.slice(1);
-		const count = document.createElement('span');
-		count.className = 'nav-count';
-		count.textContent = String(colorCounts[color]);
-		li.append(dot, name, count);
-		li.addEventListener('click', () => {
-			activeColorFilter = activeColorFilter === color ? null : color;
-			renderTagsPanel();
-			renderMain();
-		});
-		colorList.appendChild(li);
-	});
-
-	// Nested tag tree. Each unit contributes once to every ancestor path of its
-	// tags, so #question/important counts under both "question" and
-	// "question/important". Alphabetical sort yields parent-before-child order.
-	const counts = new Map<string, number>();
-	for (const u of units) {
-		const paths = new Set<string>();
-		for (const t of new Set(u.entries.flatMap(e => tagsOfNotes(e.data.notes)))) {
-			let path = '';
-			for (const part of t.split('/')) {
-				path = path ? `${path}/${part}` : part;
-				paths.add(path);
-			}
-		}
-		for (const p of paths) counts.set(p, (counts.get(p) || 0) + 1);
-	}
-	tagList.replaceChildren();
-	for (const path of [...counts.keys()].sort()) {
-		const depth = path.split('/').length - 1;
-		const li = document.createElement('li');
-		li.className = 'nav-tag';
-		li.style.paddingInlineStart = `${10 + depth * 14}px`;
-		li.classList.toggle('active', activeTagFilter === path);
-		li.title = '#' + path;
-		const name = document.createElement('span');
-		name.className = 'nav-tag-name';
-		name.textContent = '#' + (depth ? path.slice(path.lastIndexOf('/') + 1) : path);
-		const count = document.createElement('span');
-		count.className = 'nav-count';
-		count.textContent = String(counts.get(path));
-		li.append(name, count);
-		li.addEventListener('click', () => {
-			activeTagFilter = activeTagFilter === path ? null : path;
-			renderTagsPanel();
-			renderMain();
-		});
-		tagList.appendChild(li);
-	}
-}
-
-// --- Main content ---
-
-// Collapse group members (from a multi-block selection) into a single render
-// unit so the highlights page shows them as one card. Preserves order and
-// groups across the page the selection originated in.
-function collapseGroupsForRender(
-	entries: { entry: HighlightEntry; pageUrl: string; domain: string; title?: string }[]
-): RenderUnit[] {
+function collapseGroupsForRender(entries: { entry: HighlightEntry; pageUrl: string; domain: string; title?: string }[]): RenderUnit[] {
 	const units: RenderUnit[] = [];
-	const byKey = new Map<string, RenderUnit>(); // pageUrl::groupId → unit
+	const byKey = new Map<string, RenderUnit>();
 	for (const e of entries) {
 		const gid = e.entry.data.groupId;
 		if (gid) {
 			const key = `${e.pageUrl}::${gid}`;
 			const existing = byKey.get(key);
-			if (existing) {
-				existing.entries.push(e.entry);
-				continue;
-			}
+			if (existing) { existing.entries.push(e.entry); continue; }
 			const unit: RenderUnit = { entries: [e.entry], pageUrl: e.pageUrl, domain: e.domain, title: e.title };
 			byKey.set(key, unit);
 			units.push(unit);
@@ -835,789 +295,615 @@ function collapseGroupsForRender(
 	return units;
 }
 
-function getVisibleEntries(): { entry: HighlightEntry; pageUrl: string; domain: string; title?: string }[] {
-	const filtered = getFilteredGroups();
-	const nav = currentNav;
-	const entries: { entry: HighlightEntry; pageUrl: string; domain: string; title?: string }[] = [];
+// Units for one page, in stored order, after search + tag filters.
+function unitsForPage(page: PageGroup, domain: string): RenderUnit[] {
+	const entries = page.highlights
+		.filter(matchesSearch)
+		.map(h => ({ entry: h, pageUrl: page.url, domain, title: page.title }));
+	return collapseGroupsForRender(entries).filter(unitMatchesTagFilter);
+}
 
-	for (const group of filtered) {
-		if (nav.type === 'domain' && nav.domain !== group.domain) continue;
-		if (nav.type === 'page' && nav.domain !== group.domain) continue;
-
+// Pages visible in the main pane for the current nav (+ their filtered unit counts).
+function visiblePages(): { page: PageGroup; domain: string; units: RenderUnit[] }[] {
+	const out: { page: PageGroup; domain: string; units: RenderUnit[] }[] = [];
+	for (const group of getFilteredGroups()) {
+		if (currentNav.type === 'domain' && currentNav.domain !== group.domain) continue;
+		if (currentNav.type === 'page' && currentNav.domain !== group.domain) continue;
 		for (const page of group.pages) {
-			if (nav.type === 'page' && nav.url !== page.url) continue;
+			if (currentNav.type === 'page' && currentNav.url !== page.url) continue;
+			const units = unitsForPage(page, group.domain);
+			if (units.length === 0 && (searchQueryHighlights || activeTagFilter)) continue;
+			out.push({ page, domain: group.domain, units });
+		}
+	}
+	// Newest page first
+	out.sort((a, b) => pageNewest(b.page) - pageNewest(a.page));
+	return out;
+}
 
-			for (const highlight of page.highlights) {
-				entries.push({ entry: highlight, pageUrl: page.url, domain: group.domain, title: page.title });
+function pageNewest(page: PageGroup): number {
+	let max = 0;
+	for (const h of page.highlights) { const t = parseInt(h.data.id) || 0; if (t > max) max = t; }
+	return max;
+}
+
+// --- Navigation ---
+
+function navigate(nav: NavSelection) {
+	currentNav = nav;
+	if (nav.type === 'domain' || nav.type === 'page') expandedSidebarDomains.add(nav.domain);
+	if (nav.type === 'page') expandedPages.add(nav.url);
+	updateUrlFromNav();
+	render();
+}
+
+function updateUrlFromNav() {
+	const params = new URLSearchParams();
+	if (currentNav.type === 'domain') params.set('domain', currentNav.domain);
+	else if (currentNav.type === 'page') { params.set('domain', currentNav.domain); params.set('url', currentNav.url); }
+	const search = params.toString();
+	window.history.replaceState({}, '', window.location.pathname + (search ? '?' + search : ''));
+}
+
+function readNavFromUrl(): NavSelection {
+	const params = new URLSearchParams(window.location.search);
+	const domain = params.get('domain')?.replace(/^www\./, '');
+	const url = params.get('url');
+	if (url && domain) return { type: 'page', domain, url };
+	if (domain) return { type: 'domain', domain };
+	return { type: 'all' };
+}
+
+// --- Top-level render ---
+
+function render() {
+	renderSidebar();
+	renderTags();
+	renderHeader();
+	renderContent();
+}
+
+// --- Sidebar: sources (domain -> pages) ---
+
+function renderSidebar() {
+	const total = allDomainGroups.reduce((s, g) => s + g.totalHighlights, 0);
+	$('hl-annotation-count').textContent = `${total.toLocaleString()} Annotation${total === 1 ? '' : 's'}`;
+
+	const listEl = $('hl-source-list');
+	listEl.replaceChildren();
+
+	for (const group of getFilteredGroups()) {
+		const isActive = (currentNav.type === 'domain' || currentNav.type === 'page') && currentNav.domain === group.domain;
+		const expanded = expandedSidebarDomains.has(group.domain);
+
+		const wrap = el('div', 'group');
+		const row = el('a', 'flex items-center gap-md px-sm py-[6px] rounded-lg font-label-caps text-label-caps transition-colors cursor-pointer');
+		if (isActive) {
+			row.classList.add('font-bold');
+			row.style.backgroundColor = ACCENT;
+			row.style.color = '#fff';
+		} else {
+			row.classList.add('text-on-surface-variant', 'hover:bg-surface-container-high', 'hover:text-primary');
+		}
+
+		row.appendChild(faviconEl(group.domain, 'w-4 h-4' + (isActive ? ' brightness-0 invert' : '')));
+		const name = el('span', 'flex-1', siteNameOrDomain(group.domain));
+		row.appendChild(name);
+		row.appendChild(el('span', 'text-[10px]' + (isActive ? '' : ' opacity-70'), String(group.totalHighlights)));
+		row.appendChild(icon(expanded ? 'expand_more' : 'chevron_right', 'text-sm ml-xs' + (isActive || expanded ? '' : ' opacity-0 group-hover:opacity-100')));
+
+		row.addEventListener('click', (e) => {
+			if (e.ctrlKey || e.metaKey) { e.preventDefault(); window.open(`https://${group.domain}`, '_blank'); return; }
+			if (expandedSidebarDomains.has(group.domain) && currentNav.type !== 'domain') {
+				// already open, second click collapses
+				expandedSidebarDomains.delete(group.domain);
+			} else {
+				expandedSidebarDomains.add(group.domain);
 			}
-		}
-	}
-
-	// Page groups newest first; within-page order preserved (stable sort)
-	const pageNewest = new Map<string, number>();
-	for (const e of entries) {
-		const t = parseInt(e.entry.data.id) || 0;
-		pageNewest.set(e.pageUrl, Math.max(pageNewest.get(e.pageUrl) || 0, t));
-	}
-	entries.sort((a, b) => {
-		if (a.pageUrl === b.pageUrl) return 0;
-		return (pageNewest.get(b.pageUrl) || 0) - (pageNewest.get(a.pageUrl) || 0);
-	});
-
-	return entries;
-}
-
-// Patch the main content in-place instead of tearing down and rebuilding.
-// Returns true if the incremental update succeeded, false to fall back to renderMain().
-function updateMainIncremental(): boolean {
-	const listEl = document.getElementById('highlights-list')!;
-	const newFlatEntries = getVisibleUnits();
-
-	const oldKeys = new Set<string>();
-	for (let i = 0; i < renderedCount; i++) {
-		oldKeys.add(unitKey(flatEntries[i].entries));
-	}
-
-	// Compute keys once for new entries, then derive added/removed
-	const newKeyList: string[] = [];
-	const newKeySet = new Set<string>();
-	for (const unit of newFlatEntries) {
-		const key = unitKey(unit.entries);
-		newKeyList.push(key);
-		newKeySet.add(key);
-	}
-
-	const addedKeySet = new Set<string>();
-	const added: RenderUnit[] = [];
-	for (let i = 0; i < newFlatEntries.length; i++) {
-		if (!oldKeys.has(newKeyList[i])) {
-			addedKeySet.add(newKeyList[i]);
-			added.push(newFlatEntries[i]);
-		}
-	}
-	const removedKeys: string[] = [];
-	for (const key of oldKeys) {
-		if (!newKeySet.has(key)) removedKeys.push(key);
-	}
-
-	if (added.length === 0 && removedKeys.length === 0) {
-		flatEntries = newFlatEntries;
-		return true;
-	}
-
-	for (const key of removedKeys) {
-		const el = listEl.querySelector<HTMLElement>(`.highlight-item[data-unit-key="${CSS.escape(key)}"]`);
-		if (!el) return false;
-		const group = el.closest<HTMLElement>('.highlight-page-group');
-		el.remove();
-		if (group && !group.querySelector('.highlight-item')) {
-			group.remove();
-		}
-	}
-
-	// Insert new highlights in correct DOM-position order
-	const pagesWithAdds = new Set(added.map(u => u.pageUrl));
-
-	for (const pageUrl of pagesWithAdds) {
-		let group = listEl.querySelector<HTMLElement>(`.highlight-page-group[data-page-url="${CSS.escape(pageUrl)}"]`);
-		if (!group) {
-			const sample = added.find(u => u.pageUrl === pageUrl)!;
-			group = createPageGroupWrapper(pageUrl);
-			const header = createPageHeader(pageUrl, sample.domain, sample.title);
-			group.appendChild(header);
-			listEl.insertBefore(group, listEl.firstChild);
-		}
-
-		// Walk desired order and insert before the next existing sibling
-		const pageUnits = newFlatEntries.filter(u => u.pageUrl === pageUrl);
-		for (let i = 0; i < pageUnits.length; i++) {
-			const key = unitKey(pageUnits[i].entries);
-			if (!addedKeySet.has(key)) continue;
-
-			let refEl: HTMLElement | null = null;
-			for (let j = i + 1; j < pageUnits.length; j++) {
-				const sibKey = unitKey(pageUnits[j].entries);
-				if (!addedKeySet.has(sibKey)) {
-					refEl = group.querySelector<HTMLElement>(`.highlight-item[data-unit-key="${CSS.escape(sibKey)}"]`);
-					if (refEl) break;
-				}
-			}
-
-			const card = createHighlightItem(pageUnits[i].entries, pageUrl);
-			group.insertBefore(card, refEl);
-		}
-	}
-
-	flatEntries = newFlatEntries;
-	renderedCount = Math.min(renderedCount + added.length - removedKeys.length, flatEntries.length);
-	if (renderedCount < 0) renderedCount = 0;
-
-	createIcons({ icons });
-	return true;
-}
-
-function renderMain() {
-	const listEl = document.getElementById('highlights-list')!;
-	const emptyEl = document.getElementById('highlights-empty')!;
-	const deleteBtn = document.getElementById('delete-context-btn')!;
-	const exportBtn = document.getElementById('export-context-btn')!;
-
-	listEl.textContent = '';
-	renderedCount = 0;
-	currentPageGroup = null;
-
-	flatEntries = getVisibleUnits();
-
-	// Breadcrumb
-	renderBreadcrumb();
-
-	// Delete button label
-	updateDeleteButton();
-
-	if (flatEntries.length === 0) {
-		emptyEl.style.display = '';
-		const noData = allDomainGroups.length === 0;
-		deleteBtn.style.display = noData ? 'none' : '';
-		exportBtn.style.display = noData ? 'none' : '';
-		return;
-	}
-
-	emptyEl.style.display = 'none';
-	deleteBtn.style.display = '';
-	exportBtn.style.display = '';
-
-	// Show page in same format as multi-page view
-	const nav = currentNav;
-	if (nav.type === 'page') {
-		const pageGroup = allDomainGroups
-			.find(g => g.domain === nav.domain)?.pages
-			.find(p => p.url === nav.url);
-
-		currentPageGroup = createPageGroupWrapper(nav.url);
-		listEl.appendChild(currentPageGroup);
-		const pageHeader = createPageHeader(nav.url, nav.domain, pageGroup?.title);
-		currentPageGroup.appendChild(pageHeader);
-
-		renderNextBatch();
-		createIcons({ icons });
-		return;
-	}
-
-	renderNextBatch();
-}
-
-function createPageGroupWrapper(pageUrl: string): HTMLElement {
-	const wrapper = document.createElement('div');
-	wrapper.className = 'highlight-page-group';
-	wrapper.setAttribute('data-page-url', pageUrl);
-	applyThemeToElement(wrapper);
-	return wrapper;
-}
-
-function renderNextBatch() {
-	const listEl = document.getElementById('highlights-list')!;
-	const end = Math.min(renderedCount + BATCH_SIZE, flatEntries.length);
-
-	if (renderedCount >= flatEntries.length) return;
-
-	// Track which page group we're in to insert page headers
-	let lastPageUrl = renderedCount > 0 ? flatEntries[renderedCount - 1].pageUrl : null;
-
-	// For single-page view, ensure we have a group wrapper
-	if (currentNav.type === 'page' && !currentPageGroup) {
-		const url = flatEntries[renderedCount]?.pageUrl || '';
-		currentPageGroup = createPageGroupWrapper(url);
-		listEl.appendChild(currentPageGroup);
-	}
-
-	for (let i = renderedCount; i < end; i++) {
-		const unit = flatEntries[i];
-		const { entries, pageUrl, domain, title } = unit;
-
-		// Insert a page header when the URL changes (in all/domain views)
-		if (currentNav.type !== 'page' && pageUrl !== lastPageUrl) {
-			currentPageGroup = createPageGroupWrapper(pageUrl);
-			listEl.appendChild(currentPageGroup);
-			const pageHeader = createPageHeader(pageUrl, domain, title);
-			currentPageGroup.appendChild(pageHeader);
-			lastPageUrl = pageUrl;
-		}
-
-		(currentPageGroup || listEl).appendChild(createHighlightItem(entries, pageUrl));
-	}
-
-	renderedCount = end;
-	createIcons({ icons });
-}
-
-function renderBreadcrumb() {
-	const breadcrumbEl = document.getElementById('highlights-breadcrumb')!;
-	breadcrumbEl.textContent = '';
-	const nav = currentNav;
-
-	if (nav.type === 'all') {
-		const span = document.createElement('span');
-		span.className = 'breadcrumb-current';
-		span.textContent = getMessage('allHighlights');
-		breadcrumbEl.appendChild(span);
-		return;
-	}
-
-	// "All" link
-	const allLink = document.createElement('a');
-	allLink.className = 'breadcrumb-link';
-	allLink.href = '#';
-	allLink.textContent = getMessage('allHighlights');
-	allLink.addEventListener('click', (e) => {
-		e.preventDefault();
-		navigate({ type: 'all' });
-	});
-	breadcrumbEl.appendChild(allLink);
-
-	breadcrumbEl.appendChild(createBreadcrumbSeparator());
-
-	if (nav.type === 'domain') {
-		const span = document.createElement('span');
-		span.className = 'breadcrumb-current';
-		span.textContent = siteNameOrDomain(nav.domain);
-		breadcrumbEl.appendChild(span);
-	} else if (nav.type === 'page') {
-		const domainSpan = document.createElement('span');
-		domainSpan.className = 'breadcrumb-current';
-		domainSpan.textContent = siteNameOrDomain(nav.domain);
-		domainSpan.style.cursor = 'pointer';
-		domainSpan.addEventListener('click', () => {
-			navigate({ type: 'domain', domain: nav.domain });
+			navigate({ type: 'domain', domain: group.domain });
 		});
-		breadcrumbEl.appendChild(domainSpan);
+		wrap.appendChild(row);
+
+		if (expanded) {
+			const nested = el('div', 'ml-md mt-xs space-y-xs border-l border-outline-variant/10 pl-sm');
+			for (const page of group.pages) {
+				const pageActive = currentNav.type === 'page' && currentNav.url === page.url;
+				const pl = el('a', 'flex items-center gap-sm px-sm py-[4px] rounded-lg transition-colors font-label-caps text-[11px] cursor-pointer');
+				if (pageActive) { pl.classList.add('font-bold'); pl.style.color = ACCENT; }
+				else pl.classList.add('text-on-surface-variant', 'hover:bg-surface-container-high', 'hover:text-primary');
+				pl.appendChild(icon('description', 'text-[14px]'));
+				pl.appendChild(el('span', 'flex-1 truncate', page.title || displayPath(page.path)));
+				pl.title = page.url;
+				pl.addEventListener('click', (e) => {
+					e.stopPropagation();
+					if (e.ctrlKey || e.metaKey) { e.preventDefault(); window.open(page.url, '_blank'); return; }
+					navigate({ type: 'page', domain: group.domain, url: page.url });
+				});
+				nested.appendChild(pl);
+			}
+			wrap.appendChild(nested);
+		}
+
+		listEl.appendChild(wrap);
 	}
 }
 
-function createBreadcrumbSeparator(): HTMLElement {
-	const sep = document.createElement('span');
-	sep.className = 'breadcrumb-separator';
-	sep.textContent = '/';
-	return sep;
+// --- Sidebar: tags (nested parent/child) ---
+
+function renderTags() {
+	const panel = $('hl-tags-panel');
+	const listEl = $('hl-tag-list');
+	listEl.replaceChildren();
+
+	// Count tags across everything currently in scope (nav + search), scoped
+	// like the main pane but ignoring the active tag filter.
+	const savedFilter = activeTagFilter;
+	activeTagFilter = null;
+	const units = visiblePages().flatMap(p => p.units);
+	activeTagFilter = savedFilter;
+
+	const counts = new Map<string, number>();
+	for (const u of units) {
+		const paths = new Set<string>();
+		for (const t of new Set(u.entries.flatMap(e => tagsOfNotes(e.data.notes)))) {
+			let path = '';
+			for (const part of t.split('/')) { path = path ? `${path}/${part}` : part; paths.add(path); }
+		}
+		for (const p of paths) counts.set(p, (counts.get(p) || 0) + 1);
+	}
+
+	panel.style.display = counts.size ? '' : 'none';
+
+	for (const path of [...counts.keys()].sort()) {
+		const depth = path.split('/').length - 1;
+		const active = activeTagFilter === path;
+		const row = el('a', 'flex items-center gap-md px-sm py-[6px] rounded-lg transition-colors font-label-caps text-label-caps cursor-pointer');
+		if (active) { row.classList.add('font-bold'); row.style.color = ACCENT; }
+		else row.classList.add('text-on-surface-variant', 'hover:bg-surface-container-high', 'hover:text-primary');
+		if (depth) row.style.paddingInlineStart = `${8 + depth * 16}px`;
+		row.appendChild(icon('tag', 'text-[14px]'));
+		row.appendChild(el('span', 'flex-1', depth ? path.slice(path.lastIndexOf('/') + 1) : path));
+		row.appendChild(el('span', 'text-[10px] opacity-70', String(counts.get(path))));
+		row.addEventListener('click', () => {
+			activeTagFilter = activeTagFilter === path ? null : path;
+			render();
+		});
+		listEl.appendChild(row);
+	}
 }
 
-function updateDeleteButton() {
-	const deleteBtn = document.getElementById('delete-context-btn')!;
+// --- Header: breadcrumb + title ---
 
-	deleteBtn.textContent = getMessage('delete');
+function renderHeader() {
+	const crumb = $('hl-breadcrumb');
+	crumb.replaceChildren();
+	const nav = currentNav;
+
+	const allLink = el('span', 'hover:text-on-surface cursor-pointer transition-colors', 'All sources');
+	allLink.addEventListener('click', () => navigate({ type: 'all' }));
+	crumb.appendChild(allLink);
+
+	if (nav.type === 'all') return;
+
+	crumb.appendChild(icon('chevron_right', 'text-[14px]'));
+	const domainCrumb = el('span', 'flex items-center gap-xs cursor-pointer');
+	domainCrumb.style.color = ACCENT;
+	domainCrumb.appendChild(icon('description', 'text-[14px]'));
+	domainCrumb.appendChild(el('span', '', siteNameOrDomain(nav.domain)));
+	domainCrumb.addEventListener('click', () => navigate({ type: 'domain', domain: nav.domain }));
+	crumb.appendChild(domainCrumb);
+
+	if (nav.type === 'page') {
+		const page = pageForNav();
+		crumb.appendChild(icon('chevron_right', 'text-[14px]'));
+		crumb.appendChild(el('span', 'text-on-surface', page?.title || displayPath(page?.path || '')));
+	}
+}
+
+function pageForNav(): PageGroup | undefined {
+	const nav = currentNav;
+	if (nav.type !== 'page') return undefined;
+	return allDomainGroups.find(g => g.domain === nav.domain)?.pages.find(p => p.url === nav.url);
+}
+
+// --- Content: collapsible page items with annotation cards ---
+
+function renderContent() {
+	const contentEl = $('hl-content');
+	const emptyEl = $('hl-empty');
+	contentEl.replaceChildren();
+
+	const pages = visiblePages();
+	if (pages.length === 0) {
+		emptyEl.style.display = '';
+		contentEl.style.display = 'none';
+		return;
+	}
+	emptyEl.style.display = 'none';
+	contentEl.style.display = '';
+
+	for (const { page, domain, units } of pages) {
+		contentEl.appendChild(createPageItem(page, domain, units));
+	}
+}
+
+function createPageItem(page: PageGroup, domain: string, units: RenderUnit[]): HTMLElement {
+	const expanded = expandedPages.has(page.url) || currentNav.type === 'page';
+	const count = units.reduce((s, u) => s + u.entries.length, 0);
+	const latest = pageNewest(page);
+
+	if (!expanded) {
+		const card = el('div', 'border border-outline-variant/20 rounded-xl bg-surface-container-lowest p-md hover:border-outline-variant/50 transition-colors cursor-pointer flex justify-between items-center');
+		const left = el('div', 'flex items-center gap-md');
+		const iconBox = el('div', 'w-10 h-10 bg-surface-container-highest rounded-lg flex items-center justify-center border border-outline-variant/10');
+		iconBox.appendChild(faviconEl(domain, 'w-5 h-5'));
+		left.appendChild(iconBox);
+		const meta = el('div');
+		meta.appendChild(el('h3', 'font-body-main text-body-main text-on-surface font-semibold', page.title || displayPath(page.path)));
+		const sub = latest ? `${count} Annotation${count === 1 ? '' : 's'} • ${dayjs(latest).fromNow()}` : `${count} Annotation${count === 1 ? '' : 's'}`;
+		meta.appendChild(el('p', 'font-label-caps text-label-caps text-on-surface-variant mt-xs', sub));
+		left.appendChild(meta);
+		card.appendChild(left);
+		card.appendChild(icon('chevron_right', 'text-on-surface-variant'));
+		card.addEventListener('click', () => { expandedPages.add(page.url); renderContent(); });
+		return card;
+	}
+
+	// Expanded
+	const card = el('div', 'border border-outline-variant/20 rounded-xl bg-surface-container-lowest p-md');
+	const header = el('div', 'flex justify-between items-start mb-lg border-b border-outline-variant/10 pb-md');
+	const left = el('div', 'flex items-center gap-md');
+	const iconBox = el('div', 'w-10 h-10 rounded-lg flex items-center justify-center border');
+	iconBox.style.backgroundColor = 'rgba(140,115,250,0.1)';
+	iconBox.style.borderColor = 'rgba(140,115,250,0.2)';
+	iconBox.appendChild(faviconEl(domain, 'w-5 h-5'));
+	left.appendChild(iconBox);
+	const titleBox = el('div');
+	titleBox.appendChild(el('h3', 'font-body-main text-body-main text-on-surface font-bold text-lg', page.title || displayPath(page.path)));
+	const urlLink = el('a', 'font-label-caps text-label-caps hover:opacity-80 mt-xs flex items-center gap-xs');
+	urlLink.style.color = ACCENT;
+	urlLink.href = page.url;
+	urlLink.target = '_blank';
+	urlLink.appendChild(el('span', '', prettyUrl(page.url)));
+	urlLink.appendChild(icon('open_in_new', 'text-[12px]'));
+	titleBox.appendChild(urlLink);
+	left.appendChild(titleBox);
+	header.appendChild(left);
+	const collapseBtn = icon('expand_less', 'text-on-surface-variant cursor-pointer hover:text-on-surface transition-colors');
+	collapseBtn.addEventListener('click', () => {
+		expandedPages.delete(page.url);
+		if (currentNav.type === 'page') navigate({ type: 'domain', domain });
+		else renderContent();
+	});
+	header.appendChild(collapseBtn);
+	card.appendChild(header);
+
+	const list = el('div', 'space-y-lg');
+	for (const unit of units) list.appendChild(createAnnotationCard(unit));
+	card.appendChild(list);
+	return card;
+}
+
+// Reply fields start hidden; clicking anywhere on an annotation card reveals that
+// card's reply editor (and focuses it), while clicking elsewhere re-hides every
+// reply that has no draft text. Mirrors the live comment box's focus-gated editor.
+function setupReplyFocusHandling() {
+	document.addEventListener('click', (e) => {
+		const card = (e.target as HTMLElement).closest('.hl-card');
+		document.querySelectorAll<HTMLElement>('.hl-reply').forEach(reply => {
+			if (card && card.contains(reply)) {
+				if (reply.classList.contains('hidden')) {
+					reply.classList.remove('hidden');
+					reply.querySelector<HTMLTextAreaElement>('textarea')?.focus();
+				}
+			} else {
+				const ta = reply.querySelector<HTMLTextAreaElement>('textarea');
+				if (!ta || !ta.value.trim()) reply.classList.add('hidden');
+			}
+		});
+	});
+}
+
+function createAnnotationCard(unit: RenderUnit): HTMLElement {
+	const first = unit.entries[0].data;
+	const isVideo = !!(first as VideoCarrier).__video;
+	const pageUrl = unit.pageUrl;
+
+	const outer = el('div', 'relative group hl-card');
+	// The card leaves a right-hand gutter (mr-9); its content stays full-width and
+	// aligned on both edges. The delete lives in that gutter, never over the text.
+	const card = el('div', 'bg-surface-container p-md mr-9 rounded-lg border border-outline-variant/10 shadow-sm transition-all hover:border-outline-variant/30 flex flex-col');
+
+	// Annotation-level delete (removes the annotation and all its comments),
+	// revealed on card hover, sitting in the gutter beside the card.
+	const threadDel = el('button', 'absolute top-2 right-0 p-1 rounded-md hover:bg-error-container opacity-0 group-hover:opacity-100 transition-opacity');
+	threadDel.title = 'Delete annotation and all its comments';
+	threadDel.appendChild(icon('delete', 'text-[18px] text-on-surface-variant hover:text-error'));
+	threadDel.addEventListener('click', async () => {
+		if (!confirm('Delete this annotation and all its comments?')) return;
+		if (isVideo) { await removeVideoItem(pageUrl, first.id); return; }
+		for (const e of unit.entries) await deleteHighlight(pageUrl, e.data.id);
+	});
+	outer.appendChild(threadDel);
+
+	// Quotes (one per entry; grouped selections separated by a divider)
+	const quotes = el('div', 'space-y-sm');
+	unit.entries.forEach((entry, i) => {
+		const c = (entry.data.color as HLColor) || 'yellow';
+		const q = el('p', `font-body-reading text-body-reading text-on-surface/90 italic border-l-2 pl-md py-sm pr-sm rounded-r-md ${COLOR[c].quote}`);
+		const content = entry.data.content || '';
+		if (content) q.replaceChildren(DOMPurify.sanitize(content, { RETURN_DOM_FRAGMENT: true }));
+		else q.textContent = isVideo ? '(video annotation)' : '';
+		quotes.appendChild(q);
+		if (i < unit.entries.length - 1) {
+			const div = el('div', 'flex items-center justify-center py-xs');
+			div.appendChild(icon('more_vert', 'text-outline-variant text-[16px]'));
+			quotes.appendChild(div);
+		}
+	});
+	card.appendChild(quotes);
+
+	// Comment thread — each comment carries per-comment edit + delete (video
+	// annotations keep their notes elsewhere, so they're read-only here).
+	const thread = el('div', 'mt-md space-y-sm');
+	for (const entry of unit.entries) {
+		(entry.data.notes ?? []).forEach((note, noteIndex) => {
+			const clean = note.replace(/<!--timestamp:\d+-->/, '').replace(/<!--edited:\d+-->/, '').trim();
+			if (!clean) return;
+			thread.appendChild(createCommentRow(pageUrl, entry.data.id, noteIndex, note, clean, isVideo));
+		});
+	}
+
+	// Reply / add-comment field — same sleek editor as the inline edit box. Hidden
+	// (.hl-reply.hidden) until the card is clicked; a document listener toggles it
+	// and re-hides on outside click (see setupReplyFocusHandling). Suppressed while
+	// a comment in this card is being edited, matching the live box.
+	const editingInUnit = editingComment !== null &&
+		unit.entries.some(e => editingComment!.startsWith(`${pageUrl}::${e.data.id}::`));
+	if (!editingInUnit) {
+		const hasComments = unit.entries.some(e => (e.data.notes ?? []).some(n =>
+			n.replace(/<!--[^>]*-->/g, '').trim()));
+		const replyBox = createSleekEditor({
+			placeholder: hasComments ? 'Reply…' : 'Add a comment…',
+			onSubmit: (text) => addNote(pageUrl, first.id, text),
+		});
+		replyBox.classList.add('mt-sm', 'hl-reply', 'hidden');
+		thread.appendChild(replyBox);
+	}
+	card.appendChild(thread);
+
+	outer.appendChild(card);
+	return outer;
+}
+
+// A single comment row: timestamp + inline edit/delete (revealed on row hover),
+// with the body swapped for an editor when this comment is being edited.
+function createCommentRow(pageUrl: string, highlightId: string, noteIndex: number, note: string, clean: string, readOnly: boolean): HTMLElement {
+	const key = `${pageUrl}::${highlightId}::${noteIndex}`;
+	const editing = editingComment === key;
+
+	const row = el('div', 'group/comment');
+
+	const header = el('div', 'flex items-center gap-sm mb-0.5');
+	const tsMatch = note.match(/<!--timestamp:(\d+)-->/);
+	const edited = /<!--edited:\d+-->/.test(note);
+	if (tsMatch) {
+		let timeStr = dayjs(parseInt(tsMatch[1], 10)).fromNow();
+		if (edited) timeStr += ' (edited)';
+		header.appendChild(el('span', 'font-label-caps text-label-caps text-on-surface-variant text-[10px]', timeStr));
+	}
+	if (!readOnly && !editing) {
+		const actions = el('div', 'flex items-center gap-xs ml-auto opacity-0 group-hover/comment:opacity-100 transition-opacity');
+		const editBtn = el('button', 'p-0.5 rounded hover:bg-surface-variant transition-colors');
+		editBtn.title = 'Edit comment';
+		editBtn.appendChild(icon('edit', 'text-[16px] text-on-surface-variant hover:text-on-surface'));
+		editBtn.addEventListener('click', () => { editingComment = key; renderContent(); });
+		const delBtn = el('button', 'p-0.5 rounded hover:bg-error-container transition-colors');
+		delBtn.title = 'Delete comment';
+		delBtn.appendChild(icon('close', 'text-[16px] text-on-surface-variant hover:text-error'));
+		delBtn.addEventListener('click', async () => { await deleteNote(pageUrl, highlightId, noteIndex); });
+		actions.append(editBtn, delBtn);
+		header.appendChild(actions);
+	}
+	row.appendChild(header);
+
+	if (editing) {
+		const editor = createSleekEditor({
+			value: clean,
+			placeholder: 'Edit comment…',
+			autofocus: true,
+			onSubmit: async (text) => {
+				editingComment = null;
+				if (text && text !== clean) await editNote(pageUrl, highlightId, noteIndex, text);
+				else renderContent();
+			},
+			onCancel: () => { editingComment = null; renderContent(); },
+		});
+		row.appendChild(editor);
+	} else {
+		const p = el('p', 'font-body-main text-[19px] leading-[1.4] tracking-[-0.01em] text-on-surface break-words');
+		p.appendChild(renderCommentText(clean));
+		row.appendChild(p);
+	}
+	return row;
+}
+
+// Comment text with #tags rendered as purple pills, matching the live comment box
+// (.obsidian-inline-tag). Tags nest via slashes (#question/important).
+const COMMENT_TAG_RE = /(^|\s)(#[A-Za-z0-9_-]+(?:\/[A-Za-z0-9_-]+)*)/g;
+function renderCommentText(text: string): DocumentFragment {
+	const frag = document.createDocumentFragment();
+	let last = 0;
+	let m: RegExpExecArray | null;
+	COMMENT_TAG_RE.lastIndex = 0;
+	while ((m = COMMENT_TAG_RE.exec(text))) {
+		const tagStart = m.index + m[1].length;
+		if (tagStart > last) frag.appendChild(document.createTextNode(text.slice(last, tagStart)));
+		frag.appendChild(el('span', 'text-[#a78bfa] bg-[#8c73fa]/25 rounded px-1 py-px font-medium', m[2]));
+		last = m.index + m[0].length;
+	}
+	if (last < text.length) frag.appendChild(document.createTextNode(text.slice(last)));
+	return frag;
+}
+
+// A comment editor styled after the live-page reply box (elevated surface, subtle
+// border, auto-growing textarea, round submit affordance that lights up purple
+// when there's text). Used for both replies and inline edits.
+function createSleekEditor(opts: {
+	value?: string;
+	placeholder?: string;
+	autofocus?: boolean;
+	onSubmit: (text: string) => void | Promise<void>;
+	onCancel?: () => void;
+}): HTMLElement {
+	// Borderless filled field; a purple ring appears only on focus (focus-within).
+	const wrap = el('div', 'relative bg-surface-container-high rounded-xl transition-shadow focus-within:ring-1 focus-within:ring-[#8c73fa]');
+	const ta = el('textarea', 'w-full bg-transparent border-0 outline-none focus:ring-0 focus:border-0 resize-none py-2.5 pl-3.5 pr-10 text-[19px] leading-[1.4] tracking-[-0.01em] text-on-surface placeholder:text-on-surface-variant/60 font-body-main overflow-hidden block');
+	ta.rows = 1;
+	ta.placeholder = opts.placeholder || '';
+	if (opts.value) ta.value = opts.value;
+
+	// Round submit chip that fills purple once there's text to send.
+	const submit = el('button', 'absolute right-1.5 bottom-1.5 flex items-center justify-center w-6 h-6 rounded-full transition-colors');
+	submit.appendChild(icon('arrow_upward', 'text-[14px]'));
+
+	// Skip while hidden (display:none → scrollHeight 0), otherwise the field would
+	// collapse to 0px and only "pop open" on the first keystroke.
+	const resize = () => {
+		if (ta.offsetParent === null) return;
+		ta.style.height = 'auto';
+		ta.style.height = `${ta.scrollHeight}px`;
+	};
+	const syncSubmit = () => {
+		const has = ta.value.trim().length > 0;
+		submit.style.backgroundColor = has ? ACCENT : 'rgba(255,255,255,0.08)';
+		submit.style.color = has ? '#fff' : 'rgba(196,199,200,0.9)';
+	};
+	const doSubmit = async () => {
+		const val = ta.value.trim();
+		if (!val) { opts.onCancel?.(); return; }
+		ta.value = '';
+		await opts.onSubmit(val);
+	};
+
+	ta.addEventListener('input', () => { resize(); syncSubmit(); });
+	ta.addEventListener('keydown', (e) => {
+		if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); doSubmit(); }
+		else if (e.key === 'Escape' && opts.onCancel) { e.preventDefault(); opts.onCancel(); }
+	});
+	submit.addEventListener('click', doSubmit);
+
+	wrap.append(ta, submit);
+	queueMicrotask(() => { resize(); syncSubmit(); if (opts.autofocus) { ta.focus(); ta.setSelectionRange(ta.value.length, ta.value.length); } });
+	return wrap;
+}
+
+// --- Favicon ---
+
+function faviconEl(domain: string, className: string): HTMLElement {
+	const normalized = domain.replace(/^www\./, '');
+	const src = domainSettingsMap[normalized]?.favicon;
+	if (src) {
+		const img = el('img', className);
+		(img as HTMLImageElement).src = src;
+		(img as HTMLImageElement).referrerPolicy = 'no-referrer';
+		img.addEventListener('error', () => img.replaceWith(icon('public', className)));
+		return img;
+	}
+	return icon('public', className);
+}
+
+// --- Export / delete ---
+
+async function exportCurrentContext() {
+	const pages = visiblePages();
+	if (pages.length === 0) return;
+	const exportData = pages.map(({ page, units }) => ({
+		url: page.url,
+		highlights: collapseGroupsForExport(units.flatMap(u => u.entries).map(e => e.data)),
+	}));
+	const blob = new Blob([JSON.stringify(exportData, null, 2)], { type: 'application/json' });
+	const blobUrl = URL.createObjectURL(blob);
+	const browserType = await detectBrowser();
+	const fileName = `obsidian-web-clipper-highlights-${dayjs().format('YYYYMMDDHHmm')}.json`;
+	if (browserType === 'safari' || browserType === 'mobile-safari') {
+		if (navigator.share) {
+			try { await navigator.share({ files: [new File([blob], fileName, { type: 'application/json' })], title: 'Exported Highlights' }); }
+			catch { window.open(blobUrl); }
+		} else window.open(blobUrl);
+	} else {
+		const a = el('a');
+		a.href = blobUrl; a.download = fileName;
+		document.body.appendChild(a); a.click(); document.body.removeChild(a);
+	}
+	URL.revokeObjectURL(blobUrl);
 }
 
 async function deleteCurrentContext() {
 	const nav = currentNav;
 	if (nav.type === 'all') {
-		if (!confirm(getMessage('deleteAllHighlightsConfirm'))) return;
+		if (!confirm('Delete ALL annotations?')) return;
 		await clearAll('hl');
 	} else if (nav.type === 'domain') {
-		if (!confirm(getMessage('deleteHighlightsForDomain'))) return;
+		if (!confirm(`Delete all annotations for ${siteNameOrDomain(nav.domain)}?`)) return;
 		const group = allDomainGroups.find(g => g.domain === nav.domain);
-		if (group) await deleteHighlightsForDomain(group);
+		if (group) for (const page of group.pages) await removePage('hl', page.url);
 	} else if (nav.type === 'page') {
-		if (!confirm(getMessage('deleteHighlightsForPage'))) return;
-		await deleteHighlightsForUrl(nav.url);
+		if (!confirm('Delete all annotations for this page?')) return;
+		await removePage('hl', nav.url);
 	}
-}
-
-async function exportCurrentContext() {
-	const entries = getVisibleEntries();
-	if (entries.length === 0) return;
-
-	// Group by URL to match the existing export format
-	const byUrl = new Map<string, HighlightEntry[]>();
-	for (const { entry, pageUrl } of entries) {
-		if (!byUrl.has(pageUrl)) byUrl.set(pageUrl, []);
-		byUrl.get(pageUrl)!.push(entry);
-	}
-
-	const exportData = Array.from(byUrl.entries()).map(([url, highlights]) => ({
-		url,
-		highlights: collapseGroupsForExport(highlights.map(h => h.data)),
-	}));
-
-	const jsonContent = JSON.stringify(exportData, null, 2);
-	const blob = new Blob([jsonContent], { type: 'application/json' });
-	const blobUrl = URL.createObjectURL(blob);
-
-	const browserType = await detectBrowser();
-	const timestamp = dayjs().format('YYYYMMDDHHmm');
-	const fileName = `obsidian-web-clipper-highlights-${timestamp}.json`;
-
-	if (browserType === 'safari' || browserType === 'mobile-safari') {
-		if (navigator.share) {
-			try {
-				await navigator.share({
-					files: [new File([blob], fileName, { type: 'application/json' })],
-					title: 'Exported Obsidian Web Clipper Highlights',
-				});
-			} catch {
-				window.open(blobUrl);
-			}
-		} else {
-			window.open(blobUrl);
-		}
-	} else {
-		const a = document.createElement('a');
-		a.href = blobUrl;
-		a.download = fileName;
-		document.body.appendChild(a);
-		a.click();
-		document.body.removeChild(a);
-	}
-
-	URL.revokeObjectURL(blobUrl);
-}
-
-function getLatestTimestamp(url: string): dayjs.Dayjs | null {
-	const group = allDomainGroups.find(g => g.pages.some(p => p.url === url));
-	const page = group?.pages.find(p => p.url === url);
-	if (!page || page.highlights.length === 0) return null;
-	let latest = 0;
-	for (const h of page.highlights) {
-		const t = parseInt(h.data.id);
-		if (t > latest) latest = t;
-	}
-	const time = dayjs(latest);
-	return time.isValid() ? time : null;
-}
-
-// --- Page headers in main content ---
-
-function createPageHeader(url: string, domain: string, title?: string): HTMLElement {
-	const header = document.createElement('div');
-	header.className = 'highlight-page-header';
-
-	const titleText = title || (() => {
-		try {
-			const parsed = new URL(url);
-			return displayPath(parsed.pathname + parsed.search);
-		} catch {
-			return url;
-		}
-	})();
-
-	const titleRow = document.createElement('div');
-	titleRow.className = 'highlight-page-title-row';
-
-	// Favicon makes each website's section read as a distinct heading in the
-	// "all pages" view. Falls back to a globe icon when no favicon is stored.
-	const normalizedDomain = domain.replace(/^www\./, '');
-	const headerFavicon = domainSettingsMap[normalizedDomain]?.favicon;
-	if (headerFavicon) {
-		const img = document.createElement('img');
-		img.className = 'highlight-page-favicon';
-		img.src = headerFavicon;
-		img.width = 18;
-		img.height = 18;
-		img.onerror = () => {
-			const globe = document.createElement('i');
-			globe.className = 'highlight-page-favicon';
-			globe.setAttribute('data-lucide', 'globe');
-			img.replaceWith(globe);
-			createIcons({ icons });
-		};
-		titleRow.appendChild(img);
-	} else {
-		const globe = document.createElement('i');
-		globe.className = 'highlight-page-favicon';
-		globe.setAttribute('data-lucide', 'globe');
-		titleRow.appendChild(globe);
-	}
-
-	const titleLink = document.createElement('a');
-	titleLink.className = 'highlight-page-title';
-	titleLink.href = '#';
-	titleLink.title = url;
-	titleLink.textContent = titleText;
-	titleLink.addEventListener('click', (e) => {
-		e.preventDefault();
-		window.open(url, '_blank');
-	});
-	titleRow.appendChild(titleLink);
-
-	const readerBtn = document.createElement('a');
-	readerBtn.className = 'highlight-reader-btn clickable-icon';
-	readerBtn.href = `reader.html?url=${encodeURIComponent(url)}`;
-	readerBtn.target = '_blank';
-	readerBtn.title = getMessage('loadArticle') || 'Read article';
-	const readerIcon = document.createElement('i');
-	readerIcon.setAttribute('data-lucide', 'book-open');
-	readerBtn.appendChild(readerIcon);
-	titleRow.appendChild(readerBtn);
-
-	header.appendChild(titleRow);
-
-	// Site name and latest timestamp
-	const metaLine = document.createElement('div');
-	metaLine.className = 'highlight-page-meta';
-
-	const siteSpan = document.createElement('a');
-	siteSpan.className = 'highlight-page-site';
-	siteSpan.href = '#';
-	siteSpan.textContent = siteNameOrDomain(domain);
-	siteSpan.addEventListener('click', (e) => {
-		e.preventDefault();
-		navigate({ type: 'domain', domain });
-	});
-	metaLine.appendChild(siteSpan);
-
-	const latestTime = getLatestTimestamp(url);
-	if (latestTime) {
-		const timeSpan = document.createElement('span');
-		timeSpan.className = 'highlight-page-time';
-		timeSpan.textContent = latestTime.fromNow();
-		timeSpan.title = latestTime.format('YYYY-MM-DD HH:mm');
-		metaLine.appendChild(timeSpan);
-	}
-
-	header.appendChild(metaLine);
-
-	// Only show sync button if page has no title yet
-	if (!title) {
-		const syncBtn = document.createElement('button');
-		syncBtn.className = 'highlight-sync-btn clickable-icon';
-		const syncIcon = document.createElement('i');
-		syncIcon.setAttribute('data-lucide', 'rotate-cw');
-		syncBtn.appendChild(syncIcon);
-		syncBtn.addEventListener('click', async (e) => {
-			e.stopPropagation();
-			e.preventDefault();
-			syncBtn.classList.add('is-syncing');
-			const meta = await fetchDefuddled(url);
-			syncBtn.classList.remove('is-syncing');
-			if (meta) {
-				if (meta.title) titleLink.textContent = meta.title;
-				if (meta.title || meta.site) syncBtn.style.display = 'none';
-			}
-		});
-		header.appendChild(syncBtn);
-	}
-
-	return header;
-}
-
-interface DefuddleResult {
-	title?: string;
-	site?: string;
-	content?: string;
-}
-
-async function fetchDefuddled(url: string): Promise<DefuddleResult | null> {
-	try {
-		let html: string;
-		const fetchResult = await browser.runtime.sendMessage({
-			action: 'fetchProxy', url, options: {},
-		}) as { ok: boolean; status: number; text: string; error?: string };
-		if (fetchResult?.error === 'CORS_PERMISSION_NEEDED') {
-			await browser.permissions.request({ origins: ['<all_urls>'] });
-			const retry = await browser.runtime.sendMessage({
-				action: 'fetchProxy', url, options: {},
-			}) as { ok: boolean; status: number; text: string; error?: string };
-			if (!retry?.ok) throw new Error(retry?.error || 'Permission not granted');
-			html = retry.text;
-		} else if (!fetchResult?.ok) {
-			throw new Error(fetchResult?.error || `HTTP ${fetchResult?.status}`);
-		} else {
-			html = fetchResult.text;
-		}
-		const parser = new DOMParser();
-		const doc = parser.parseFromString(html, 'text/html');
-
-		// Set the base URL so relative URLs resolve correctly
-		const base = doc.createElement('base');
-		base.href = url;
-		doc.head.prepend(base);
-
-		const defuddled = new Defuddle(doc, { url }).parse();
-
-		const title = defuddled.title || undefined;
-		const site = defuddled.site || undefined;
-		const favicon = defuddled.favicon || undefined;
-		const content = defuddled.content || undefined;
-
-		// Save title to highlights storage
-		if (title) {
-			const stored = await getPage<StoredData>('hl', url);
-			if (stored) {
-				stored.title = title;
-				await setPage<StoredData>('hl', url, stored);
-			}
-		}
-
-		// Save site and favicon to domains storage
-		if (site || favicon) {
-			let hostname: string;
-			try {
-				hostname = new URL(url).hostname.replace(/^www\./, '');
-			} catch {
-				return { title, site, content };
-			}
-			const domResult = await browser.storage.local.get('domains');
-			const domains = (domResult.domains || {}) as Record<string, DomainSettings>;
-			if (!domains[hostname]) domains[hostname] = {};
-			let changed = false;
-			if (site && !domains[hostname].site) {
-				domains[hostname].site = site;
-				changed = true;
-			}
-			if (favicon && !domains[hostname].favicon) {
-				try {
-					domains[hostname].favicon = new URL(favicon, url).href;
-				} catch {
-					domains[hostname].favicon = favicon;
-				}
-				changed = true;
-			}
-			if (changed) {
-				domainSettingsMap[hostname] = domains[hostname];
-				await browser.storage.local.set({ domains });
-				renderSidebar();
-				createIcons({ icons });
-			}
-		}
-
-		return { title, site, content };
-	} catch (error) {
-		console.error('Failed to fetch page:', url, error);
-		return null;
-	}
-}
-
-
-// --- Individual highlight items ---
-
-function setButtonIcon(btn: HTMLElement, iconName: string) {
-	btn.textContent = '';
-	const icon = document.createElement('i');
-	icon.setAttribute('data-lucide', iconName);
-	btn.appendChild(icon);
-	createIcons({ icons });
-}
-
-function unitKey(entries: HighlightEntry[]): string {
-	return entries.map(e => e.data.id).join(',');
-}
-
-// Make image highlights actually display: prefer the resolved anchor image src
-// (captured at creation), else recover the real URL from data-src/srcset when the
-// stored `src` is empty or a lazy-load placeholder. Also drop hotlink referers.
-function fixHighlightImages(root: HTMLElement, entries: HighlightEntry[]): void {
-	const imgs = Array.from(root.querySelectorAll('img'));
-	if (!imgs.length) return;
-	const anchorSrc = entries.map(e => e.data.anchor?.image?.src).find(Boolean);
-	for (const img of imgs) {
-		const src = img.getAttribute('src') || '';
-		const dataSrc = img.getAttribute('data-src') || '';
-		const srcset = img.getAttribute('srcset') || '';
-		const isPlaceholder = !src || src.startsWith('data:');
-		let resolved = anchorSrc || '';
-		if (!resolved && isPlaceholder) resolved = dataSrc || srcset.split(',')[0]?.trim().split(/\s+/)[0] || '';
-		if (resolved) img.setAttribute('src', resolved);
-		img.setAttribute('referrerpolicy', 'no-referrer');
-		img.removeAttribute('loading');
-		img.removeAttribute('srcset');
-	}
-}
-
-function createHighlightItem(entries: HighlightEntry[], pageUrl: string): HTMLElement {
-	// Route video annotation entries to their dedicated card renderer.
-	const carrier = entries[0]?.data as unknown as VideoCarrier;
-	if (carrier?.__video) {
-		return createVideoItemCard(carrier.__video, pageUrl, async (vid) => {
-			await removeVideoItem(pageUrl, vid.id);
-		});
-	}
-
-	const item = document.createElement('div');
-	item.className = 'highlight-item';
-	item.setAttribute('data-unit-key', unitKey(entries));
-	// Surface the highlight's color so the list shows a color rail + tint
-	// matching the live page. Grouped pieces share a color, so the first wins.
-	item.setAttribute('data-color', entries[0]?.data.color || 'yellow');
-
-	const content = document.createElement('div');
-	content.className = 'highlight-item-content';
-
-	const joined = entries.map(e => e.data.content || '').join('\n');
-	content.replaceChildren(DOMPurify.sanitize(joined, { RETURN_DOM_FRAGMENT: true }));
-	// A grouped selection may include stored <li> fragments; wrap consecutive
-	// orphan <li>s in a <ul> so the list renders with its bullets intact.
-	wrapOrphanListItems(content);
-	// Image highlights store the raw <img> outerHTML, whose `src` is often a
-	// lazy-load placeholder (real URL in data-src/srcset). Prefer the resolved
-	// anchor image source captured at creation so the picture actually shows.
-	fixHighlightImages(content, entries);
-	if (searchQueryHighlights) highlightTextNodes(content, searchQueryHighlights);
-	item.appendChild(content);
-
-	const mergedNotes = entries.flatMap(e => e.data.notes ?? []);
-	if (mergedNotes.length > 0) {
-		const threadEl = document.createElement('div');
-		threadEl.className = 'highlight-comment-thread';
-		
-		for (const note of mergedNotes) {
-			const noteContainer = document.createElement('div');
-			noteContainer.className = 'highlight-item-note-container';
-			
-			const timestampMatch = note.match(/<!--timestamp:(\d+)-->/);
-			const editedMatch = note.match(/<!--edited:(\d+)-->/);
-			let cleanNote = note
-				.replace(/<!--timestamp:\d+-->/, '')
-				.replace(/<!--edited:\d+-->/, '')
-				.trim();
-			
-			if (timestampMatch) {
-				const timestamp = parseInt(timestampMatch[1], 10);
-				let timeStr = dayjs(timestamp).fromNow();
-				if (editedMatch) {
-					timeStr += ' (edited)';
-				}
-				
-				const timeEl = document.createElement('div');
-				timeEl.className = 'highlight-item-time';
-				timeEl.textContent = timeStr;
-				timeEl.style.marginBottom = '4px';
-				noteContainer.appendChild(timeEl);
-			}
-
-			const noteEl = document.createElement('div');
-			noteEl.className = 'highlight-item-note';
-			noteEl.textContent = cleanNote;
-			if (searchQueryHighlights) highlightTextNodes(noteEl, searchQueryHighlights);
-			
-			noteContainer.appendChild(noteEl);
-			threadEl.appendChild(noteContainer);
-		}
-		item.appendChild(threadEl);
-	}
-
-	const footer = document.createElement('div');
-	footer.className = 'highlight-item-actions-container';
-
-	const actions = document.createElement('div');
-	actions.className = 'highlight-item-actions';
-
-	const copyBtn = document.createElement('button');
-	copyBtn.className = 'highlight-action-btn clickable-icon';
-	copyBtn.title = getMessage('copyToClipboard');
-	const copyIcon = document.createElement('i');
-	copyIcon.setAttribute('data-lucide', 'copy');
-	copyBtn.appendChild(copyIcon);
-	copyBtn.addEventListener('click', async () => {
-		const markdown = entries.map(e => createMarkdownContent(e.data.content || '', pageUrl)).join('\n\n');
-		await navigator.clipboard.writeText(markdown);
-		copyBtn.classList.add('is-copied');
-		setButtonIcon(copyBtn, 'check');
-		setTimeout(() => {
-			copyBtn.classList.remove('is-copied');
-			setButtonIcon(copyBtn, 'copy');
-		}, 1500);
-	});
-	actions.appendChild(copyBtn);
-
-	const deleteBtn = document.createElement('button');
-	deleteBtn.className = 'highlight-action-btn clickable-icon';
-	deleteBtn.title = getMessage('delete');
-	const deleteItemIcon = document.createElement('i');
-	deleteItemIcon.setAttribute('data-lucide', 'trash-2');
-	deleteBtn.appendChild(deleteItemIcon);
-	deleteBtn.addEventListener('click', async () => {
-		for (const e of entries) await deleteHighlight(pageUrl, e.data.id);
-	});
-	actions.appendChild(deleteBtn);
-
-	footer.appendChild(actions);
-	item.appendChild(footer);
-
-	return item;
-}
-
-// Wrap consecutive orphan <li> elements (not already inside a <ul>/<ol>) in
-// a <ul>. Used when rendering grouped highlights — stored <li> fragments
-// don't carry their original list parent, so we synthesize one.
-// TODO: always wraps in <ul>. Ordered list content (<ol>) loses its
-// numbering. To fix, store the parent list type (ul vs ol) alongside each
-// <li> highlight at creation time.
-function wrapOrphanListItems(root: HTMLElement): void {
-	const children = Array.from(root.children);
-	let i = 0;
-	while (i < children.length) {
-		if (children[i].tagName === 'LI') {
-			let j = i;
-			while (j < children.length && children[j].tagName === 'LI') j++;
-			const ul = document.createElement('ul');
-			root.insertBefore(ul, children[i]);
-			for (let k = i; k < j; k++) ul.appendChild(children[k]);
-			i = j;
-		} else {
-			i++;
-		}
-	}
-}
-
-// --- Helpers ---
-
-function highlightTextNodes(root: HTMLElement, query: string) {
-	const walker = document.createTreeWalker(root, NodeFilter.SHOW_TEXT);
-	const matches: { node: Text; index: number; length: number }[] = [];
-	const lowerQuery = query.toLowerCase();
-
-	let node: Text | null;
-	while ((node = walker.nextNode() as Text | null)) {
-		const text = node.textContent || '';
-		let idx = text.toLowerCase().indexOf(lowerQuery);
-		while (idx !== -1) {
-			matches.push({ node, index: idx, length: query.length });
-			idx = text.toLowerCase().indexOf(lowerQuery, idx + query.length);
-		}
-	}
-
-	// Process in reverse so indices stay valid
-	for (let i = matches.length - 1; i >= 0; i--) {
-		const { node: textNode, index, length } = matches[i];
-		const after = textNode.splitText(index);
-		const matched = after.splitText(length);
-		const mark = document.createElement('mark');
-		mark.className = 'search-match';
-		mark.textContent = after.textContent;
-		after.parentNode!.replaceChild(mark, after);
-		// matched is already in the DOM after mark
-		void matched;
-	}
-}
-
-function displayDomain(domain: string): string {
-	return domain.replace(/^www\./, '');
-}
-
-function siteNameOrDomain(domain: string): string {
-	const normalized = domain.replace(/^www\./, '');
-	return domainSettingsMap[normalized]?.site || normalized;
-}
-
-function displayPath(path: string): string {
-	return decodeURIComponent(path).replace(/^\//, '');
 }
 
 // --- Storage mutations ---
 
 async function deleteHighlight(url: string, highlightId: string) {
 	const stored = await getPage<StoredData>('hl', url);
-	if (stored) {
-		stored.highlights = stored.highlights.filter(h => h.id !== highlightId);
-		if (stored.highlights.length === 0) await removePage('hl', url);
-		else await setPage<StoredData>('hl', url, stored);
-	}
+	if (!stored) return;
+	stored.highlights = stored.highlights.filter(h => h.id !== highlightId);
+	if (stored.highlights.length === 0) await removePage('hl', url);
+	else await setPage<StoredData>('hl', url, stored);
 }
 
-async function deleteHighlightsForUrl(url: string) {
-	await removePage('hl', url);
+async function addNote(url: string, highlightId: string, text: string) {
+	const stored = await getPage<StoredData>('hl', url);
+	if (!stored) return;
+	const h = stored.highlights.find(x => x.id === highlightId);
+	if (!h) return;
+	h.notes = h.notes || [];
+	h.notes.push(`${text}<!--timestamp:${Date.now()}-->`);
+	await setPage<StoredData>('hl', url, stored);
 }
 
-async function deleteHighlightsForDomain(group: DomainGroup) {
-	for (const page of group.pages) {
-		await removePage('hl', page.url);
-	}
+// Edit one comment in place: keep its original creation timestamp (the comment's
+// stable id) but stamp a fresh edit time, mirroring the live comment editor.
+async function editNote(url: string, highlightId: string, noteIndex: number, text: string) {
+	const stored = await getPage<StoredData>('hl', url);
+	if (!stored) return;
+	const h = stored.highlights.find(x => x.id === highlightId);
+	if (!h || !h.notes || !h.notes[noteIndex]) return;
+	const ts = h.notes[noteIndex].match(/<!--timestamp:(\d+)-->/)?.[1] ?? String(Date.now());
+	h.notes[noteIndex] = `${text}<!--timestamp:${ts}--><!--edited:${Date.now()}-->`;
+	await setPage<StoredData>('hl', url, stored);
+}
+
+// Delete a single comment. The annotation (highlight) itself stays.
+async function deleteNote(url: string, highlightId: string, noteIndex: number) {
+	const stored = await getPage<StoredData>('hl', url);
+	if (!stored) return;
+	const h = stored.highlights.find(x => x.id === highlightId);
+	if (!h || !h.notes) return;
+	h.notes.splice(noteIndex, 1);
+	await setPage<StoredData>('hl', url, stored);
+}
+
+// --- Helpers ---
+
+function displayDomain(domain: string): string { return domain.replace(/^www\./, ''); }
+function siteNameOrDomain(domain: string): string {
+	const normalized = domain.replace(/^www\./, '');
+	return domainSettingsMap[normalized]?.site || normalized;
+}
+function displayPath(path: string): string { return decodeURIComponent(path).replace(/^\//, '') || '/'; }
+function prettyUrl(url: string): string {
+	try { const u = new URL(url); return u.hostname.replace(/^www\./, '') + u.pathname; } catch { return url; }
 }

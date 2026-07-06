@@ -25,8 +25,9 @@ This branch adds **live-webpage annotation** (highlights, comments, freehand dra
 | `src/utils/highlighter-overlays.ts` | Text/element rendering (CSS Custom Highlight API), color swatch menu, active-highlight emphasis. |
 | `src/utils/comment-overlays.ts` | Comment card layout (left/right), threads, truncation, edit/save/delete, inline markdown. |
 | `src/utils/pencil-overlays.ts` | Freehand SVG drawing, stroke storage, color switching, marquee select/delete. |
-| `src/core/highlights.ts` | Highlights dashboard logic (sidebar tree, search, pagination, export/delete; folds in video annotations). |
-| `src/highlights.html` | Dashboard page markup. |
+| `src/core/highlights.ts` | Annotation-manager (dashboard) logic: sources tree, tags, collapsible page items + annotation cards, search/export/delete; folds in video annotations. Renders the `designs/code.html` UI (Tailwind + Material Symbols). |
+| `src/highlights.html` | Dashboard page markup (Tailwind shell; loads `highlights-tailwind.css` only). |
+| `src/highlights-tailwind.scss` | Isolated Tailwind entry for the dashboard (`@tailwind` + self-hosted `@font-face`s + Material Symbols base). Compiled to `highlights-tailwind.css`; fonts in `src/fonts/`. |
 | `src/utils/video/` | YouTube video notes: `youtube-detect` (player/SPA), `frame-capture` (canvas + screenshot fallback), `video-annotator` (in-page frame/draw overlay), `video-markup` (draw renderer), `video-storage` (metadata in `chrome.storage.local`), `frame-store` (frame JPEG blobs in IndexedDB; bg-owned, content scripts message in), `video-notes`, `video-transcript` (caption-track fetch/parse), `video-transcript-panel` (the `T` transcript-annotation panel), `video-comments` (per-video conversation comment panel). |
 | `src/core/video-highlights.ts` | Dashboard render path for video frame cards + timestamped notes. |
 | `src/utils/sync-engine.ts` | 3-way merge sync state machine, tombstones, push/pull (highlights, drawings, video). |
@@ -205,19 +206,32 @@ exists** — the sharded keys are the only format. The shapes below are the per-
   selector. Drag to select strokes, **`Delete`** to remove. Selector ignores text highlights.
 - Pencil and highlighter are mutually exclusive (entering one exits the other).
 
-### 3.4 Highlights dashboard
+### 3.4 Highlights dashboard (annotation manager)
 - **`Alt+E`** opens `highlights.html` in a new tab (content → `open_dashboard` → background creates tab).
-- **Website directory** sidebar: domains → pages tree, favicons, highlight-count badges, collapsible.
-- **Dual search**: (1) website search filters domains by hostname/custom name; (2) global search does
-  full-text search across highlight content, comments/replies, and URLs.
-- **Navigation**: in the website list, normal click opens that site's saved highlights *inside* the
-  dashboard; **`Ctrl`+click** opens the real website in a new tab. In the highlights panel, clicking a
-  page title opens the real website in a new tab. Navigation levels: all → domain → page, with breadcrumbs.
-- Export (JSON/Markdown) and delete, scoped to all / domain / page.
-- **Tags panel** (sidebar bottom-left): lists three **color rows** (yellow/red/green) and a **nested
-  tag tree** built from `#tag` tokens in comment text (nesting via slashes, e.g. `#question/important`;
-  a parent tag matches all descendants). Clicking a tag or color filters the main pane *on top of* the
-  current nav/search scope (click again to clear); counts are scoped to the current selection.
+- **Rebuilt UI** (`designs/code.html` is the source design): a self-contained **Tailwind** page,
+  dark theme, purple accent `#8c73fa`, **Material Symbols** icons, self-hosted **Geist** / **Libre
+  Caslon Text** fonts. Tailwind is isolated to its own entry `src/highlights-tailwind.scss`
+  (compiled via `postcss-loader` → `highlights-tailwind.css`) so its preflight never touches the
+  other extension pages; fonts live in `src/fonts/*.woff2` and are emitted to `dist/fonts/` by a
+  webpack `asset/resource` rule. The page loads **only** `highlights-tailwind.css` (no `style.css`).
+- **Sidebar sources tree**: domains → pages, favicons (a domain's stored favicon; globe `public`
+  fallback), highlight-count badges. Clicking a domain expands it and shows *all its pages'*
+  annotations; clicking a nested page scopes to that one page. **`Ctrl`+click** opens the real
+  site/page in a new tab.
+- **Main pane**: collapsible **page items** — collapsed shows favicon + title + "N Annotations •
+  last-edited"; expanded shows a header (favicon, title, source URL) and a rail of **annotation
+  cards**. Each card: colored **semantic dot** + tinted **quote** block(s) (grouped multi-block
+  highlights render stacked, separated by a `more_vert` divider), a **comment thread** with relative
+  timestamps, a **reply** input (Enter appends a `#timestamp`-stamped note), and hover **copy**
+  (markdown) / **delete** actions. Video annotations fold in through the same card path.
+- **Source search** (sidebar) filters domains by hostname/custom name. **Navigation**: all → domain →
+  page, reflected in breadcrumbs and the URL query (`?domain=&url=`).
+- Header **Export** (JSON) / **Delete** and footer **Bulk Export / Bulk Delete**, scoped to the
+  current selection (all / domain / page).
+- **Tags panel** (sidebar): a **nested tag tree** from `#tag` tokens in comment text (nesting via
+  slashes, e.g. `#question/important`; a parent matches all descendants). Clicking a tag filters the
+  main pane *on top of* the current nav/search scope (click again to clear); counts are scoped to the
+  current selection.
 - **Tag autocomplete**: typing `#` in a comment editor (live page) pops a dropdown of known tags from
   all pages' comments, filtered by prefix; arrows navigate, Enter/Tab/click inserts, Escape closes
   (without touching the draft).

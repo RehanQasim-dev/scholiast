@@ -4,7 +4,7 @@ import { textHighlightRanges, setActiveHighlight } from './highlighter-overlays'
 import { loadDiagramImage, deleteDiagramImage } from './video/frame-store';
 import { getAll } from './page-store';
 
-const COMMENT_BOX_WIDTH = 320;
+const COMMENT_BOX_WIDTH = 384;
 const COMMENT_BOX_MARGIN = 20;
 const COMMENT_BOX_GAP = 12;
 
