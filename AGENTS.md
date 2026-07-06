@@ -219,11 +219,17 @@ exists** — the sharded keys are the only format. The shapes below are the per-
   annotations; clicking a nested page scopes to that one page. **`Ctrl`+click** opens the real
   site/page in a new tab.
 - **Main pane**: collapsible **page items** — collapsed shows favicon + title + "N Annotations •
-  last-edited"; expanded shows a header (favicon, title, source URL) and a rail of **annotation
-  cards**. Each card: colored **semantic dot** + tinted **quote** block(s) (grouped multi-block
-  highlights render stacked, separated by a `more_vert` divider), a **comment thread** with relative
-  timestamps, a **reply** input (Enter appends a `#timestamp`-stamped note), and hover **copy**
-  (markdown) / **delete** actions. Video annotations fold in through the same card path.
+  last-edited"; expanded shows a header (favicon, title, source URL) and a list of **annotation
+  cards**. Each card: tinted **quote** block(s) (grouped multi-block highlights render stacked,
+  separated by a `more_vert` divider), a **comment thread**, a focus-gated **reply** field, and one
+  annotation-level **delete** in a right-hand gutter. Comments show relative timestamps, `#tag`
+  purple pills, per-comment **edit/delete**, and **Excalidraw diagram** comments render as their
+  image (from the IndexedDB blob store; click reopens the editor).
+- **Video annotations** fold into the same cards, rendered by kind: **frame** (captured image with
+  its markup drawings repainted via `renderMarkupSvg`), **transcript** (colored quote + `M:SS–M:SS`
+  range chip), or **note** (jump-to-moment chip); every chip links to `…?t=Ns`. Their comment
+  threads are fully editable — reply / edit / delete route through the video store
+  (`updateVideoItemNotes` / `removeVideoItem`), at parity with the on-page video comments panel.
 - **Source search** (sidebar) filters domains by hostname/custom name. **Navigation**: all → domain →
   page, reflected in breadcrumbs and the URL query (`?domain=&url=`).
 - Header **Export** (JSON) / **Delete** and footer **Bulk Export / Bulk Delete**, scoped to the

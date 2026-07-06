@@ -3,9 +3,12 @@ import { AnyHighlightData, StoredData, DomainSettings, collapseGroupsForExport, 
 import DOMPurify from 'dompurify';
 import dayjs from 'dayjs';
 import relativeTime from 'dayjs/plugin/relativeTime';
-import { loadAllVideoData, removeVideoItem, VideoItem } from '../utils/video/video-storage';
+import { loadAllVideoData, removeVideoItem, updateVideoItemNotes, VideoItem } from '../utils/video/video-storage';
 import { getPage, setPage, removePage, getAll, clearAll, anyPageChanged } from '../utils/page-store';
 import { detectBrowser } from '../utils/browser-detection';
+import { renderMarkupSvg } from '../utils/video/video-markup';
+import { formatVideoTime, makeVideoNote } from '../utils/video/video-notes';
+import { loadFrameImage, loadDiagramImage } from '../utils/video/frame-store';
 
 dayjs.extend(relativeTime);
 
@@ -107,6 +110,11 @@ document.addEventListener('DOMContentLoaded', async () => {
 	browser.storage.onChanged.addListener((changes, area) => {
 		if (area === 'local' && anyPageChanged(changes, ['hl', 'va'])) {
 			loadData().then(render);
+		}
+		// A diagram was (re)saved from the Excalidraw popup: its rendered PNG changed
+		// in the blob store. Re-render so each diagram <img> refetches the new image.
+		if (area === 'local' && changes.diagrams) {
+			renderContent();
 		}
 	});
 });
@@ -604,6 +612,60 @@ function setupReplyFocusHandling() {
 	});
 }
 
+// A jump-to-moment chip linking to `…?t=Ns`. `overlay` styles it to sit over a
+// frame image; otherwise it's an inline pill.
+function videoTimeChip(atUrl: string, label: string, overlay = false): HTMLAnchorElement {
+	const a = el('a', overlay
+		? 'absolute bottom-2 right-2 inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-black/70 text-white text-[11px] font-label-caps hover:bg-black/85 transition-colors'
+		: 'inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-surface-container-high text-on-surface-variant text-[11px] font-label-caps hover:text-on-surface transition-colors');
+	a.href = atUrl;
+	a.target = '_blank';
+	a.rel = 'noopener noreferrer';
+	a.title = 'Open at this moment';
+	a.appendChild(icon('play_arrow', 'text-[14px]'));
+	a.appendChild(el('span', '', label));
+	return a;
+}
+
+// The media block for a video annotation: a captured frame with its markup
+// repainted on top, a colored transcript highlight, or a bare timestamp chip.
+function createVideoMedia(item: VideoItem, pageUrl: string): HTMLElement {
+	const atUrl = `${pageUrl}${pageUrl.includes('?') ? '&' : '?'}t=${Math.floor(item.videoTime)}s`;
+	const stamp = formatVideoTime(item.videoTime);
+
+	if (item.kind === 'frame' && item.frame) {
+		const fig = el('div', 'relative rounded-lg overflow-hidden border border-outline-variant/20');
+		const img = el('img', 'block w-full');
+		img.loading = 'lazy';
+		if (item.frame.dataUrl) img.src = item.frame.dataUrl;
+		else loadFrameImage(item.id).then(u => { if (u) img.src = u; });
+		fig.appendChild(img);
+		if (item.markup) {
+			const overlay = el('div', 'absolute inset-0 pointer-events-none');
+			const svg = renderMarkupSvg(item.markup, item.frame.w, item.frame.h);
+			svg.setAttribute('style', 'width:100%;height:100%;display:block;');
+			overlay.appendChild(svg);
+			fig.appendChild(overlay);
+		}
+		fig.appendChild(videoTimeChip(atUrl, stamp, true));
+		return fig;
+	}
+
+	if (item.kind === 'transcript' && item.quote) {
+		const c = (item.color as HLColor) || 'yellow';
+		const wrap = el('div', 'space-y-xs');
+		const q = el('p', `font-body-reading text-body-reading text-on-surface/90 italic border-l-2 pl-md py-sm pr-sm rounded-r-md ${COLOR[c].quote}`);
+		q.textContent = item.quote;
+		wrap.appendChild(q);
+		const range = item.timeEnd != null ? `${stamp}–${formatVideoTime(item.timeEnd)}` : stamp;
+		wrap.appendChild(videoTimeChip(atUrl, range));
+		return wrap;
+	}
+
+	// Frameless timestamped note — just the jump-to-moment chip.
+	return videoTimeChip(atUrl, stamp);
+}
+
 function createAnnotationCard(unit: RenderUnit): HTMLElement {
 	const first = unit.entries[0].data;
 	const isVideo = !!(first as VideoCarrier).__video;
@@ -626,31 +688,37 @@ function createAnnotationCard(unit: RenderUnit): HTMLElement {
 	});
 	outer.appendChild(threadDel);
 
-	// Quotes (one per entry; grouped selections separated by a divider)
-	const quotes = el('div', 'space-y-sm');
-	unit.entries.forEach((entry, i) => {
-		const c = (entry.data.color as HLColor) || 'yellow';
-		const q = el('p', `font-body-reading text-body-reading text-on-surface/90 italic border-l-2 pl-md py-sm pr-sm rounded-r-md ${COLOR[c].quote}`);
-		const content = entry.data.content || '';
-		if (content) q.replaceChildren(DOMPurify.sanitize(content, { RETURN_DOM_FRAGMENT: true }));
-		else q.textContent = isVideo ? '(video annotation)' : '';
-		quotes.appendChild(q);
-		if (i < unit.entries.length - 1) {
-			const div = el('div', 'flex items-center justify-center py-xs');
-			div.appendChild(icon('more_vert', 'text-outline-variant text-[16px]'));
-			quotes.appendChild(div);
-		}
-	});
-	card.appendChild(quotes);
+	if (isVideo) {
+		// Video annotation: render its frame (+ markup), transcript highlight, or a
+		// jump-to-moment chip — see createVideoMedia.
+		card.appendChild(createVideoMedia((first as VideoCarrier).__video!, pageUrl));
+	} else {
+		// Quotes (one per entry; grouped selections separated by a divider)
+		const quotes = el('div', 'space-y-sm');
+		unit.entries.forEach((entry, i) => {
+			const c = (entry.data.color as HLColor) || 'yellow';
+			const q = el('p', `font-body-reading text-body-reading text-on-surface/90 italic border-l-2 pl-md py-sm pr-sm rounded-r-md ${COLOR[c].quote}`);
+			const content = entry.data.content || '';
+			if (content) q.replaceChildren(DOMPurify.sanitize(content, { RETURN_DOM_FRAGMENT: true }));
+			quotes.appendChild(q);
+			if (i < unit.entries.length - 1) {
+				const div = el('div', 'flex items-center justify-center py-xs');
+				div.appendChild(icon('more_vert', 'text-outline-variant text-[16px]'));
+				quotes.appendChild(div);
+			}
+		});
+		card.appendChild(quotes);
+	}
 
 	// Comment thread — each comment carries per-comment edit + delete (video
 	// annotations keep their notes elsewhere, so they're read-only here).
 	const thread = el('div', 'mt-md space-y-sm');
 	for (const entry of unit.entries) {
+		const vid = (entry.data as VideoCarrier).__video ?? null;
 		(entry.data.notes ?? []).forEach((note, noteIndex) => {
 			const clean = note.replace(/<!--timestamp:\d+-->/, '').replace(/<!--edited:\d+-->/, '').trim();
 			if (!clean) return;
-			thread.appendChild(createCommentRow(pageUrl, entry.data.id, noteIndex, note, clean, isVideo));
+			thread.appendChild(createCommentRow(pageUrl, entry.data.id, noteIndex, note, clean, vid));
 		});
 	}
 
@@ -661,11 +729,14 @@ function createAnnotationCard(unit: RenderUnit): HTMLElement {
 	const editingInUnit = editingComment !== null &&
 		unit.entries.some(e => editingComment!.startsWith(`${pageUrl}::${e.data.id}::`));
 	if (!editingInUnit) {
+		const videoItem = isVideo ? (first as VideoCarrier).__video! : null;
 		const hasComments = unit.entries.some(e => (e.data.notes ?? []).some(n =>
 			n.replace(/<!--[^>]*-->/g, '').trim()));
 		const replyBox = createSleekEditor({
 			placeholder: hasComments ? 'Reply…' : 'Add a comment…',
-			onSubmit: (text) => addNote(pageUrl, first.id, text),
+			onSubmit: (text) => videoItem
+				? addVideoNote(pageUrl, videoItem, text)
+				: addNote(pageUrl, first.id, text),
 		});
 		replyBox.classList.add('mt-sm', 'hl-reply', 'hidden');
 		thread.appendChild(replyBox);
@@ -678,9 +749,12 @@ function createAnnotationCard(unit: RenderUnit): HTMLElement {
 
 // A single comment row: timestamp + inline edit/delete (revealed on row hover),
 // with the body swapped for an editor when this comment is being edited.
-function createCommentRow(pageUrl: string, highlightId: string, noteIndex: number, note: string, clean: string, readOnly: boolean): HTMLElement {
+function createCommentRow(pageUrl: string, highlightId: string, noteIndex: number, note: string, clean: string, video: VideoItem | null): HTMLElement {
 	const key = `${pageUrl}::${highlightId}::${noteIndex}`;
 	const editing = editingComment === key;
+	// Excalidraw diagram comment: the note body is just <!--diagram:ID-->; the image
+	// lives in IndexedDB. Rendered as an image (not editable, but deletable).
+	const diagramId = clean.match(/^<!--diagram:([A-Za-z0-9_-]+)-->$/)?.[1] ?? null;
 
 	const row = el('div', 'group/comment');
 
@@ -692,30 +766,47 @@ function createCommentRow(pageUrl: string, highlightId: string, noteIndex: numbe
 		if (edited) timeStr += ' (edited)';
 		header.appendChild(el('span', 'font-label-caps text-label-caps text-on-surface-variant text-[10px]', timeStr));
 	}
-	if (!readOnly && !editing) {
+	if (!editing) {
 		const actions = el('div', 'flex items-center gap-xs ml-auto opacity-0 group-hover/comment:opacity-100 transition-opacity');
-		const editBtn = el('button', 'p-0.5 rounded hover:bg-surface-variant transition-colors');
-		editBtn.title = 'Edit comment';
-		editBtn.appendChild(icon('edit', 'text-[16px] text-on-surface-variant hover:text-on-surface'));
-		editBtn.addEventListener('click', () => { editingComment = key; renderContent(); });
+		if (!diagramId) {
+			const editBtn = el('button', 'p-0.5 rounded hover:bg-surface-variant transition-colors');
+			editBtn.title = 'Edit comment';
+			editBtn.appendChild(icon('edit', 'text-[16px] text-on-surface-variant hover:text-on-surface'));
+			editBtn.addEventListener('click', () => { editingComment = key; renderContent(); });
+			actions.appendChild(editBtn);
+		}
 		const delBtn = el('button', 'p-0.5 rounded hover:bg-error-container transition-colors');
 		delBtn.title = 'Delete comment';
 		delBtn.appendChild(icon('close', 'text-[16px] text-on-surface-variant hover:text-error'));
-		delBtn.addEventListener('click', async () => { await deleteNote(pageUrl, highlightId, noteIndex); });
-		actions.append(editBtn, delBtn);
+		delBtn.addEventListener('click', async () => {
+			if (video) await deleteVideoNote(pageUrl, video, noteIndex);
+			else await deleteNote(pageUrl, highlightId, noteIndex);
+		});
+		actions.appendChild(delBtn);
 		header.appendChild(actions);
 	}
 	row.appendChild(header);
 
-	if (editing) {
+	if (diagramId) {
+		const img = el('img', 'rounded-lg border border-outline-variant/20 max-w-full cursor-pointer bg-white');
+		img.alt = 'Diagram';
+		img.title = 'Open diagram';
+		loadDiagramImage(diagramId).then(src => { if (src) img.src = src; });
+		img.addEventListener('click', () => {
+			browser.runtime.sendMessage({ action: 'openPopupWithDiagram', id: diagramId });
+		});
+		row.appendChild(img);
+	} else if (editing) {
 		const editor = createSleekEditor({
 			value: clean,
 			placeholder: 'Edit comment…',
 			autofocus: true,
 			onSubmit: async (text) => {
 				editingComment = null;
-				if (text && text !== clean) await editNote(pageUrl, highlightId, noteIndex, text);
-				else renderContent();
+				if (text && text !== clean) {
+					if (video) await editVideoNote(pageUrl, video, noteIndex, text);
+					else await editNote(pageUrl, highlightId, noteIndex, text);
+				} else renderContent();
 			},
 			onCancel: () => { editingComment = null; renderContent(); },
 		});
@@ -872,6 +963,30 @@ async function addNote(url: string, highlightId: string, text: string) {
 	h.notes = h.notes || [];
 	h.notes.push(`${text}<!--timestamp:${Date.now()}-->`);
 	await setPage<StoredData>('hl', url, stored);
+}
+
+// --- Video comment mutations (parity with the on-page video panel) ---
+// Video notes live in the 'va' store, so these route through the video APIs
+// instead of the 'hl' page store, matching video-comments.ts exactly.
+
+async function addVideoNote(watchUrl: string, item: VideoItem, text: string) {
+	await updateVideoItemNotes(watchUrl, item.id, [...item.notes, makeVideoNote(text, Date.now())]);
+}
+
+async function editVideoNote(watchUrl: string, item: VideoItem, index: number, text: string) {
+	const ts = item.notes[index]?.match(/<!--timestamp:(\d+)-->/)?.[1] ?? String(Date.now());
+	const notes = item.notes.slice();
+	notes[index] = `<!--timestamp:${ts}--><!--edited:${Date.now()}-->\n\n${text}`;
+	await updateVideoItemNotes(watchUrl, item.id, notes);
+}
+
+async function deleteVideoNote(watchUrl: string, item: VideoItem, index: number) {
+	const notes = item.notes.slice();
+	notes.splice(index, 1);
+	// A comment-only ('note') item with no comments left has nothing to show —
+	// remove the whole item, mirroring the on-page panel.
+	if (notes.length === 0 && item.kind === 'note') await removeVideoItem(watchUrl, item.id);
+	else await updateVideoItemNotes(watchUrl, item.id, notes);
 }
 
 // Edit one comment in place: keep its original creation timestamp (the comment's
