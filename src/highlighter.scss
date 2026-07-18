@@ -633,10 +633,37 @@ body[data-ob-comment-size="large"] .obsidian-comment-box { --ob-font: 17px; }
 	}
 
 
-	&.is-focused .obsidian-comment-actions-inline {
+	&.is-focused .obsidian-comment-actions-inline,
+	&:hover .obsidian-comment-actions-inline {
 		opacity: 1;
 		pointer-events: auto;
 	}
+
+	.obsidian-comment-image-gallery,
+	.obsidian-comment-edit-preview-gallery {
+		display: flex;
+		flex-wrap: wrap;
+		gap: 8px;
+		margin-bottom: 8px;
+		width: 100%;
+	}
+
+	.obsidian-comment-pasted-img {
+		width: calc(50% - 4px);
+		object-fit: contain;
+		border-radius: 4px;
+		cursor: pointer;
+		background: var(--ob-bg-secondary);
+	}
+
+	.obsidian-comment-text-block {
+		display: block;
+		margin-bottom: 8px;
+		&:last-child {
+			margin-bottom: 0;
+		}
+	}
+
 
 	.obsidian-comment-list {
 		position: relative;
@@ -804,6 +831,21 @@ body[data-ob-comment-size="large"] .obsidian-comment-box { --ob-font: 17px; }
 			opacity: 0;
 			pointer-events: none;
 			transition: opacity 0.12s ease;
+			align-items: center;
+
+			.obsidian-comment-sync-status {
+				display: flex;
+				align-items: center;
+				padding: 2px;
+				margin-right: 4px;
+				
+				&.synced {
+					color: #A68AF9;
+				}
+				&.unsynced {
+					color: var(--ob-muted);
+				}
+			}
 
 			button {
 				background: transparent;
@@ -859,17 +901,20 @@ body[data-ob-comment-size="large"] .obsidian-comment-box { --ob-font: 17px; }
 		// The edit-a-note field sits inside a comment item with its own spacing.
 		&.is-editing { margin: 0; }
 
-		&.is-single-line textarea {
+		&.is-single-line textarea,
+		&.is-single-line .obsidian-comment-editor-contenteditable {
 			padding-right: 70px;
 			padding-bottom: 4px;
 		}
 
-		&.is-multi-line textarea {
+		&.is-multi-line textarea,
+		&.is-multi-line .obsidian-comment-editor-contenteditable {
 			padding-right: 4px;
 			padding-bottom: 28px;
 		}
 
-		textarea {
+		textarea,
+		.obsidian-comment-editor-contenteditable {
 			width: 100%;
 			box-sizing: border-box;
 			border: none;
@@ -895,6 +940,24 @@ body[data-ob-comment-size="large"] .obsidian-comment-box { --ob-font: 17px; }
 				outline: none;
 				border-color: transparent;
 			}
+		}
+
+		.obsidian-comment-editor-contenteditable:empty::before {
+			content: attr(placeholder);
+			color: var(--ob-muted);
+			pointer-events: none;
+			display: block;
+		}
+
+		.obsidian-comment-editor-contenteditable img {
+			display: inline-block;
+			width: calc(50% - 4px);
+			max-width: 50%;
+			margin: 4px 2px;
+			vertical-align: middle;
+			border-radius: 4px;
+			cursor: pointer;
+			background: var(--ob-bg-secondary);
 		}
 
 		.obsidian-comment-editor-actions {
@@ -952,5 +1015,27 @@ body[data-ob-comment-size="large"] .obsidian-comment-box { --ob-font: 17px; }
 		&.has-text .obsidian-comment-editor-actions button.obsidian-comment-save-new:hover svg {
 			background: #734AD9 !important;
 		}
+	}
+}
+
+.obsidian-fullscreen-image-overlay {
+	position: fixed;
+	top: 0;
+	left: 0;
+	width: 100vw;
+	height: 100vh;
+	background: rgba(0, 0, 0, 0.85);
+	z-index: 9999999;
+	display: flex;
+	align-items: center;
+	justify-content: center;
+	cursor: pointer;
+
+	img {
+		max-width: 90vw;
+		max-height: 90vh;
+		object-fit: contain;
+		border-radius: 8px;
+		box-shadow: 0 10px 30px rgba(0, 0, 0, 0.5);
 	}
 }

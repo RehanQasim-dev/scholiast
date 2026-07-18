@@ -170,6 +170,7 @@ exists** — the sharded keys are the only format. The shapes below are the per-
   the anchor's quote/offsets. Selections inside an editable context (input / textarea /
   contenteditable / ARIA textbox) are ignored via `isEditableContext` (`src/utils/dom-utils.ts`) so
   text picked in a page search box or rich-text editor never turns into a highlight.
+- **Support for DIV/Callout Block Highlights**: Restructured text block container matching to support selecting and highlighting text inside callouts and box components built using nested `DIV`, `ARTICLE`, `SECTION`, `MAIN`, `ASIDE`, `HEADER`, or `FOOTER` elements (previously these collapsed or failed to highlight).
 - Undo/redo: `Ctrl+Z` / `Ctrl+Shift+Z`. `Esc` drops to the Select tool (see §3.0).
 
 ### 3.2 Commenting & annotation system
@@ -181,18 +182,14 @@ exists** — the sharded keys are the only format. The shapes below are the per-
 - **`Ctrl`+click** an existing highlight opens its comment bar for typing.
 - **Threaded replies**: a reply bar at the bottom of each card adds replies to the thread.
 - **Smart truncation**: replies longer than 3 lines collapse; 4th line fades/blurs out.
-- **Expandable**: clicking a truncated reply expands just that one (double-click → edit mode).
-- Inline markdown in editor: `Ctrl+B` / `Ctrl+I` wrap selection.
-- **Draft-first commit model (no auto-save)**: an editor with text is a *draft*. Drafts save only
-  explicitly (`Enter` / ↑ button) and discard only explicitly (`Escape`); they persist across
-  clicks, scrolls, and page selections (the box keeps its editor visible even unfocused). While a
-  draft is open, **annotation is suspended**: drag-selections stay plain native selections with the
-  browser's native selection color (so text can be copied into the draft) and no highlight is
-  created — shown passively by the toolbar dimming its tool buttons and the highlighter cursor
-  reverting to the normal text cursor (body class `obsidian-draft-open`); no flashing or
-  auto-scrolling. Empty editors are the exception: they're
-  discarded on click-away, and a selection while one is open creates the highlight normally.
-  Click-away cleanup is deferred to after mouseup so re-layout never disrupts a selection drag.
+- **Seamless Expansion & Edit**: clicking a collapsed reply expands it immediately in a single step. Double-clicking any reply seamlessly enters edit mode and focuses the editor without triggering intermediate collapses, layout jumps, or blinking.
+- **WYSIWYG contenteditable Editor**: Replaced the traditional `<textarea>` with a `contenteditable` `div` for comment editing.
+  - **Inline Pasted Images**: Pressing `Ctrl+V` pastes images directly into the cursor location in the editor, showing a visual preview rather than raw markdown.
+  - **Image Gallery Layout**: Pasted images wrap into rows of up to 2 side-by-side images (50% width), forcing any subsequent text below them.
+  - **Auto-linking pasted URLs**: Pasting or typing a URL (or opening an existing link) displays a blue clickable `<a>` link inline in the editor, opening in a new tab when clicked.
+  - **Serialization**: Inline images and HTML links are cleanly converted back to their respective markdown formats (`<!--image:ID-->`, `[Text](URL)`, or raw URLs) when saved.
+  - **Keybinds**: `Enter` inserts a new line inside the editor; `Ctrl+Enter` saves/commits the comment.
+- **Google Sync Status Icon**: Each reply displays a cloud sync indicator icon in its top-right corner. It is styled with a light/dull gray color when pending sync, turning into a bright purple-bordered icon once successfully merged and synced to Google Drive.
 - **Diagrams**: An "Add Diagram" button in the comment editor opens a dedicated, isolated Excalidraw window. The comment is created **only when the editor saves** (the diagram-id→highlight mapping is held pending until the save lands), so closing the editor without saving leaves no orphan comment. The editable **scene JSON** is stored in `browser.storage.local` under the `diagrams` key (`{ sceneData, updatedAt }`); the **rendered PNG is stored as a binary blob in IndexedDB** (frame-store `diagrams` store, keyed by diagram id) and rehydrated on demand — never inline in any JSON. Editing reuses the same diagram id (overwrites in place, no orphan); deleting the comment drops both the `diagrams` entry and the IndexedDB blob.
 - **Grouped highlights are one annotation on the live page**: a multi-block selection (e.g. several
   bullet points sharing a `groupId`) shows a **single comment box / thread** anchored to the group's

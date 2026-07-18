@@ -1,8 +1,137 @@
-import { AnyHighlightData, highlights, saveHighlights, updateHighlights } from './highlighter';
+import { AnyHighlightData, highlights, saveHighlights, updateHighlights, getPageUrl } from './highlighter';
 import { getElementByXPath } from './dom-utils';
 import { textHighlightRanges, setActiveHighlight } from './highlighter-overlays';
-import { loadDiagramImage, deleteDiagramImage } from './video/frame-store';
+import { loadDiagramImage, deleteDiagramImage, saveDiagramImage } from './video/frame-store';
 import { getAll } from './page-store';
+import { normalizeUrl } from './url-utils';
+
+let pageSnap: any = null;
+let hasFetchedSnap = false;
+
+function getCommentTextFromContentEditable(el: HTMLElement): string {
+	let text = '';
+	const walk = (node: Node) => {
+		if (node.nodeType === Node.TEXT_NODE) {
+			text += node.textContent;
+		} else if (node.nodeType === Node.ELEMENT_NODE) {
+			const element = node as HTMLElement;
+			if (element.tagName === 'IMG' && element.classList.contains('obsidian-comment-pasted-img')) {
+				const imageId = element.dataset.imageId;
+				if (imageId) {
+					text += `<!--image:${imageId}-->`;
+				}
+			} else if (element.tagName === 'A') {
+				const href = element.getAttribute('href') || '';
+				const linkText = element.textContent || '';
+				if (href === linkText) {
+					text += linkText;
+				} else {
+					text += `[${linkText}](${href})`;
+				}
+			} else if (element.tagName === 'BR') {
+				text += '\n';
+			} else if (element.tagName === 'DIV' || element.tagName === 'P') {
+				if (text.length > 0 && !text.endsWith('\n')) {
+					text += '\n';
+				}
+				for (let i = 0; i < node.childNodes.length; i++) {
+					walk(node.childNodes[i]);
+				}
+				if (element.tagName === 'DIV' && !text.endsWith('\n')) {
+					text += '\n';
+				}
+			} else {
+				for (let i = 0; i < node.childNodes.length; i++) {
+					walk(node.childNodes[i]);
+				}
+			}
+		}
+	};
+	for (let i = 0; i < el.childNodes.length; i++) {
+		walk(el.childNodes[i]);
+	}
+	return text.replace(/\n+$/, '');
+}
+
+function renderCommentBodyToEditableHtml(text: string): string {
+	const parts = text.split(/(<!--image:[A-Za-z0-9_-]+-->)/g);
+	let html = '';
+	for (const part of parts) {
+		if (!part) continue;
+		const imgMatch = part.match(/^<!--image:([A-Za-z0-9_-]+)-->$/);
+		if (imgMatch) {
+			const imageId = imgMatch[1];
+			const src = localDiagramCache.get(imageId) || '';
+			html += `<img class="obsidian-comment-pasted-img" data-image-id="${imageId}" src="${src || ''}" alt="Pasted image"/>`;
+			if (!src) {
+				loadDiagramImage(imageId).then(dataUrl => {
+					if (dataUrl) {
+						localDiagramCache.set(imageId, dataUrl);
+						document.querySelectorAll(`img[data-image-id="${imageId}"]`).forEach(img => {
+							(img as HTMLImageElement).src = dataUrl;
+						});
+					}
+				});
+			}
+		} else {
+			let chunk = escapeHtml(part);
+			
+			// 1. Markdown links
+			const mdLinks: string[] = [];
+			chunk = chunk.replace(/\[([^\]]+)\]\((https?:\/\/[^\s)]+)\)/g, (match, linkText, url) => {
+				const placeholder = `__MDLINK_${mdLinks.length}__`;
+				mdLinks.push(`<a href="${url}" target="_blank" rel="noopener noreferrer">${linkText}</a>`);
+				return placeholder;
+			});
+
+			// 2. Raw URLs
+			const urlRegex = /\bhttps?:\/\/[^\s<)]+/g;
+			chunk = chunk.replace(urlRegex, (match) => {
+				let url = match;
+				let suffix = '';
+				const trailingPunct = /[.,;:?!]+$/;
+				const m = url.match(trailingPunct);
+				if (m) {
+					suffix = m[0];
+					url = url.slice(0, -suffix.length);
+				}
+				return `<a href="${url}" target="_blank" rel="noopener noreferrer">${url}</a>` + suffix;
+			});
+
+			// 3. Restore Markdown links
+			mdLinks.forEach((linkHtml, index) => {
+				chunk = chunk.replace(`__MDLINK_${index}__`, linkHtml);
+			});
+
+			html += chunk.replace(/\n/g, '<br>');
+		}
+	}
+	return html;
+}
+
+function getEditorValue(ta: HTMLElement): string {
+	if (ta instanceof HTMLTextAreaElement) return ta.value;
+	return getCommentTextFromContentEditable(ta);
+}
+
+function setEditorValue(ta: HTMLElement, value: string) {
+	if (ta instanceof HTMLTextAreaElement) {
+		ta.value = value;
+	} else {
+		ta.innerHTML = renderCommentBodyToEditableHtml(value);
+	}
+}
+
+function fetchPageSnap() {
+	if (hasFetchedSnap) return;
+	hasFetchedSnap = true;
+	const currentUrl = normalizeUrl(getPageUrl());
+	const snapK = `snap:${currentUrl}`;
+	browser.storage.local.get(snapK).then((got: any) => {
+		pageSnap = got[snapK] || null;
+		renderCommentBoxes();
+	});
+}
 
 const COMMENT_BOX_WIDTH = 384;
 const COMMENT_BOX_MARGIN = 20;
@@ -13,8 +142,18 @@ let editingHighlightIds = new Set<string>();
 let focusedHighlightId: string | null = null;
 let expandedCommentIndexes = new Set<string>(); // highlightId-index
 let editingNoteKey: string | null = null; // highlightId-index
+const clickTimeouts = new Map<HTMLElement, ReturnType<typeof setTimeout>>();
 
 browser.storage.onChanged.addListener((changes, area) => {
+	if (area === 'local') {
+		const currentUrl = normalizeUrl(getPageUrl());
+		const snapK = `snap:${currentUrl}`;
+		if (changes[snapK]) {
+			pageSnap = changes[snapK].newValue || null;
+			renderCommentBoxes();
+		}
+	}
+	
 	if (area === 'local' && changes.diagrams) {
 		const newDiagrams = (changes.diagrams.newValue || {}) as Record<string, any>;
 		const oldDiagrams = (changes.diagrams.oldValue || {}) as Record<string, any>;
@@ -149,10 +288,9 @@ export function startAddingComment(highlightId: string) {
 	setTimeout(() => {
 		const box = activeCommentBoxes.get(highlightId);
 		if (box) {
-			const textarea = box.querySelector('textarea');
+			const textarea = box.querySelector('.new-comment-textarea') as HTMLElement | null;
 			if (textarea) {
 				textarea.focus({ preventScroll: true });
-				autosizeTextarea(textarea);
 			}
 		}
 	}, 50);
@@ -177,6 +315,8 @@ function applyCollapseState(box: HTMLElement, highlightId: string) {
 }
 
 export function renderCommentBoxes() {
+	fetchPageSnap();
+
 	// Reset layout first to get true un-shifted coordinates
 	document.body.style.paddingLeft = '';
 	document.body.style.paddingRight = '';
@@ -354,68 +494,113 @@ function hideTagMenu() {
 	tagMenuTa = null;
 }
 
-// Pixel position of the caret INSIDE a textarea, relative to the textarea's own
-// border box. A textarea exposes no caret coordinates, so we mirror it: a hidden
-// div cloned with the same box + text metrics, filled with the text up to the
-// caret and a marker span at the caret. The span's offset IS the caret position.
-function getCaretCoordinates(ta: HTMLTextAreaElement, position: number): { left: number, top: number, height: number } {
-	const div = document.createElement('div');
-	const computed = getComputedStyle(ta);
-	const style = div.style;
-	style.position = 'absolute';
-	style.visibility = 'hidden';
-	style.whiteSpace = 'pre-wrap';
-	style.wordWrap = 'break-word';
-	style.top = '0';
-	style.left = '0';
-	// Copy every property that affects where a glyph lands, so the mirror wraps
-	// identically to the real textarea.
-	const props = ['boxSizing', 'width', 'paddingTop', 'paddingRight', 'paddingBottom', 'paddingLeft',
-		'borderTopWidth', 'borderRightWidth', 'borderBottomWidth', 'borderLeftWidth',
-		'fontStyle', 'fontVariant', 'fontWeight', 'fontStretch', 'fontSize', 'fontFamily',
-		'lineHeight', 'textAlign', 'textTransform', 'textIndent', 'letterSpacing', 'wordSpacing', 'tabSize'];
-	for (const p of props) (style as any)[p] = (computed as any)[p];
+// Pixel position of the caret INSIDE a textarea or contenteditable element, relative to
+// its own border box.
+function getCaretCoordinates(ta: HTMLElement, position?: number): { left: number, top: number, height: number } {
+	if (ta instanceof HTMLTextAreaElement) {
+		const div = document.createElement('div');
+		const computed = getComputedStyle(ta);
+		const style = div.style;
+		style.position = 'absolute';
+		style.visibility = 'hidden';
+		style.whiteSpace = 'pre-wrap';
+		style.wordWrap = 'break-word';
+		style.top = '0';
+		style.left = '0';
+		const props = ['boxSizing', 'width', 'paddingTop', 'paddingRight', 'paddingBottom', 'paddingLeft',
+			'borderTopWidth', 'borderRightWidth', 'borderBottomWidth', 'borderLeftWidth',
+			'fontStyle', 'fontVariant', 'fontWeight', 'fontStretch', 'fontSize', 'fontFamily',
+			'lineHeight', 'textAlign', 'textTransform', 'textIndent', 'letterSpacing', 'wordSpacing', 'tabSize'];
+		for (const p of props) (style as any)[p] = (computed as any)[p];
 
-	div.textContent = ta.value.slice(0, position);
-	const span = document.createElement('span');
-	// Non-empty content so the span has a box even at end-of-text.
-	span.textContent = ta.value.slice(position) || '.';
-	div.appendChild(span);
+		div.textContent = ta.value.slice(0, position || 0);
+		const span = document.createElement('span');
+		span.textContent = ta.value.slice(position || 0) || '.';
+		div.appendChild(span);
 
-	// Append inside the editor so inherited font/width context matches.
-	(ta.parentElement || document.body).appendChild(div);
-	const coords = { left: span.offsetLeft, top: span.offsetTop, height: parseFloat(computed.lineHeight) || 18 };
-	div.remove();
-	return coords;
+		(ta.parentElement || document.body).appendChild(div);
+		const coords = { left: span.offsetLeft, top: span.offsetTop, height: parseFloat(computed.lineHeight) || 18 };
+		div.remove();
+		return coords;
+	}
+	
+	const selection = window.getSelection();
+	if (selection && selection.rangeCount > 0) {
+		const range = selection.getRangeAt(0).cloneRange();
+		if (range.collapsed) {
+			const span = document.createElement('span');
+			span.appendChild(document.createTextNode('\u200b'));
+			range.insertNode(span);
+			const rect = span.getBoundingClientRect();
+			const taRect = ta.getBoundingClientRect();
+			span.remove();
+			return {
+				left: rect.left - taRect.left + ta.scrollLeft,
+				top: rect.top - taRect.top + ta.scrollTop,
+				height: rect.height || 18
+			};
+		} else {
+			const rect = range.getBoundingClientRect();
+			const taRect = ta.getBoundingClientRect();
+			return {
+				left: rect.left - taRect.left + ta.scrollLeft,
+				top: rect.top - taRect.top + ta.scrollTop,
+				height: rect.height || 18
+			};
+		}
+	}
+	return { left: 0, top: 0, height: 18 };
 }
 
-// Place the menu just under the caret line, aligned to the `#`. Clamp to the
-// viewport horizontally (the box hugs the right edge, so overflow is the common
-// case → shift left) and flip above the line if it would fall off the bottom.
-function positionTagMenu(ta: HTMLTextAreaElement) {
+// Place the menu just under the caret line, aligned to the `#`.
+function positionTagMenu(ta: HTMLElement) {
 	if (!tagMenuEl) return;
 	const editor = ta.closest('.obsidian-comment-editor') as HTMLElement | null;
 	if (!editor) return;
 	const VIEWPORT_MARGIN = 8;
 
-	// Left edge of the `#` token (start of the current tag), not the caret, so the
-	// menu aligns with the tag being typed.
-	const caret = ta.selectionStart ?? ta.value.length;
-	const m = ta.value.slice(0, caret).match(TAG_TOKEN_RE);
-	const hashPos = m ? caret - m[2].length - 1 : caret; // -1 for the '#'
-	const c = getCaretCoordinates(ta, Math.max(0, hashPos));
+	let left = 0;
+	let top = 0;
+	let height = 18;
 
-	// Caret coords are relative to the textarea; offset by the textarea's own
-	// position within the editor to get editor-relative coordinates.
-	let left = ta.offsetLeft + c.left;
-	let top = ta.offsetTop + c.top + c.height + 2;
+	if (ta instanceof HTMLTextAreaElement) {
+		const caret = ta.selectionStart ?? ta.value.length;
+		const m = ta.value.slice(0, caret).match(TAG_TOKEN_RE);
+		const hashPos = m ? caret - m[2].length - 1 : caret;
+		const c = getCaretCoordinates(ta, Math.max(0, hashPos));
+		left = ta.offsetLeft + c.left;
+		top = ta.offsetTop + c.top + c.height + 2;
+		height = c.height;
+	} else {
+		const selection = window.getSelection();
+		if (selection && selection.rangeCount > 0) {
+			const range = selection.getRangeAt(0);
+			const container = range.startContainer;
+			const offset = range.startOffset;
+			if (container.nodeType === Node.TEXT_NODE) {
+				const text = container.textContent || '';
+				const preCaretText = text.slice(0, offset);
+				const m = preCaretText.match(TAG_TOKEN_RE);
+				if (m) {
+					const hashOffset = offset - m[2].length - 1;
+					const tempRange = document.createRange();
+					tempRange.setStart(container, hashOffset);
+					tempRange.setEnd(container, hashOffset + 1);
+					const rect = tempRange.getBoundingClientRect();
+					const taRect = ta.getBoundingClientRect();
+					
+					left = ta.offsetLeft + (rect.left - taRect.left + ta.scrollLeft);
+					top = ta.offsetTop + (rect.top - taRect.top + ta.scrollTop) + rect.height + 2;
+					height = rect.height || 18;
+				}
+			}
+		}
+	}
 
 	tagMenuEl.style.left = `${left}px`;
 	tagMenuEl.style.top = `${top}px`;
 	tagMenuEl.style.right = 'auto';
 
-	// Measure and clamp against the viewport (rect is viewport-relative, and left
-	// is editor-relative, so adjust left by the same delta 1:1).
 	const rect = tagMenuEl.getBoundingClientRect();
 	const overflowRight = rect.right - (window.innerWidth - VIEWPORT_MARGIN);
 	if (overflowRight > 0) {
@@ -427,22 +612,20 @@ function positionTagMenu(ta: HTMLTextAreaElement) {
 		left += VIEWPORT_MARGIN - newRect.left;
 		tagMenuEl.style.left = `${left}px`;
 	}
-	// Flip above the caret line if the dropdown would spill off the bottom.
 	const finalRect = tagMenuEl.getBoundingClientRect();
 	if (finalRect.bottom > window.innerHeight - VIEWPORT_MARGIN) {
-		top = ta.offsetTop + c.top - finalRect.height - 2;
+		top = ta.offsetTop + (top - ta.offsetTop - finalRect.height - height - 4);
 		tagMenuEl.style.top = `${top}px`;
 	}
 }
 
-function showTagMenu(ta: HTMLTextAreaElement, matches: string[]) {
+function showTagMenu(ta: HTMLElement, matches: string[]) {
 	const editor = ta.closest('.obsidian-comment-editor') as HTMLElement | null;
 	if (!editor) return;
 	if (!tagMenuEl || tagMenuTa !== ta) {
 		hideTagMenu();
 		tagMenuEl = document.createElement('div');
 		tagMenuEl.className = 'obsidian-tag-autocomplete';
-		// mousedown would blur the textarea and trigger click-away handling.
 		tagMenuEl.addEventListener('mousedown', (e) => e.preventDefault());
 		editor.appendChild(tagMenuEl);
 		tagMenuTa = ta;
@@ -458,33 +641,96 @@ function showTagMenu(ta: HTMLTextAreaElement, matches: string[]) {
 		tagMenuEl!.appendChild(opt);
 	});
 	positionTagMenu(ta);
-	// Keep the highlighted option in view when navigating past the 3 visible rows.
 	tagMenuEl.children[tagMenuIndex]?.scrollIntoView({ block: 'nearest' });
 }
 
-function insertTagCompletion(ta: HTMLTextAreaElement, tag: string) {
-	const caret = ta.selectionStart ?? ta.value.length;
-	const m = ta.value.slice(0, caret).match(TAG_TOKEN_RE);
-	if (m) {
-		const start = caret - m[2].length;
-		ta.value = ta.value.slice(0, start) + tag + ' ' + ta.value.slice(caret);
-		const pos = start + tag.length + 1;
-		ta.setSelectionRange(pos, pos);
+function insertTagCompletion(ta: HTMLElement, tag: string) {
+	if (ta instanceof HTMLTextAreaElement) {
+		const caret = ta.selectionStart ?? ta.value.length;
+		const m = ta.value.slice(0, caret).match(TAG_TOKEN_RE);
+		if (m) {
+			const start = caret - m[2].length;
+			ta.value = ta.value.slice(0, start) + tag + ' ' + ta.value.slice(caret);
+			const pos = start + tag.length + 1;
+			ta.setSelectionRange(pos, pos);
+		}
+	} else {
+		const selection = window.getSelection();
+		if (selection && selection.rangeCount > 0) {
+			const range = selection.getRangeAt(0);
+			const container = range.startContainer;
+			const offset = range.startOffset;
+			if (container.nodeType === Node.TEXT_NODE) {
+				const text = container.textContent || '';
+				const preCaretText = text.slice(0, offset);
+				const m = preCaretText.match(TAG_TOKEN_RE);
+				if (m) {
+					const start = offset - m[2].length - 1;
+					const postCaretText = text.slice(offset);
+					container.textContent = text.slice(0, start) + tag + ' ' + postCaretText;
+					
+					const newOffset = start + tag.length + 1;
+					range.setStart(container, newOffset);
+					range.setEnd(container, newOffset);
+					selection.removeAllRanges();
+					selection.addRange(range);
+				}
+			}
+		}
 	}
 	hideTagMenu();
-	ta.focus({ preventScroll: true });
-	autosizeTextarea(ta);
+	ta.focus();
 	renderCommentBoxes();
 }
 
 // Refresh the dropdown for the token under the caret (or hide it).
-function updateTagAutocomplete(ta: HTMLTextAreaElement) {
-	const m = ta.value.slice(0, ta.selectionStart ?? ta.value.length).match(TAG_TOKEN_RE);
+function updateTagAutocomplete(ta: HTMLElement) {
+	let text = '';
+	let caretPos = 0;
+
+	if (ta instanceof HTMLTextAreaElement) {
+		text = ta.value;
+		caretPos = ta.selectionStart ?? ta.value.length;
+	} else {
+		text = getEditorValue(ta);
+		const selection = window.getSelection();
+		if (selection && selection.rangeCount > 0) {
+			const range = selection.getRangeAt(0);
+			const container = range.startContainer;
+			const offset = range.startOffset;
+			if (container.nodeType === Node.TEXT_NODE) {
+				const preCaretText = container.textContent?.slice(0, offset) || '';
+				const m = preCaretText.match(TAG_TOKEN_RE);
+				if (m) {
+					// We match against this local text node prefix
+					const prefix = m[2].toLowerCase();
+					collectKnownTags().then(all => {
+						const selection2 = window.getSelection();
+						if (!selection2 || selection2.rangeCount === 0) return;
+						const container2 = selection2.getRangeAt(0).startContainer;
+						const offset2 = selection2.getRangeAt(0).startOffset;
+						const preCaretText2 = container2.textContent?.slice(0, offset2) || '';
+						const m2 = preCaretText2.match(TAG_TOKEN_RE);
+						if (!m2 || m2[2].toLowerCase() !== prefix) return;
+						const matches = all.filter(t => t.toLowerCase().startsWith(prefix) && t.toLowerCase() !== prefix).slice(0, 30);
+						if (matches.length === 0) { hideTagMenu(); return; }
+						showTagMenu(ta, matches);
+					});
+					return;
+				}
+			}
+		}
+		hideTagMenu();
+		return;
+	}
+
+	const m = text.slice(0, caretPos).match(TAG_TOKEN_RE);
 	if (!m) { hideTagMenu(); return; }
 	const prefix = m[2].toLowerCase();
 	collectKnownTags().then(all => {
-		// The user may have kept typing while tags loaded — re-verify the token.
-		const m2 = ta.value.slice(0, ta.selectionStart ?? ta.value.length).match(TAG_TOKEN_RE);
+		let currentText = ta instanceof HTMLTextAreaElement ? ta.value : getEditorValue(ta);
+		let currentCaret = ta instanceof HTMLTextAreaElement ? (ta.selectionStart ?? currentText.length) : 0; // fallback
+		const m2 = currentText.slice(0, currentCaret).match(TAG_TOKEN_RE);
 		if (!m2 || m2[2].toLowerCase() !== prefix) return;
 		const matches = all.filter(t => t.toLowerCase().startsWith(prefix) && t.toLowerCase() !== prefix).slice(0, 30);
 		if (matches.length === 0) { hideTagMenu(); return; }
@@ -492,9 +738,8 @@ function updateTagAutocomplete(ta: HTMLTextAreaElement) {
 	});
 }
 
-// Keyboard handling while the menu is open. Returns true when the key was
-// consumed (the editor's own Enter/Escape behavior must not run).
-function tagMenuHandleKey(e: KeyboardEvent, ta: HTMLTextAreaElement): boolean {
+// Keyboard handling while the menu is open.
+function tagMenuHandleKey(e: KeyboardEvent, ta: HTMLElement): boolean {
 	if (!tagMenuEl || !tagMenuEl.isConnected || tagMenuTa !== ta || tagMenuTags.length === 0) return false;
 	if (e.key === 'ArrowDown' || e.key === 'ArrowUp') {
 		e.preventDefault();
@@ -517,46 +762,49 @@ function tagMenuHandleKey(e: KeyboardEvent, ta: HTMLTextAreaElement): boolean {
 	return false;
 }
 
-// Grow a textarea to fit its content so the whole comment is visible without
-// an inner scrollbar while typing.
-function autosizeTextarea(ta: HTMLTextAreaElement) {
+function autosizeTextarea(ta: HTMLElement) {
+	if (!(ta instanceof HTMLTextAreaElement)) return;
 	const editorDiv = ta.closest('.obsidian-comment-editor');
-	
-	// Start by assuming it's a single line and see if it wraps with the large right-padding
 	if (editorDiv) {
 		editorDiv.classList.add('is-single-line');
 		editorDiv.classList.remove('is-multi-line');
 	}
-	
-	// Reset height to auto to measure natural content height
 	ta.style.height = 'auto';
-
-	// The height of a single line is typically around 26-30px depending on font.
-	// If it wraps, scrollHeight jumps to 45px+.
 	const isMulti = ta.scrollHeight > 35;
-	
 	if (editorDiv && isMulti) {
 		editorDiv.classList.remove('is-single-line');
 		editorDiv.classList.add('is-multi-line');
-		// Re-measure height with the new padding (which gives it more horizontal room,
-		// so it might actually un-wrap, but we prefer it to stay multi-line to avoid jitter)
 		ta.style.height = 'auto';
 	}
-
 	ta.style.height = `${ta.scrollHeight}px`;
 }
 
-// Wrap (or insert markers around) the current selection for Cmd/Ctrl+B / +I.
-// With no selection, drops empty markers and parks the caret between them.
-function wrapSelection(ta: HTMLTextAreaElement, marker: string) {
-	const { selectionStart: s, selectionEnd: e, value } = ta;
-	const selected = value.slice(s, e);
-	ta.value = value.slice(0, s) + marker + selected + marker + value.slice(e);
-	if (selected) {
-		ta.setSelectionRange(s + marker.length, e + marker.length);
-	} else {
-		ta.setSelectionRange(s + marker.length, s + marker.length);
+function wrapSelection(ta: HTMLElement, marker: string) {
+	if (ta instanceof HTMLTextAreaElement) {
+		const { selectionStart: s, selectionEnd: e, value } = ta;
+		const selected = value.slice(s, e);
+		ta.value = value.slice(0, s) + marker + selected + marker + value.slice(e);
+		if (selected) {
+			ta.setSelectionRange(s + marker.length, e + marker.length);
+		} else {
+			ta.setSelectionRange(s + marker.length, s + marker.length);
+		}
+		return;
 	}
+
+	const selection = window.getSelection();
+	if (selection && selection.rangeCount > 0) {
+		const range = selection.getRangeAt(0);
+		const selectedText = range.toString();
+		const wrapper = document.createTextNode(marker + selectedText + marker);
+		range.deleteContents();
+		range.insertNode(wrapper);
+		
+		range.selectNode(wrapper);
+		selection.removeAllRanges();
+		selection.addRange(range);
+	}
+	ta.dispatchEvent(new Event('input', { bubbles: true }));
 }
 
 // editingNoteKey is `${highlightId}-${index}`. Highlight ids never contain '-'
@@ -570,27 +818,54 @@ function parseNoteKey(key: string): { highlightId: string; index: number } {
 // [text](http(s) url), **bold**, *italic*. Input is already HTML-escaped, so
 // only the tags we emit here are live HTML. Links are restricted to http(s).
 function renderInlineMarkdown(escaped: string): string {
-	return escaped
-		.replace(/\[([^\]]+)\]\((https?:\/\/[^\s)]+)\)/g, '<a href="$2" target="_blank" rel="noopener noreferrer">$1</a>')
+	const mdLinks: string[] = [];
+	let html = escaped.replace(/\[([^\]]+)\]\((https?:\/\/[^\s)]+)\)/g, (match, text, url) => {
+		const placeholder = `__MDLINK_${mdLinks.length}__`;
+		mdLinks.push(`<a href="${url}" target="_blank" rel="noopener noreferrer">${text}</a>`);
+		return placeholder;
+	});
+
+	const urlRegex = /\bhttps?:\/\/[^\s<)]+/g;
+	html = html.replace(urlRegex, (match) => {
+		let url = match;
+		let suffix = '';
+		const trailingPunct = /[.,;:?!]+$/;
+		const m = url.match(trailingPunct);
+		if (m) {
+			suffix = m[0];
+			url = url.slice(0, -suffix.length);
+		}
+		return `<a href="${url}" target="_blank" rel="noopener noreferrer">${url}</a>` + suffix;
+	});
+
+	mdLinks.forEach((linkHtml, index) => {
+		html = html.replace(`__MDLINK_${index}__`, linkHtml);
+	});
+
+	return html
 		.replace(/\*\*([^*]+)\*\*/g, '<strong>$1</strong>')
-		.replace(/\*([^*\s][^*]*?)\*/g, '<em>$1</em>');
+		.replace(/\*([^*\s][^*]*?)\*/g, '<em>$1</em>')
+		.replace(/\n/g, '<br>');
 }
 
-// After entering edit mode, size the editor to the full comment, focus it, and
-// drop the caret at the end so the user types after the last character.
 function focusEditTextarea(highlightId: string) {
 	setTimeout(() => {
 		const box = activeCommentBoxes.get(highlightId);
 		if (!box) return;
-		const ta = box.querySelector('.edit-comment-textarea') as HTMLTextAreaElement | null;
+		const ta = box.querySelector('.edit-comment-textarea') as HTMLElement | null;
 		if (!ta) return;
-		autosizeTextarea(ta);
-		ta.focus({ preventScroll: true });
-		const end = ta.value.length;
-		ta.setSelectionRange(end, end);
-		// The textarea just grew to fit the note; re-run the layout so boxes below
-		// reflow and don't overlap this one (autosize happens after the initial
-		// render, so the first layout used the collapsed 1-row height).
+		
+		ta.focus();
+
+		const selection = window.getSelection();
+		if (selection) {
+			const range = document.createRange();
+			range.selectNodeContents(ta);
+			range.collapse(false);
+			selection.removeAllRanges();
+			selection.addRange(range);
+		}
+		
 		renderCommentBoxes();
 	}, 0);
 }
@@ -609,16 +884,16 @@ function createCommentBox(highlight: AnyHighlightData): HTMLElement {
 	box.addEventListener('click', (e) => {
 		const target = e.target as HTMLElement;
 		if (target.closest('.obsidian-comment-save')) {
-			const textarea = box.querySelector('textarea.new-comment-textarea') as HTMLTextAreaElement;
+			const textarea = box.querySelector('.new-comment-textarea') as HTMLElement;
 			if (textarea) {
-				const text = textarea.value.trim();
+				const text = getEditorValue(textarea).trim();
 				saveComment(highlight.id, text);
 			}
 		} else if (target.closest('.obsidian-comment-save-edit')) {
-			const textarea = box.querySelector('textarea.edit-comment-textarea') as HTMLTextAreaElement;
+			const textarea = box.querySelector('.edit-comment-textarea') as HTMLElement;
 			if (textarea && editingNoteKey) {
 				const { highlightId, index } = parseNoteKey(editingNoteKey);
-				saveEditedComment(highlightId, index, textarea.value.trim());
+				saveEditedComment(highlightId, index, getEditorValue(textarea).trim());
 			}
 		} else if (target.closest('.obsidian-comment-cancel')) {
 			stopAddingComment(highlight.id);
@@ -636,9 +911,9 @@ function createCommentBox(highlight: AnyHighlightData): HTMLElement {
 		} else if (target.closest('.obsidian-comment-thread-delete')) {
 			deleteCommentThread(highlight.id);
 		} else if (target.closest('.obsidian-comment-save-new')) {
-			const textarea = box.querySelector('textarea.new-comment-textarea') as HTMLTextAreaElement;
+			const textarea = box.querySelector('.new-comment-textarea') as HTMLElement;
 			if (textarea) {
-				const text = textarea.value.trim();
+				const text = getEditorValue(textarea).trim();
 				saveComment(highlight.id, text);
 			}
 		} else if (target.closest('.obsidian-comment-diagram-new')) {
@@ -657,22 +932,28 @@ function createCommentBox(highlight: AnyHighlightData): HTMLElement {
 			const textEl = target.closest('.obsidian-comment-text') as HTMLElement;
 			const noteIndex = textEl.dataset.index;
 			const expandKey = `${highlight.id}-${noteIndex}`;
-			// Expand/collapse instantly. Collapse state is a class applied OUTSIDE the
-			// cached HTML (like is-focused), so toggling it doesn't rebuild the box —
-			// the element survives, which both keeps it seamless and lets a following
-			// double-click still resolve to edit. renderCommentBoxes only reflows the
-			// neighbours (cache hit, no innerHTML churn).
+			
+			if (clickTimeouts.has(textEl)) {
+				clearTimeout(clickTimeouts.get(textEl));
+				clickTimeouts.delete(textEl);
+			}
+
 			if (expandedCommentIndexes.has(expandKey)) {
-				expandedCommentIndexes.delete(expandKey);
-				textEl.classList.add('is-collapsed');
+				const timeout = setTimeout(() => {
+					expandedCommentIndexes.delete(expandKey);
+					textEl.classList.add('is-collapsed');
+					renderCommentBoxes();
+					clickTimeouts.delete(textEl);
+				}, 180);
+				clickTimeouts.set(textEl, timeout);
 			} else {
 				const overflows = textEl.classList.contains('has-overflow') || textEl.scrollHeight > textEl.clientHeight;
 				if (overflows) {
 					expandedCommentIndexes.add(expandKey);
 					textEl.classList.remove('is-collapsed');
+					renderCommentBoxes();
 				}
 			}
-			renderCommentBoxes();
 		}
 	});
 
@@ -683,6 +964,10 @@ function createCommentBox(highlight: AnyHighlightData): HTMLElement {
 		const target = e.target as HTMLElement;
 		const textEl = target.closest('.obsidian-comment-text') as HTMLElement;
 		if (textEl) {
+			if (clickTimeouts.has(textEl)) {
+				clearTimeout(clickTimeouts.get(textEl));
+				clickTimeouts.delete(textEl);
+			}
 			const noteIndex = textEl.dataset.index;
 			if (noteIndex !== undefined) {
 				editingNoteKey = `${highlight.id}-${noteIndex}`;
@@ -696,59 +981,175 @@ function createCommentBox(highlight: AnyHighlightData): HTMLElement {
 	// Keep the editor sized to its content as the user types, and glow the submit button.
 	box.addEventListener('input', (e) => {
 		const ta = e.target as HTMLElement;
-		if (ta instanceof HTMLTextAreaElement &&
-			(ta.classList.contains('edit-comment-textarea') || ta.classList.contains('new-comment-textarea'))) {
-			autosizeTextarea(ta);
+		if (ta.classList.contains('edit-comment-textarea') || ta.classList.contains('new-comment-textarea')) {
 			updateTagAutocomplete(ta);
 
 			const editorDiv = ta.closest('.obsidian-comment-editor');
 			if (editorDiv) {
-				if (ta.value.trim().length > 0) {
+				const text = getEditorValue(ta);
+				if (text.trim().length > 0) {
 					editorDiv.classList.add('has-text');
 				} else {
 					editorDiv.classList.remove('has-text');
 				}
 			}
-			// Reflow neighboring boxes as this one grows/shrinks while typing, so
-			// they never overlap. The cache in updateCommentBox keeps the textarea
-			// DOM (and the caret/text) intact across the re-layout.
 			renderCommentBoxes();
 		}
 	});
 
-	// Editor keyboard shortcuts: Escape commits the comment (delete uses the
-	// trash button), Cmd/Ctrl+B / +I wrap the selection in markdown.
+	box.addEventListener('paste', async (e) => {
+		const ta = e.target as HTMLElement;
+		if (ta.classList.contains('edit-comment-textarea') || ta.classList.contains('new-comment-textarea')) {
+			const clipboardData = e.clipboardData;
+			if (!clipboardData) return;
+
+			let hasImage = false;
+			for (const item of clipboardData.items) {
+				if (item.type.startsWith('image/')) {
+					hasImage = true;
+					e.preventDefault();
+					const file = item.getAsFile();
+					if (file) {
+						const reader = new FileReader();
+						reader.onload = (ev) => {
+							const dataUrl = ev.target?.result as string;
+							const imageId = 'img_' + Math.random().toString(36).substring(2, 9);
+							saveDiagramImage(imageId, dataUrl).then(() => {
+								localDiagramCache.set(imageId, dataUrl);
+								
+								// Insert image into contenteditable
+								const selection = window.getSelection();
+								if (selection && selection.rangeCount > 0) {
+									const range = selection.getRangeAt(0);
+									range.deleteContents();
+
+									let insertNextToImage = false;
+									let brToRemove: HTMLElement | null = null;
+									
+									const startNode = range.startContainer;
+									const startOffset = range.startOffset;
+									
+									let container = startNode as HTMLElement;
+									let offset = startOffset;
+									
+									if (startNode.nodeType === Node.TEXT_NODE) {
+										container = startNode.parentNode as HTMLElement;
+										offset = Array.from(container.childNodes).indexOf(startNode as ChildNode);
+									}
+
+									let consecutiveImages = 0;
+									let idx = offset - 1;
+									while (idx >= 0) {
+										const sibling = container.childNodes[idx] as HTMLElement;
+										if (sibling && sibling.tagName === 'IMG' && sibling.classList.contains('obsidian-comment-pasted-img')) {
+											consecutiveImages++;
+											idx--;
+										} else if (sibling && sibling.tagName === 'BR') {
+											if (idx > 0 && (container.childNodes[idx - 1] as HTMLElement).tagName === 'IMG') {
+												idx--;
+											} else {
+												break;
+											}
+										} else {
+											break;
+										}
+									}
+
+									if (consecutiveImages % 2 === 1) {
+										insertNextToImage = true;
+										const prevSibling = container.childNodes[offset - 1] as HTMLElement;
+										if (prevSibling && prevSibling.tagName === 'BR') {
+											brToRemove = prevSibling;
+										}
+									}
+
+									if (insertNextToImage && brToRemove) {
+										brToRemove.remove();
+									}
+
+									const img = document.createElement('img');
+									img.className = 'obsidian-comment-pasted-img';
+									img.dataset.imageId = imageId;
+									img.src = dataUrl;
+
+									const frag = document.createDocumentFragment();
+									frag.appendChild(img);
+									
+									const br = document.createElement('br');
+									frag.appendChild(br);
+
+									range.insertNode(frag);
+									
+									range.setStartAfter(br);
+									range.setEndAfter(br);
+									selection.removeAllRanges();
+									selection.addRange(range);
+								}
+								
+								ta.dispatchEvent(new Event('input', { bubbles: true }));
+							});
+						};
+						reader.readAsDataURL(file);
+					}
+					break;
+				}
+			}
+
+			if (!hasImage) {
+				const pastedText = clipboardData.getData('text/plain');
+				const urlMatch = pastedText.trim().match(/^https?:\/\/[^\s<)]+$/);
+				if (urlMatch) {
+					e.preventDefault();
+					const url = urlMatch[0];
+					const selection = window.getSelection();
+					if (selection && selection.rangeCount > 0) {
+						const range = selection.getRangeAt(0);
+						range.deleteContents();
+						
+						const a = document.createElement('a');
+						a.href = url;
+						a.target = '_blank';
+						a.rel = 'noopener noreferrer';
+						a.textContent = url;
+						
+						range.insertNode(a);
+						
+						range.setStartAfter(a);
+						range.setEndAfter(a);
+						selection.removeAllRanges();
+						selection.addRange(range);
+					}
+					ta.dispatchEvent(new Event('input', { bubbles: true }));
+				}
+			}
+		}
+	});
+
 	box.addEventListener('keydown', (e) => {
-		const ta = e.target;
-		if (!(ta instanceof HTMLTextAreaElement)) return;
+		const ta = e.target as HTMLElement;
 		const isNew = ta.classList.contains('new-comment-textarea');
 		const isEdit = ta.classList.contains('edit-comment-textarea');
 		if (!isNew && !isEdit) return;
 
-		// Tag autocomplete owns the keys while its menu is open (Enter picks a
-		// tag instead of saving; Escape closes the menu instead of discarding).
 		if (tagMenuHandleKey(e, ta)) return;
 
-		if (e.key === 'Enter' && !e.shiftKey) {
+		if (e.key === 'Enter' && e.ctrlKey) {
 			if (e.isComposing) return;
 			e.preventDefault();
 			if (isNew) {
-				saveComment(highlight.id, ta.value.trim());
+				saveComment(highlight.id, getEditorValue(ta).trim());
 			} else if (editingNoteKey) {
 				const { highlightId, index } = parseNoteKey(editingNoteKey);
-				saveEditedComment(highlightId, index, ta.value.trim());
+				saveEditedComment(highlightId, index, getEditorValue(ta).trim());
 			}
 			return;
 		}
 
 		if (e.key === 'Escape') {
 			e.preventDefault();
-			e.stopPropagation(); // don't let highlighter mode exit on Escape
-			// Explicit-commit model: Escape DISCARDS the draft (save is Enter or
-			// the ↑ button). New comment → editor closes, text gone; edit → the
-			// note reverts to its saved text.
+			e.stopPropagation();
 			if (isNew) {
-				ta.value = '';
+				setEditorValue(ta, '');
 				stopAddingComment(highlight.id);
 				if (focusedHighlightId === highlight.id) focusedHighlightId = null;
 				renderCommentBoxes();
@@ -762,11 +1163,62 @@ function createCommentBox(highlight: AnyHighlightData): HTMLElement {
 		if ((e.ctrlKey || e.metaKey) && (e.key === 'b' || e.key === 'i' || e.key === 'B' || e.key === 'I')) {
 			e.preventDefault();
 			wrapSelection(ta, e.key.toLowerCase() === 'b' ? '**' : '*');
-			autosizeTextarea(ta);
 		}
 	});
 
 	return box;
+}
+
+
+
+function renderCommentBody(text: string, box: HTMLElement): string {
+	const parts = text.split(/(<!--image:[A-Za-z0-9_-]+-->)/g);
+	let html = '';
+	let currentImageGroup: string[] = [];
+
+	const flushImageGroup = () => {
+		if (currentImageGroup.length > 0) {
+			html += '<div class="obsidian-comment-image-gallery">';
+			for (const imageId of currentImageGroup) {
+				const src = localDiagramCache.get(imageId) || '';
+				if (!src) {
+					loadDiagramImage(imageId).then(dataUrl => {
+						if (dataUrl) {
+							localDiagramCache.set(imageId, dataUrl);
+							boxRenderCache.delete(box);
+							renderCommentBoxes();
+						}
+					});
+				}
+				html += `<img class="obsidian-comment-pasted-img" data-image-id="${imageId}" src="${src || ''}" alt="Pasted image"/>`;
+			}
+			html += '</div>';
+			currentImageGroup = [];
+		}
+	};
+
+	for (let i = 0; i < parts.length; i++) {
+		const part = parts[i];
+		if (!part) continue;
+
+		const imgMatch = part.match(/^<!--image:([A-Za-z0-9_-]+)-->$/);
+		if (imgMatch) {
+			currentImageGroup.push(imgMatch[1]);
+		} else {
+			if (part.trim() === '') {
+				continue;
+			}
+			flushImageGroup();
+			
+			let textHtml = escapeHtml(part);
+			textHtml = renderInlineMarkdown(textHtml);
+			textHtml = textHtml.replace(/(^|\s)(#[a-zA-Z0-9_-]+(?:\/[a-zA-Z0-9_-]+)*)/g, '$1<span class="obsidian-inline-tag">$2</span>');
+			html += `<div class="obsidian-comment-text-block">${textHtml}</div>`;
+		}
+	}
+	flushImageGroup();
+
+	return html;
 }
 
 function updateCommentBox(box: HTMLElement, highlight: AnyHighlightData) {
@@ -795,7 +1247,7 @@ function updateCommentBox(box: HTMLElement, highlight: AnyHighlightData) {
 	// the comment list, so the reply field is always at the end of the thread.
 	const editorHtml = `
 		<div class="obsidian-comment-editor sleek-input">
-			<textarea class="new-comment-textarea" placeholder="${notes.length > 0 ? 'Reply…' : 'Add a comment…'}" rows="1"></textarea>
+			<div class="new-comment-textarea obsidian-comment-editor-contenteditable" contenteditable="true" placeholder="${notes.length > 0 ? 'Reply…' : 'Add a comment…'}"></div>
 			<div class="obsidian-comment-editor-actions">
 				<button class="obsidian-comment-diagram-new" aria-label="Add Diagram" title="Add Diagram">
 					<svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M8.3 10a.7.7 0 0 1-.626-1.079L11.4 3a.7.7 0 0 1 1.198-.043L16.3 8.9a.7.7 0 0 1-.572 1.1Z"/><rect x="3" y="14" width="7" height="7" rx="1"/><circle cx="17.5" cy="17.5" r="3.5"/></svg>
@@ -815,12 +1267,12 @@ function updateCommentBox(box: HTMLElement, highlight: AnyHighlightData) {
 
 			let displayHtml = '';
 			const diagramMatch = parsed.text.match(/^<!--diagram:([A-Za-z0-9_-]+)-->$/);
+			
 			if (diagramMatch) {
 				const diagramId = diagramMatch[1];
 				const src = localDiagramCache.get(diagramId) || '';
 				displayHtml = `<img class="obsidian-comment-diagram-img" data-diagram-id="${diagramId}" src="${src}" alt="Diagram"/>`;
 				if (!src) {
-					// Image lives in IndexedDB now — fetch + cache, then re-render.
 					loadDiagramImage(diagramId).then(dataUrl => {
 						if (dataUrl) {
 							localDiagramCache.set(diagramId, dataUrl);
@@ -830,9 +1282,15 @@ function updateCommentBox(box: HTMLElement, highlight: AnyHighlightData) {
 					});
 				}
 			} else {
-				displayHtml = escapeHtml(parsed.text);
-				displayHtml = renderInlineMarkdown(displayHtml);
-				displayHtml = displayHtml.replace(/(^|\s)(#[a-zA-Z0-9_-]+(?:\/[a-zA-Z0-9_-]+)*)/g, '$1<span class="obsidian-inline-tag">$2</span>');
+				displayHtml = renderCommentBody(parsed.text, box);
+			}
+
+			let isSynced = false;
+			if (pageSnap && pageSnap.highlights) {
+				const snapHl = pageSnap.highlights.find((h: any) => h.id === highlight.id);
+				if (snapHl && snapHl.notes && snapHl.notes.includes(note)) {
+					isSynced = true;
+				}
 			}
 
 			// Threaded layout: a header line (colored dot on the thread rail +
@@ -842,7 +1300,7 @@ function updateCommentBox(box: HTMLElement, highlight: AnyHighlightData) {
 			// either the rendered text or the edit textarea.
 			const bodyHtml = isEditingThisNote
 				? `<div class="obsidian-comment-editor sleek-input is-editing">
-						<textarea class="edit-comment-textarea" rows="1">${escapeHtml(parsed.text)}</textarea>
+						<div class="edit-comment-textarea obsidian-comment-editor-contenteditable" contenteditable="true">${renderCommentBodyToEditableHtml(parsed.text)}</div>
 					</div>`
 				: `<div class="obsidian-comment-text" data-index="${index}">${displayHtml}</div>`;
 			html += `
@@ -851,6 +1309,12 @@ function updateCommentBox(box: HTMLElement, highlight: AnyHighlightData) {
 						<span class="obsidian-comment-dot"></span>
 						${parsed.timestamp ? `<span class="obsidian-comment-timestamp">${formatTime(parsed.timestamp)}</span>` : '<span class="obsidian-comment-timestamp"></span>'}
 						<div class="obsidian-comment-actions-inline">
+							<span class="obsidian-comment-sync-status ${isSynced ? 'synced' : 'unsynced'}" aria-label="${isSynced ? 'Synced' : 'Not synced'}" title="${isSynced ? 'Synced to Google Drive' : 'Waiting to sync'}">
+								${isSynced 
+									? `<svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M17.5 19H9a7 7 0 1 1 6.71-9h1.79a4.5 4.5 0 1 1 0 9Z"/></svg>`
+									: `<svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" opacity="0.4"><path d="M17.5 19H9a7 7 0 1 1 6.71-9h1.79a4.5 4.5 0 1 1 0 9Z"/></svg>`
+								}
+							</span>
 							<button class="obsidian-comment-edit" data-index="${index}" aria-label="Edit comment">
 								<svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 20h9"/><path d="M16.5 3.5a2.12 2.12 0 0 1 3 3L7 19l-4 1 1-4Z"/></svg>
 							</button>
@@ -896,8 +1360,8 @@ function updateCommentBox(box: HTMLElement, highlight: AnyHighlightData) {
 // every render from the live textarea value — after an innerHTML rebuild the
 // textarea is fresh/empty, so the class drops off automatically.
 function syncDraftClass(box: HTMLElement) {
-	const ta = box.querySelector(':scope > .obsidian-comment-editor textarea.new-comment-textarea') as HTMLTextAreaElement | null;
-	box.classList.toggle('has-draft', !!ta && ta.value.trim().length > 0);
+	const ta = box.querySelector(':scope > .obsidian-comment-editor .new-comment-textarea') as HTMLElement | null;
+	box.classList.toggle('has-draft', !!ta && getEditorValue(ta).trim().length > 0);
 }
 
 window.addEventListener('obsidian-add-comment', ((e: CustomEvent) => {
@@ -915,9 +1379,9 @@ window.addEventListener('obsidian-add-comment', ((e: CustomEvent) => {
 // True while any visible comment editor holds uncommitted text.
 export function hasUnsavedCommentText(): boolean {
 	for (const box of activeCommentBoxes.values()) {
-		const tas = box.querySelectorAll('textarea.new-comment-textarea, textarea.edit-comment-textarea');
-		for (const ta of Array.from(tas) as HTMLTextAreaElement[]) {
-			if (ta.offsetParent !== null && ta.value.trim()) return true;
+		const tas = box.querySelectorAll('.new-comment-textarea, .edit-comment-textarea');
+		for (const ta of Array.from(tas) as HTMLElement[]) {
+			if (ta.offsetParent !== null && getEditorValue(ta).trim()) return true;
 		}
 	}
 	return false;
@@ -957,16 +1421,14 @@ document.addEventListener('mousedown', (e) => {
 			setTimeout(() => {
 				for (const id of staleEditing) {
 					if (!editingHighlightIds.has(id)) continue;
-					const ta = activeCommentBoxes.get(id)?.querySelector('textarea.new-comment-textarea') as HTMLTextAreaElement | null;
-					if (!ta || !ta.value.trim()) stopAddingComment(id);
+					const ta = activeCommentBoxes.get(id)?.querySelector('.new-comment-textarea') as HTMLElement | null;
+					if (!ta || !getEditorValue(ta).trim()) stopAddingComment(id);
 				}
 				if (staleNoteKey && editingNoteKey === staleNoteKey) {
 					const ta = activeCommentBoxes.get(parseNoteKey(staleNoteKey).highlightId)
-						?.querySelector('textarea.edit-comment-textarea') as HTMLTextAreaElement | null;
+						?.querySelector('.edit-comment-textarea') as HTMLElement | null;
 					const original = originalTextForNoteKey(staleNoteKey);
-					// An edit that hasn't diverged from the saved text isn't a draft —
-					// close it (nothing to lose). A changed edit stays open.
-					if (!ta || ta.value.trim() === '' || ta.value.trim() === original) {
+					if (!ta || getEditorValue(ta).trim() === '' || getEditorValue(ta).trim() === original) {
 						editingNoteKey = null;
 					}
 				}
@@ -1052,15 +1514,14 @@ function deleteComment(highlightId: string, index: number) {
 	const owner = ref ? highlights.find(h => h.id === ref.ownerId) : undefined;
 	if (owner && owner.notes && ref) {
 		const deleted = owner.notes[ref.ownerIndex];
-		// New objects (no in-place splice) so undo can restore the deleted comment.
 		const newNotes = owner.notes.filter((_, i) => i !== ref.ownerIndex);
 		const updated = { ...owner, notes: newNotes };
 		const newHighlights = highlights.map(h => h.id === owner.id ? updated : h);
 		updateHighlights(newHighlights);
 		saveHighlights();
-		// If the deleted comment was a diagram, drop its scene + rendered image so
-		// neither storage.local nor the IndexedDB blob store accumulates orphans.
-		const dm = parseNoteString(deleted).text.match(/^<!--diagram:([A-Za-z0-9_-]+)-->$/);
+
+		const parsedText = parseNoteString(deleted).text;
+		const dm = parsedText.match(/^<!--diagram:([A-Za-z0-9_-]+)-->$/);
 		if (dm) {
 			const did = dm[1];
 			localDiagramCache.delete(did);
@@ -1069,6 +1530,14 @@ function deleteComment(highlightId: string, index: number) {
 				const diagrams = (res.diagrams || {}) as Record<string, any>;
 				if (diagrams[did]) { delete diagrams[did]; return browser.storage.local.set({ diagrams }); }
 			});
+		}
+		
+		let imgMatch;
+		const imgRegex = /<!--image:([A-Za-z0-9_-]+)-->/g;
+		while ((imgMatch = imgRegex.exec(parsedText)) !== null) {
+			const iid = imgMatch[1];
+			localDiagramCache.delete(iid);
+			deleteDiagramImage(iid).catch(() => {});
 		}
 		setActiveHighlight(null); // clear emphasis in case the box is removed
 		renderCommentBoxes();
@@ -1087,10 +1556,18 @@ function deleteCommentThread(highlightId: string) {
 	// Collect diagram comments so their scene + rendered image are cleaned up too,
 	// mirroring single-comment deletion (no orphans in storage.local / IndexedDB).
 	const diagramIds: string[] = [];
+	const imageIds: string[] = [];
 	for (const m of members) {
 		for (const note of m.notes || []) {
-			const dm = parseNoteString(note).text.match(/^<!--diagram:([A-Za-z0-9_-]+)-->$/);
+			const text = parseNoteString(note).text;
+			const dm = text.match(/^<!--diagram:([A-Za-z0-9_-]+)-->$/);
 			if (dm) diagramIds.push(dm[1]);
+
+			let imgMatch;
+			const imgRegex = /<!--image:([A-Za-z0-9_-]+)-->/g;
+			while ((imgMatch = imgRegex.exec(text)) !== null) {
+				imageIds.push(imgMatch[1]);
+			}
 		}
 	}
 
@@ -1106,6 +1583,11 @@ function deleteCommentThread(highlightId: string) {
 			const diagrams = (res.diagrams || {}) as Record<string, any>;
 			if (diagrams[did]) { delete diagrams[did]; return browser.storage.local.set({ diagrams }); }
 		});
+	}
+	
+	for (const iid of imageIds) {
+		localDiagramCache.delete(iid);
+		deleteDiagramImage(iid).catch(() => {});
 	}
 
 	setActiveHighlight(null); // clear emphasis — the box is about to be removed
