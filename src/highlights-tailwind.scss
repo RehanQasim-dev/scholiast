@@ -149,3 +149,66 @@
 ::-webkit-scrollbar-thumb:hover { background: theme('colors.outline'); }
 
 body { background-color: theme('colors.background'); color: theme('colors.on-surface'); }
+
+/* --- Comment bodies -------------------------------------------------------
+   The markdown subset from utils/comment-markdown.ts, styled the same whether a
+   comment is being displayed or edited, so entering edit mode doesn't move text. */
+.ob-md-body {
+  strong { font-weight: 700; }
+  em { font-style: italic; }
+  a { color: #a78bfa; text-decoration: underline; }
+
+  .ob-md-list {
+    list-style: disc;
+    margin: 0.25rem 0;
+    padding-left: 1.35rem;
+
+    li { margin: 0.125rem 0; }
+
+    /* Task list: the disc gives way to the checkbox drawn on .ob-md-check. */
+    &.ob-md-tasks {
+      list-style: none;
+      padding-left: 0.25rem;
+
+      li {
+        display: flex;
+        align-items: flex-start;
+        gap: 0.45rem;
+      }
+    }
+  }
+
+  .ob-md-check {
+    flex: 0 0 auto;
+    width: 15px;
+    height: 15px;
+    margin-top: 0.3rem;
+    border: 1.5px solid theme('colors.outline');
+    border-radius: 3px;
+    cursor: pointer;
+    user-select: none;
+    transition: background 0.12s ease, border-color 0.12s ease;
+  }
+
+  li[data-checked='true'] {
+    opacity: 0.6;
+    text-decoration: line-through;
+
+    .ob-md-check {
+      border-color: #8c73fa;
+      background: #8c73fa
+        url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='white' stroke-width='3.5' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='m5 13 4 4L19 7'/%3E%3C/svg%3E")
+        center / 11px 11px no-repeat;
+    }
+  }
+
+  /* Placeholder for the contenteditable reply/edit field (a real <textarea>
+     placeholder has no equivalent here). */
+  &.is-empty[contenteditable]:empty::before,
+  &.is-empty[contenteditable]:has(> br:only-child)::before {
+    content: attr(data-placeholder);
+    color: theme('colors.on-surface-variant');
+    opacity: 0.6;
+    pointer-events: none;
+  }
+}

@@ -670,6 +670,58 @@ body[data-ob-comment-size="large"] .obsidian-comment-box { --ob-font: 17px; }
 		}
 	}
 
+	// Bullet + task lists, styled identically in the rendered comment and inside the
+	// editor so switching into edit mode doesn't visibly move the text (see
+	// utils/comment-markdown.ts for the markdown they serialise to).
+	.ob-md-list {
+		list-style: disc;
+		margin: 4px 0;
+		padding-left: 20px;
+
+		li {
+			margin: 2px 0;
+			padding-left: 0;
+		}
+
+		// Task list: the disc gives way to a checkbox drawn on the .ob-md-check span.
+		&.ob-md-tasks {
+			list-style: none;
+			padding-left: 4px;
+
+			li {
+				display: flex;
+				align-items: flex-start;
+				gap: 6px;
+			}
+		}
+	}
+
+	.ob-md-check {
+		flex: 0 0 auto;
+		width: 13px;
+		height: 13px;
+		margin-top: 3px;
+		border: 1.5px solid var(--ob-muted);
+		border-radius: 3px;
+		cursor: pointer;
+		user-select: none;
+		transition: background 0.12s ease, border-color 0.12s ease;
+	}
+
+	li[data-checked="true"] {
+		.ob-md-check {
+			border-color: #895DF4;
+			background: #895DF4
+				// Inline tick, so no icon font or extra element is needed.
+				url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='white' stroke-width='3.5' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='m5 13 4 4L19 7'/%3E%3C/svg%3E")
+				center / 10px 10px no-repeat;
+		}
+
+		// Ticked items dim rather than vanish, matching every task list people know.
+		opacity: 0.6;
+		text-decoration: line-through;
+	}
+
 
 	.obsidian-comment-list {
 		position: relative;
@@ -921,18 +973,6 @@ body[data-ob-comment-size="large"] .obsidian-comment-box { --ob-font: 17px; }
 			}
 		}
 
-		&.is-single-line textarea,
-		&.is-single-line .obsidian-comment-editor-contenteditable {
-			padding-right: 70px;
-			padding-bottom: 4px;
-		}
-
-		&.is-multi-line textarea,
-		&.is-multi-line .obsidian-comment-editor-contenteditable {
-			padding-right: 4px;
-			padding-bottom: 28px;
-		}
-
 		textarea,
 		.obsidian-comment-editor-contenteditable {
 			width: 100%;
@@ -980,16 +1020,39 @@ body[data-ob-comment-size="large"] .obsidian-comment-box { --ob-font: 17px; }
 			background: var(--ob-bg-secondary);
 		}
 
+		// The action row is always its own line under the text — the send/diagram
+		// buttons never float into the text, and the space to their left holds the
+		// formatting bar instead of sitting empty.
 		.obsidian-comment-editor-actions {
 			display: flex;
-			justify-content: flex-end;
+			justify-content: space-between;
 			gap: 4px;
 			align-items: center;
-			position: absolute;
-			right: 4px;
-			bottom: 4px;
-			padding: 0;
+			padding: 2px 2px 0;
 			margin: 0;
+
+			.obsidian-comment-format-bar,
+			.obsidian-comment-editor-buttons {
+				display: flex;
+				align-items: center;
+				gap: 2px;
+			}
+
+			// Formatting buttons read as secondary until they apply to the caret.
+			button.obsidian-comment-format {
+				opacity: 0.65;
+
+				&:hover {
+					opacity: 1;
+					background: rgba(255, 255, 255, 0.08);
+				}
+
+				&.is-active {
+					opacity: 1;
+					color: #A68AF9;
+					background: rgba(137, 93, 244, 0.2);
+				}
+			}
 
 			button {
 				display: flex;

@@ -4,55 +4,29 @@ import { textHighlightRanges, setActiveHighlight } from './highlighter-overlays'
 import { loadDiagramImage, deleteDiagramImage, saveDiagramImage } from './video/frame-store';
 import { getAll } from './page-store';
 import { normalizeUrl } from './url-utils';
+import {
+	commentTextToDisplayHtml, commentTextToEditableHtml, serializeCommentEditor,
+	applyCommentFormat, activeCommentFormats, toggleTaskFromClick, toggleTaskInMarkdown,
+	type CommentFormatCommand,
+} from './comment-markdown';
 
 let pageSnap: any = null;
 let hasFetchedSnap = false;
 
+// Editor DOM → stored markdown. Bold/italic/lists are handled by the shared
+// serializer; the only page-specific part is turning a pasted <img> back into its
+// `<!--image:ID-->` marker.
 function getCommentTextFromContentEditable(el: HTMLElement): string {
-	let text = '';
-	const walk = (node: Node) => {
-		if (node.nodeType === Node.TEXT_NODE) {
-			text += node.textContent;
-		} else if (node.nodeType === Node.ELEMENT_NODE) {
-			const element = node as HTMLElement;
-			if (element.tagName === 'IMG' && element.classList.contains('obsidian-comment-pasted-img')) {
-				const imageId = element.dataset.imageId;
-				if (imageId) {
-					text += `<!--image:${imageId}-->`;
-				}
-			} else if (element.tagName === 'A') {
-				const href = element.getAttribute('href') || '';
-				const linkText = element.textContent || '';
-				if (href === linkText) {
-					text += linkText;
-				} else {
-					text += `[${linkText}](${href})`;
-				}
-			} else if (element.tagName === 'BR') {
-				text += '\n';
-			} else if (element.tagName === 'DIV' || element.tagName === 'P') {
-				if (text.length > 0 && !text.endsWith('\n')) {
-					text += '\n';
-				}
-				for (let i = 0; i < node.childNodes.length; i++) {
-					walk(node.childNodes[i]);
-				}
-				if (element.tagName === 'DIV' && !text.endsWith('\n')) {
-					text += '\n';
-				}
-			} else {
-				for (let i = 0; i < node.childNodes.length; i++) {
-					walk(node.childNodes[i]);
-				}
-			}
-		}
-	};
-	for (let i = 0; i < el.childNodes.length; i++) {
-		walk(el.childNodes[i]);
-	}
-	return text.replace(/\n+$/, '');
+	return serializeCommentEditor(el, (img) => {
+		if (!img.classList.contains('obsidian-comment-pasted-img')) return null;
+		const imageId = img.dataset.imageId;
+		return imageId ? `<!--image:${imageId}-->` : null;
+	});
 }
 
+// Stored markdown → editor DOM. Formatting comes back as real elements (so the
+// editor shows bold text rather than `**bold**`) and pasted images as <img>s whose
+// bytes are filled in from IndexedDB when they aren't cached yet.
 function renderCommentBodyToEditableHtml(text: string): string {
 	const parts = text.split(/(<!--image:[A-Za-z0-9_-]+-->)/g);
 	let html = '';
@@ -74,36 +48,7 @@ function renderCommentBodyToEditableHtml(text: string): string {
 				});
 			}
 		} else {
-			let chunk = escapeHtml(part);
-			
-			// 1. Markdown links
-			const mdLinks: string[] = [];
-			chunk = chunk.replace(/\[([^\]]+)\]\((https?:\/\/[^\s)]+)\)/g, (match, linkText, url) => {
-				const placeholder = `__MDLINK_${mdLinks.length}__`;
-				mdLinks.push(`<a href="${url}" target="_blank" rel="noopener noreferrer">${linkText}</a>`);
-				return placeholder;
-			});
-
-			// 2. Raw URLs
-			const urlRegex = /\bhttps?:\/\/[^\s<)]+/g;
-			chunk = chunk.replace(urlRegex, (match) => {
-				let url = match;
-				let suffix = '';
-				const trailingPunct = /[.,;:?!]+$/;
-				const m = url.match(trailingPunct);
-				if (m) {
-					suffix = m[0];
-					url = url.slice(0, -suffix.length);
-				}
-				return `<a href="${url}" target="_blank" rel="noopener noreferrer">${url}</a>` + suffix;
-			});
-
-			// 3. Restore Markdown links
-			mdLinks.forEach((linkHtml, index) => {
-				chunk = chunk.replace(`__MDLINK_${index}__`, linkHtml);
-			});
-
-			html += chunk.replace(/\n/g, '<br>');
+			html += commentTextToEditableHtml(part);
 		}
 	}
 	return html;
@@ -810,59 +755,27 @@ function tagMenuHandleKey(e: KeyboardEvent, ta: HTMLElement): boolean {
 	return false;
 }
 
-// Toggle is-single-line/is-multi-line so the send button sits inline on the
-// right for a single line and drops below once the text wraps. Handles both the
-// legacy textarea and the contenteditable editor.
+// The action row lives on its own line, so nothing has to be measured to lay the
+// editor out. What's left is keeping the legacy <textarea> path (video panel) sized
+// to its content, and reflecting which formats apply to the caret on the buttons.
 function autosizeTextarea(ta: HTMLElement) {
-	const editorDiv = ta.closest('.obsidian-comment-editor');
-	if (!editorDiv) return;
-
-	// Measure with single-line padding (padding-right reserves room for the
-	// button) so wrapping is detected against the actual usable width.
-	editorDiv.classList.add('is-single-line');
-	editorDiv.classList.remove('is-multi-line');
-
-	if (ta instanceof HTMLTextAreaElement) {
-		ta.style.height = 'auto';
-	}
-
-	if (ta.scrollHeight > 35) {
-		editorDiv.classList.remove('is-single-line');
-		editorDiv.classList.add('is-multi-line');
-	}
-
 	if (ta instanceof HTMLTextAreaElement) {
 		ta.style.height = 'auto';
 		ta.style.height = `${ta.scrollHeight}px`;
 	}
+	syncFormatButtons(ta);
 }
 
-function wrapSelection(ta: HTMLElement, marker: string) {
-	if (ta instanceof HTMLTextAreaElement) {
-		const { selectionStart: s, selectionEnd: e, value } = ta;
-		const selected = value.slice(s, e);
-		ta.value = value.slice(0, s) + marker + selected + marker + value.slice(e);
-		if (selected) {
-			ta.setSelectionRange(s + marker.length, e + marker.length);
-		} else {
-			ta.setSelectionRange(s + marker.length, s + marker.length);
-		}
-		return;
-	}
-
-	const selection = window.getSelection();
-	if (selection && selection.rangeCount > 0) {
-		const range = selection.getRangeAt(0);
-		const selectedText = range.toString();
-		const wrapper = document.createTextNode(marker + selectedText + marker);
-		range.deleteContents();
-		range.insertNode(wrapper);
-		
-		range.selectNode(wrapper);
-		selection.removeAllRanges();
-		selection.addRange(range);
-	}
-	ta.dispatchEvent(new Event('input', { bubbles: true }));
+// Light up the format buttons that apply where the caret is, the way a word
+// processor does — so the state of the text is readable from the toolbar.
+function syncFormatButtons(ta: HTMLElement) {
+	const editorDiv = ta.closest('.obsidian-comment-editor');
+	if (!editorDiv || ta instanceof HTMLTextAreaElement) return;
+	const active = activeCommentFormats(ta);
+	editorDiv.querySelectorAll('.obsidian-comment-format').forEach(btn => {
+		const command = (btn as HTMLElement).dataset.format as CommentFormatCommand;
+		btn.classList.toggle('is-active', active.has(command));
+	});
 }
 
 // editingNoteKey is `${highlightId}-${index}`. Highlight ids never contain '-'
@@ -870,40 +783,6 @@ function wrapSelection(ta: HTMLElement, marker: string) {
 function parseNoteKey(key: string): { highlightId: string; index: number } {
 	const dash = key.lastIndexOf('-');
 	return { highlightId: key.slice(0, dash), index: parseInt(key.slice(dash + 1)) };
-}
-
-// Render a small, safe subset of inline markdown in *displayed* comments:
-// [text](http(s) url), **bold**, *italic*. Input is already HTML-escaped, so
-// only the tags we emit here are live HTML. Links are restricted to http(s).
-function renderInlineMarkdown(escaped: string): string {
-	const mdLinks: string[] = [];
-	let html = escaped.replace(/\[([^\]]+)\]\((https?:\/\/[^\s)]+)\)/g, (match, text, url) => {
-		const placeholder = `__MDLINK_${mdLinks.length}__`;
-		mdLinks.push(`<a href="${url}" target="_blank" rel="noopener noreferrer">${text}</a>`);
-		return placeholder;
-	});
-
-	const urlRegex = /\bhttps?:\/\/[^\s<)]+/g;
-	html = html.replace(urlRegex, (match) => {
-		let url = match;
-		let suffix = '';
-		const trailingPunct = /[.,;:?!]+$/;
-		const m = url.match(trailingPunct);
-		if (m) {
-			suffix = m[0];
-			url = url.slice(0, -suffix.length);
-		}
-		return `<a href="${url}" target="_blank" rel="noopener noreferrer">${url}</a>` + suffix;
-	});
-
-	mdLinks.forEach((linkHtml, index) => {
-		html = html.replace(`__MDLINK_${index}__`, linkHtml);
-	});
-
-	return html
-		.replace(/\*\*([^*]+)\*\*/g, '<strong>$1</strong>')
-		.replace(/\*([^*\s][^*]*?)\*/g, '<em>$1</em>')
-		.replace(/\n/g, '<br>');
 }
 
 // Focus the edit editor **synchronously**, in the same task as the render that
@@ -943,9 +822,29 @@ function createCommentBox(highlight: AnyHighlightData): HTMLElement {
 
 	updateCommentBox(box, highlight);
 	
+	// A format button must not steal focus from the editor it acts on — the browser's
+	// editing commands work on the live selection.
+	box.addEventListener('mousedown', (e) => {
+		if ((e.target as HTMLElement).closest('.obsidian-comment-format')) e.preventDefault();
+	});
+
 	// Add event delegation for save/delete actions
 	box.addEventListener('click', (e) => {
 		const target = e.target as HTMLElement;
+		const formatBtn = target.closest('.obsidian-comment-format') as HTMLElement | null;
+		if (formatBtn) {
+			e.preventDefault();
+			const editor = formatBtn.closest('.obsidian-comment-editor')
+				?.querySelector('.obsidian-comment-editor-contenteditable') as HTMLElement | null;
+			if (editor) applyCommentFormat(editor, formatBtn.dataset.format as CommentFormatCommand);
+			return;
+		}
+		// Ticking a checklist item in an editor is an edit like any other.
+		if (target.closest('.obsidian-comment-editor-contenteditable') && toggleTaskFromClick(target)) {
+			target.closest('.obsidian-comment-editor-contenteditable')!
+				.dispatchEvent(new Event('input', { bubbles: true }));
+			return;
+		}
 		if (target.closest('.obsidian-comment-save')) {
 			const textarea = box.querySelector('.new-comment-textarea') as HTMLElement;
 			if (textarea) {
@@ -990,6 +889,17 @@ function createCommentBox(highlight: AnyHighlightData): HTMLElement {
 			const diagramId = img.dataset.diagramId;
 			if (diagramId) {
 				browser.runtime.sendMessage({ action: 'openPopupWithDiagram', id: diagramId });
+			}
+		} else if (target.closest('.ob-md-check') && target.closest('.obsidian-comment-text')) {
+			// Ticking a checklist item in a saved comment edits the comment itself, so
+			// the state persists (and syncs) like any other change.
+			const textEl = target.closest('.obsidian-comment-text') as HTMLElement;
+			const index = parseInt(textEl.dataset.index || '0');
+			const nth = Array.from(textEl.querySelectorAll('.ob-md-check'))
+				.indexOf(target.closest('.ob-md-check')!);
+			const current = originalTextForNoteKey(`${highlight.id}-${index}`);
+			if (current !== undefined && nth >= 0) {
+				saveEditedComment(highlight.id, index, toggleTaskInMarkdown(current, nth));
 			}
 		} else if (target.closest('.obsidian-comment-text')) {
 			const textEl = target.closest('.obsidian-comment-text') as HTMLElement;
@@ -1072,6 +982,17 @@ function createCommentBox(highlight: AnyHighlightData): HTMLElement {
 			renderCommentBoxes();
 		}
 	});
+
+	// Moving the caret changes which formats apply, so the toolbar follows it.
+	const trackCaret = (e: Event) => {
+		const ta = e.target as HTMLElement;
+		if (ta.classList?.contains('edit-comment-textarea') || ta.classList?.contains('new-comment-textarea')) {
+			syncFormatButtons(ta);
+		}
+	};
+	box.addEventListener('keyup', trackCaret);
+	box.addEventListener('mouseup', trackCaret);
+	box.addEventListener('focusin', trackCaret);
 
 	box.addEventListener('paste', async (e) => {
 		const ta = e.target as HTMLElement;
@@ -1236,9 +1157,10 @@ function createCommentBox(highlight: AnyHighlightData): HTMLElement {
 			return;
 		}
 
-		if ((e.ctrlKey || e.metaKey) && (e.key === 'b' || e.key === 'i' || e.key === 'B' || e.key === 'I')) {
+		// Ctrl/Cmd+B / +I format the selection for real (bold text, not `**bold**`).
+		if ((e.ctrlKey || e.metaKey) && ['b', 'i'].includes(e.key.toLowerCase())) {
 			e.preventDefault();
-			wrapSelection(ta, e.key.toLowerCase() === 'b' ? '**' : '*');
+			applyCommentFormat(ta, e.key.toLowerCase() === 'b' ? 'bold' : 'italic');
 		}
 	});
 
@@ -1285,17 +1207,64 @@ function renderCommentBody(text: string, box: HTMLElement): string {
 				continue;
 			}
 			flushImageGroup();
-			
-			let textHtml = escapeHtml(part);
-			textHtml = renderInlineMarkdown(textHtml);
-			textHtml = textHtml.replace(/(^|\s)(#[a-zA-Z0-9_-]+(?:\/[a-zA-Z0-9_-]+)*)/g, '$1<span class="obsidian-inline-tag">$2</span>');
-			html += `<div class="obsidian-comment-text-block">${textHtml}</div>`;
+			html += commentTextToDisplayHtml(part, {
+				tagClass: 'obsidian-inline-tag',
+				blockClass: 'obsidian-comment-text-block',
+			});
 		}
 	}
 	flushImageGroup();
 
 	return html;
 }
+
+// Bottom row of every comment editor: formatting on the left, diagram + send on
+// the right. The row always sits on its own line (never floated into the text), so
+// the space beside the two action buttons is where the format bar lives.
+const FORMAT_BUTTONS: { command: CommentFormatCommand; label: string; svg: string }[] = [
+	{
+		command: 'bullet', label: 'Bullet list',
+		svg: `<line x1="8" y1="6" x2="21" y2="6"/><line x1="8" y1="12" x2="21" y2="12"/><line x1="8" y1="18" x2="21" y2="18"/><line x1="3" y1="6" x2="3.01" y2="6"/><line x1="3" y1="12" x2="3.01" y2="12"/><line x1="3" y1="18" x2="3.01" y2="18"/>`,
+	},
+	{
+		command: 'task', label: 'Checklist',
+		svg: `<path d="m3 17 2 2 4-4"/><path d="m3 7 2 2 4-4"/><line x1="13" y1="6" x2="21" y2="6"/><line x1="13" y1="12" x2="21" y2="12"/><line x1="13" y1="18" x2="21" y2="18"/>`,
+	},
+	{
+		command: 'bold', label: 'Bold (Ctrl+B)',
+		svg: `<path d="M6 4h8a4 4 0 0 1 0 8H6z"/><path d="M6 12h9a4 4 0 0 1 0 8H6z"/>`,
+	},
+	{
+		command: 'italic', label: 'Italic (Ctrl+I)',
+		svg: `<line x1="19" y1="4" x2="10" y2="4"/><line x1="14" y1="20" x2="5" y2="20"/><line x1="15" y1="4" x2="9" y2="20"/>`,
+	},
+];
+
+const EDITOR_ACTIONS_HTML = `
+	<div class="obsidian-comment-editor-actions">
+		<div class="obsidian-comment-format-bar">
+			${FORMAT_BUTTONS.map(({ command, label, svg }) => `
+				<button class="obsidian-comment-format" data-format="${command}" aria-label="${label}" title="${label}">
+					<svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">${svg}</svg>
+				</button>`).join('')}
+		</div>
+		<div class="obsidian-comment-editor-buttons">
+			<button class="obsidian-comment-diagram-new" aria-label="Add Diagram" title="Add Diagram">
+				<svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M8.3 10a.7.7 0 0 1-.626-1.079L11.4 3a.7.7 0 0 1 1.198-.043L16.3 8.9a.7.7 0 0 1-.572 1.1Z"/><rect x="3" y="14" width="7" height="7" rx="1"/><circle cx="17.5" cy="17.5" r="3.5"/></svg>
+			</button>
+			<button class="obsidian-comment-save-new" aria-label="Submit">
+				<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m5 12 7-7 7 7"/><path d="M12 19V5"/></svg>
+			</button>
+		</div>
+	</div>
+`;
+
+// Same row, but the submit button also carries `obsidian-comment-save-edit` so the
+// click handler routes it to the edited note rather than a new reply.
+const EDIT_ACTIONS_HTML = EDITOR_ACTIONS_HTML.replace(
+	'class="obsidian-comment-save-new"',
+	'class="obsidian-comment-save-edit obsidian-comment-save-new"',
+);
 
 function updateCommentBox(box: HTMLElement, highlight: AnyHighlightData) {
 	// `highlight` is the group representative; the thread aggregates every piece.
@@ -1322,14 +1291,7 @@ function updateCommentBox(box: HTMLElement, highlight: AnyHighlightData) {
 	const editorHtml = `
 		<div class="obsidian-comment-editor sleek-input">
 			<div class="new-comment-textarea obsidian-comment-editor-contenteditable" contenteditable="true" placeholder="${notes.length > 0 ? 'Reply…' : 'Add a comment…'}"></div>
-			<div class="obsidian-comment-editor-actions">
-				<button class="obsidian-comment-diagram-new" aria-label="Add Diagram" title="Add Diagram">
-					<svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M8.3 10a.7.7 0 0 1-.626-1.079L11.4 3a.7.7 0 0 1 1.198-.043L16.3 8.9a.7.7 0 0 1-.572 1.1Z"/><rect x="3" y="14" width="7" height="7" rx="1"/><circle cx="17.5" cy="17.5" r="3.5"/></svg>
-				</button>
-				<button class="obsidian-comment-save-new" aria-label="Submit">
-					<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m5 12 7-7 7 7"/><path d="M12 19V5"/></svg>
-				</button>
-			</div>
+			${EDITOR_ACTIONS_HTML}
 		</div>
 	`;
 
@@ -1379,14 +1341,7 @@ function updateCommentBox(box: HTMLElement, highlight: AnyHighlightData) {
 			const bodyHtml = isEditingThisNote
 				? `<div class="obsidian-comment-editor sleek-input is-editing">
 						<div class="edit-comment-textarea obsidian-comment-editor-contenteditable" contenteditable="true">${renderCommentBodyToEditableHtml(parsed.text)}</div>
-						<div class="obsidian-comment-editor-actions">
-							<button class="obsidian-comment-diagram-new" aria-label="Add Diagram" title="Add Diagram">
-								<svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M8.3 10a.7.7 0 0 1-.626-1.079L11.4 3a.7.7 0 0 1 1.198-.043L16.3 8.9a.7.7 0 0 1-.572 1.1Z"/><rect x="3" y="14" width="7" height="7" rx="1"/><circle cx="17.5" cy="17.5" r="3.5"/></svg>
-							</button>
-							<button class="obsidian-comment-save-edit obsidian-comment-save-new" aria-label="Submit">
-								<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m5 12 7-7 7 7"/><path d="M12 19V5"/></svg>
-							</button>
-						</div>
+						${EDIT_ACTIONS_HTML}
 					</div>`
 				: `<div class="obsidian-comment-text" data-index="${index}">${displayHtml}</div>`;
 			itemHtmls.push(`
@@ -1807,15 +1762,6 @@ export function emphasizeCommentBox(highlightId: string | null) {
 	if (highlightId) {
 		activeCommentBoxes.get(highlightId)?.classList.add('is-active');
 	}
-}
-
-function escapeHtml(unsafe: string) {
-    return unsafe
-         .replace(/&/g, "&amp;")
-         .replace(/</g, "&lt;")
-         .replace(/>/g, "&gt;")
-         .replace(/"/g, "&quot;")
-         .replace(/'/g, "&#039;");
 }
 
 function guessMainContentArea(root: Element): { left: number; right: number } | null {

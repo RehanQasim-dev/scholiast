@@ -23,7 +23,8 @@ This branch adds **live-webpage annotation** (highlights, comments, freehand dra
 | `src/content.ts` | Page entry point. Inits highlighter+pencil, CSS injection, global keydown dispatch, exposes `window.__obsidianHighlighter` API bridge. |
 | `src/utils/highlighter.ts` | Highlight CRUD, storage, anchoring, undo/redo, migrations, export grouping. |
 | `src/utils/highlighter-overlays.ts` | Text/element rendering (CSS Custom Highlight API), color swatch menu, active-highlight emphasis. |
-| `src/utils/comment-overlays.ts` | Comment card layout (left/right), threads, truncation, edit/save/delete, inline markdown. |
+| `src/utils/comment-overlays.ts` | Comment card layout (right column), threads, truncation, edit/save/delete, WYSIWYG editor. |
+| `src/utils/comment-markdown.ts` | The comment markdown subset: markdown ↔ display HTML ↔ editable HTML, formatting commands. Shared by the comment box and the dashboard. |
 | `src/utils/pencil-overlays.ts` | Freehand SVG drawing, stroke storage, color switching, marquee select/delete. |
 | `src/core/highlights.ts` | Annotation-manager (dashboard) logic: sources tree, tags, collapsible page items + annotation cards, search/export/delete; folds in video annotations. Renders the `designs/code.html` UI (Tailwind + Material Symbols). |
 | `src/highlights.html` | Dashboard page markup (Tailwind shell; loads `highlights-tailwind.css` only). |
@@ -202,7 +203,9 @@ exists** — the sharded keys are the only format. The shapes below are the per-
   - **Inline Pasted Images**: Pressing `Ctrl+V` pastes images directly into the cursor location in the editor, showing a visual preview rather than raw markdown.
   - **Image Gallery Layout**: Pasted images wrap into rows of up to 2 side-by-side images (50% width), forcing any subsequent text below them.
   - **Auto-linking pasted URLs**: Pasting or typing a URL (or opening an existing link) displays a blue clickable `<a>` link inline in the editor, opening in a new tab when clicked.
-  - **Serialization**: Inline images and HTML links are cleanly converted back to their respective markdown formats (`<!--image:ID-->`, `[Text](URL)`, or raw URLs) when saved.
+  - **Formatting bar**: the editor's bottom row holds **bullet list / checklist / bold / italic** on the left, with the diagram + send buttons on the right. That row is always its own line (the buttons never float into the text), so the space beside them is used rather than left blank. Buttons light up for whatever applies to the caret, `Ctrl+B`/`Ctrl+I` do the same thing, and formatting is applied through the browser's own editing commands so undo and caret behaviour stay native.
+  - **Real formatting while editing**: bold, italic, bullets and checkboxes render as themselves in the editor — never as raw `**` markers. Checklist items can be ticked in a *saved* comment too, which rewrites and saves the comment's markdown (so the state syncs).
+  - **Serialization**: `utils/comment-markdown.ts` is the single definition of the comment markdown subset — `**bold**`, `*italic*`, `[text](url)`, bare urls, `#tag`, `- item`, `- [ ] task`, `<!--image:ID-->`, `<!--diagram:ID-->` — with three conversions: markdown → display HTML, markdown → editable HTML, and editor DOM → markdown. Every surface (comment box, its editor, the dashboard) goes through it, so a comment reads the same everywhere and stays valid Obsidian markdown. Covered by `comment-markdown.test.ts` (round-trip + escaping).
   - **Backup/sync**: a pasted image is registered in the `diagrams` map on save (`{ updatedAt, pasted: true }` — no scene) so it travels to Drive on the same path as a drawn diagram: PNG blob out, blob pulled back into IndexedDB on another device, map entry dropped (and the remote blob tombstoned) when its comment is deleted.
   - **Keybinds**: `Enter` inserts a new line inside the editor; `Ctrl+Enter` saves/commits the comment.
 - **Google Sync Status Icon**: Each reply displays a cloud sync indicator icon in its top-right corner. It is styled with a light/dull gray color when pending sync, turning into a bright purple-bordered icon once successfully merged and synced to Google Drive.
@@ -238,6 +241,11 @@ exists** — the sharded keys are the only format. The shapes below are the per-
   annotation-level **delete** in a right-hand gutter. Comments show relative timestamps, `#tag`
   purple pills, per-comment **edit/delete**, and **Excalidraw diagram** comments render as their
   image (from the IndexedDB blob store; click reopens the editor).
+- **Comment bodies match the live page**: display and editing both go through
+  `utils/comment-markdown.ts`, so bold/italic/links/bullets/checklists and pasted images render
+  here too (they used to show as raw markdown). The reply/edit field is the same **WYSIWYG
+  contenteditable** editor with the bullet/checklist/bold/italic bar; `Enter` submits except inside
+  a list, where it starts the next item.
 - **Video annotations** fold into the same cards, rendered by kind: **frame** (captured image with
   its markup drawings repainted via `renderMarkupSvg`), **transcript** (colored quote + `M:SS–M:SS`
   range chip), or **note** (jump-to-moment chip); every chip links to `…?t=Ns`. Their comment

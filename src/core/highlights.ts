@@ -9,6 +9,11 @@ import { detectBrowser } from '../utils/browser-detection';
 import { renderMarkupSvg } from '../utils/video/video-markup';
 import { formatVideoTime, makeVideoNote } from '../utils/video/video-notes';
 import { loadFrameImage, loadDiagramImage } from '../utils/video/frame-store';
+import {
+	commentTextToDisplayHtml, commentTextToEditableHtml, serializeCommentEditor,
+	applyCommentFormat, activeCommentFormats, toggleTaskFromClick, toggleTaskInMarkdown,
+	type CommentFormatCommand,
+} from '../utils/comment-markdown';
 
 dayjs.extend(relativeTime);
 
@@ -814,32 +819,66 @@ function createCommentRow(pageUrl: string, highlightId: string, noteIndex: numbe
 	} else {
 		const p = el('p', 'font-body-main text-[19px] leading-[1.4] tracking-[-0.01em] text-on-surface break-words');
 		p.appendChild(renderCommentText(clean));
+		// Ticking a checklist item edits the comment, so the state persists and syncs.
+		p.addEventListener('click', async (e) => {
+			const box = (e.target as HTMLElement).closest('.ob-md-check');
+			if (!box) return;
+			const nth = Array.from(p.querySelectorAll('.ob-md-check')).indexOf(box);
+			if (nth < 0) return;
+			const next = toggleTaskInMarkdown(clean, nth);
+			if (video) await editVideoNote(pageUrl, video, noteIndex, next);
+			else await editNote(pageUrl, highlightId, noteIndex, next);
+		});
 		row.appendChild(p);
 	}
 	return row;
 }
 
-// Comment text with #tags rendered as purple pills, matching the live comment box
-// (.obsidian-inline-tag). Tags nest via slashes (#question/important).
-const COMMENT_TAG_RE = /(^|\s)(#[A-Za-z0-9_-]+(?:\/[A-Za-z0-9_-]+)*)/g;
+// Class the shared renderer hangs on `#tag` pills here — same look as the live
+// comment box's .obsidian-inline-tag, expressed in the dashboard's utility classes.
+const TAG_PILL_CLASS = 'text-[#a78bfa] bg-[#8c73fa]/25 rounded px-1 py-px font-medium';
+
+// A comment body, rendered with the same markdown subset as the live page: bold,
+// italic, links, bullet and task lists, `#tag` pills, and pasted images (whose bytes
+// live in IndexedDB, so they're filled in once loaded).
 function renderCommentText(text: string): DocumentFragment {
 	const frag = document.createDocumentFragment();
-	let last = 0;
-	let m: RegExpExecArray | null;
-	COMMENT_TAG_RE.lastIndex = 0;
-	while ((m = COMMENT_TAG_RE.exec(text))) {
-		const tagStart = m.index + m[1].length;
-		if (tagStart > last) frag.appendChild(document.createTextNode(text.slice(last, tagStart)));
-		frag.appendChild(el('span', 'text-[#a78bfa] bg-[#8c73fa]/25 rounded px-1 py-px font-medium', m[2]));
-		last = m.index + m[0].length;
+	for (const part of text.split(/(<!--image:[A-Za-z0-9_-]+-->)/g)) {
+		if (!part) continue;
+		const imageId = part.match(/^<!--image:([A-Za-z0-9_-]+)-->$/)?.[1];
+		if (imageId) {
+			const img = el('img', 'ob-md-image rounded-lg border border-outline-variant/20 max-w-full my-1');
+			img.alt = 'Pasted image';
+			loadDiagramImage(imageId).then(src => { if (src) (img as HTMLImageElement).src = src; });
+			frag.appendChild(img);
+			continue;
+		}
+		const holder = el('div', 'ob-md-body');
+		// Sanitized: the renderer emits only its own tags, but the text came from a
+		// synced record, so it goes through DOMPurify like every other body here.
+		holder.replaceChildren(DOMPurify.sanitize(
+			commentTextToDisplayHtml(part, { tagClass: TAG_PILL_CLASS }),
+			{ RETURN_DOM_FRAGMENT: true },
+		));
+		frag.appendChild(holder);
 	}
-	if (last < text.length) frag.appendChild(document.createTextNode(text.slice(last)));
 	return frag;
 }
 
+// Formatting buttons, matching the live comment box's editor row.
+const FORMAT_BUTTONS: { command: CommentFormatCommand; label: string; glyph: string }[] = [
+	{ command: 'bullet', label: 'Bullet list', glyph: 'format_list_bulleted' },
+	{ command: 'task', label: 'Checklist', glyph: 'checklist' },
+	{ command: 'bold', label: 'Bold (Ctrl+B)', glyph: 'format_bold' },
+	{ command: 'italic', label: 'Italic (Ctrl+I)', glyph: 'format_italic' },
+];
+
 // A comment editor styled after the live-page reply box (elevated surface, subtle
-// border, auto-growing textarea, round submit affordance that lights up purple
-// when there's text). Used for both replies and inline edits.
+// border, auto-growing field, round submit affordance that lights up purple when
+// there's text). Used for both replies and inline edits.
+//
+// The field is a contenteditable, not a textarea, so it shows real formatting while
+// you type — the same WYSIWYG editor as the live page, over the same markdown.
 function createSleekEditor(opts: {
 	value?: string;
 	placeholder?: string;
@@ -848,44 +887,98 @@ function createSleekEditor(opts: {
 	onCancel?: () => void;
 }): HTMLElement {
 	// Borderless filled field; a purple ring appears only on focus (focus-within).
-	const wrap = el('div', 'relative bg-surface-container-high rounded-xl transition-shadow focus-within:ring-1 focus-within:ring-[#8c73fa]');
-	const ta = el('textarea', 'w-full bg-transparent border-0 outline-none focus:ring-0 focus:border-0 resize-none py-2.5 pl-3.5 pr-10 text-[19px] leading-[1.4] tracking-[-0.01em] text-on-surface placeholder:text-on-surface-variant/60 font-body-main overflow-hidden block');
-	ta.rows = 1;
-	ta.placeholder = opts.placeholder || '';
-	if (opts.value) ta.value = opts.value;
+	const wrap = el('div', 'bg-surface-container-high rounded-xl transition-shadow focus-within:ring-1 focus-within:ring-[#8c73fa] px-3.5 py-2.5');
+	const field = el('div', 'ob-md-body w-full bg-transparent outline-none text-[19px] leading-[1.4] tracking-[-0.01em] text-on-surface font-body-main break-words');
+	field.contentEditable = 'true';
+	field.dataset.placeholder = opts.placeholder || '';
+	if (opts.value) {
+		field.replaceChildren(DOMPurify.sanitize(
+			commentTextToEditableHtml(opts.value), { RETURN_DOM_FRAGMENT: true }));
+	}
+
+	const actions = el('div', 'flex items-center justify-between gap-sm mt-1.5');
+	const formatBar = el('div', 'flex items-center gap-0.5');
+	const formatButtons = FORMAT_BUTTONS.map(({ command, label, glyph }) => {
+		const btn = el('button', 'flex items-center justify-center w-6 h-6 rounded transition-colors text-on-surface-variant hover:bg-surface-variant');
+		btn.title = label;
+		btn.dataset.format = command;
+		btn.appendChild(icon(glyph, 'text-[16px]'));
+		// mousedown default would blur the field, and the editing commands act on the
+		// live selection.
+		btn.addEventListener('mousedown', (e) => e.preventDefault());
+		btn.addEventListener('click', (e) => {
+			e.preventDefault();
+			applyCommentFormat(field, command);
+			syncFormats();
+		});
+		formatBar.appendChild(btn);
+		return btn;
+	});
 
 	// Round submit chip that fills purple once there's text to send.
-	const submit = el('button', 'absolute right-1.5 bottom-1.5 flex items-center justify-center w-6 h-6 rounded-full transition-colors');
+	const submit = el('button', 'flex items-center justify-center w-6 h-6 rounded-full transition-colors shrink-0');
 	submit.appendChild(icon('arrow_upward', 'text-[14px]'));
+	actions.append(formatBar, submit);
 
-	// Skip while hidden (display:none → scrollHeight 0), otherwise the field would
-	// collapse to 0px and only "pop open" on the first keystroke.
-	const resize = () => {
-		if (ta.offsetParent === null) return;
-		ta.style.height = 'auto';
-		ta.style.height = `${ta.scrollHeight}px`;
-	};
+	const value = () => serializeCommentEditor(field).trim();
 	const syncSubmit = () => {
-		const has = ta.value.trim().length > 0;
+		const has = value().length > 0;
 		submit.style.backgroundColor = has ? ACCENT : 'rgba(255,255,255,0.08)';
 		submit.style.color = has ? '#fff' : 'rgba(196,199,200,0.9)';
+		field.classList.toggle('is-empty', !has);
+	};
+	const syncFormats = () => {
+		const active = activeCommentFormats(field);
+		formatButtons.forEach(btn => {
+			const on = active.has(btn.dataset.format as CommentFormatCommand);
+			btn.classList.toggle('bg-[#8c73fa]/20', on);
+			btn.classList.toggle('text-[#a78bfa]', on);
+			btn.classList.toggle('text-on-surface-variant', !on);
+		});
 	};
 	const doSubmit = async () => {
-		const val = ta.value.trim();
+		const val = value();
 		if (!val) { opts.onCancel?.(); return; }
-		ta.value = '';
+		field.replaceChildren();
+		syncSubmit();
 		await opts.onSubmit(val);
 	};
 
-	ta.addEventListener('input', () => { resize(); syncSubmit(); });
-	ta.addEventListener('keydown', (e) => {
-		if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); doSubmit(); }
+	field.addEventListener('input', () => { syncSubmit(); syncFormats(); });
+	field.addEventListener('keyup', syncFormats);
+	field.addEventListener('mouseup', syncFormats);
+	field.addEventListener('click', (e) => {
+		if (toggleTaskFromClick(e.target as HTMLElement)) syncSubmit();
+	});
+	field.addEventListener('keydown', (e) => {
+		if ((e.ctrlKey || e.metaKey) && ['b', 'i'].includes(e.key.toLowerCase())) {
+			e.preventDefault();
+			applyCommentFormat(field, e.key.toLowerCase() === 'b' ? 'bold' : 'italic');
+			syncFormats();
+			return;
+		}
+		// Enter submits; Shift+Enter is a newline. Inside a list, Enter belongs to the
+		// list (it starts the next item) — that's what makes typing bullets natural.
+		const inList = !!(window.getSelection()?.anchorNode as Element | null)?.parentElement?.closest('li');
+		if (e.key === 'Enter' && !e.shiftKey && !inList) { e.preventDefault(); doSubmit(); }
 		else if (e.key === 'Escape' && opts.onCancel) { e.preventDefault(); opts.onCancel(); }
 	});
 	submit.addEventListener('click', doSubmit);
 
-	wrap.append(ta, submit);
-	queueMicrotask(() => { resize(); syncSubmit(); if (opts.autofocus) { ta.focus(); ta.setSelectionRange(ta.value.length, ta.value.length); } });
+	wrap.append(field, actions);
+	queueMicrotask(() => {
+		syncSubmit();
+		syncFormats();
+		if (opts.autofocus) {
+			field.focus();
+			const range = document.createRange();
+			range.selectNodeContents(field);
+			range.collapse(false);
+			const selection = window.getSelection();
+			selection?.removeAllRanges();
+			selection?.addRange(range);
+		}
+	});
 	return wrap;
 }
 
