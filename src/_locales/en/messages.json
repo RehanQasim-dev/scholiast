@@ -744,6 +744,9 @@
 	"syncLastSynced": {
 		"message": "Last synced"
 	},
+	"syncDiscovering": {
+		"message": "Looking for changes…"
+	},
 	"syncError": {
 		"message": "Sync error"
 	},

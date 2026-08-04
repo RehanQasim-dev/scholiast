@@ -631,6 +631,12 @@ body[data-ob-comment-size="large"] .obsidian-comment-box { --ob-font: 17px; }
 	&.has-draft .obsidian-comment-list {
 		margin-bottom: 6px;
 	}
+	// A note in this thread is being edited: the inline edit editor replaces the
+	// reply field, which stays mounted (so the DOM — and the box height — doesn't
+	// churn) but hidden. Last of the gating rules so it wins over the ones above.
+	&.is-editing-note > .obsidian-comment-editor.sleek-input {
+		display: none;
+	}
 
 
 	&.is-focused .obsidian-comment-actions-inline,
@@ -675,7 +681,10 @@ body[data-ob-comment-size="large"] .obsidian-comment-box { --ob-font: 17px; }
 		// column that can hold many boxes.
 		margin-bottom: 0;
 	}
-	&.is-focused .obsidian-comment-list {
+	// Reserve the gap above the reply field only when that field is actually
+	// visible. While a note is being edited the reply field is hidden, so the
+	// reservation drops and no blank space is left behind.
+	&.is-focused:not(.is-editing-note):has(> .obsidian-comment-editor.sleek-input) .obsidian-comment-list {
 		margin-bottom: 6px;
 	}
 
@@ -899,7 +908,18 @@ body[data-ob-comment-size="large"] .obsidian-comment-box { --ob-font: 17px; }
 		// fully control visibility — the field shows only when the box is clicked.
 
 		// The edit-a-note field sits inside a comment item with its own spacing.
-		&.is-editing { margin: 0; }
+		// Render it seamlessly (no box chrome) so double-clicking a note to edit
+		// keeps the text in exactly the same place — the display line and the
+		// editable line share the same left edge, so nothing shifts sideways.
+		&.is-editing {
+			margin: 0;
+			background: transparent;
+			border: none;
+
+			.obsidian-comment-editor-contenteditable {
+				padding-left: 0;
+			}
+		}
 
 		&.is-single-line textarea,
 		&.is-single-line .obsidian-comment-editor-contenteditable {

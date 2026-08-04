@@ -429,6 +429,43 @@ function positionActionMenu(id: string, centerX: number, top: number, bottom: nu
 	menu.style.top = `${placeY + window.scrollY}px`;
 }
 
+// The action bar floats ACTION_MENU_GAP above the highlighted text, so travelling
+// from the text to a button crosses a strip that belongs to neither. Treating that
+// strip (the menu rect inflated by the gap plus a little slack) as part of the menu
+// keeps the cursor suppressed and the menu locked while the pointer crosses it —
+// otherwise the highlighter cursor flashed back mid-reach.
+const ACTION_MENU_BRIDGE = 4;
+function pointInActionMenuReach(x: number, y: number): boolean {
+	if (!highlightActionMenu || highlightActionMenu.style.display !== 'flex') return false;
+	const r = highlightActionMenu.getBoundingClientRect();
+	const pad = ACTION_MENU_GAP + ACTION_MENU_BRIDGE;
+	return x >= r.left - pad && x <= r.right + pad && y >= r.top - pad && y <= r.bottom + pad;
+}
+
+// Distance from a point to the menu rect (0 when inside it).
+function distanceToActionMenu(x: number, y: number): number {
+	if (!highlightActionMenu || highlightActionMenu.style.display !== 'flex') return Infinity;
+	const r = highlightActionMenu.getBoundingClientRect();
+	const dx = Math.max(r.left - x, 0, x - r.right);
+	const dy = Math.max(r.top - y, 0, y - r.bottom);
+	return Math.hypot(dx, dy);
+}
+
+// Is the pointer heading for the menu? Two samples are enough: the menu is close
+// by (it sits right above the text), so "got nearer and is still within reach"
+// separates a deliberate reach from simply moving off the highlight. Without this
+// the menu lingered for a beat after every hover, which read as lag.
+const MENU_INTENT_RADIUS = 140;
+let lastPointerX = 0;
+let lastPointerY = 0;
+let hasPointerSample = false;
+function isHeadingForActionMenu(x: number, y: number): boolean {
+	if (!hasPointerSample) return false;
+	const now = distanceToActionMenu(x, y);
+	if (now === Infinity || now > MENU_INTENT_RADIUS) return false;
+	return now < distanceToActionMenu(lastPointerX, lastPointerY) - 0.5;
+}
+
 export let actionMenuHideTimeout: number | null = null;
 export function hideHighlightActionMenu(): void {
 	if (highlightActionMenu) highlightActionMenu.style.display = 'none';
@@ -875,11 +912,19 @@ function handleHighlightHover(event: MouseEvent) {
 		const overlay = !textId ? findOverlayAtPoint(clientX, clientY) : null;
 		const onHighlight = !!textId || !!overlay;
 		
-		const onButton = !!target?.closest('.obsidian-highlight-action-menu');
+		// The gap between the text and the bar counts as being on the bar (see
+		// pointInActionMenuReach), so crossing it neither flickers the cursor nor
+		// retargets/hides the menu.
+		const onButton = !!target?.closest('.obsidian-highlight-action-menu')
+			|| pointInActionMenuReach(clientX, clientY);
 		const onCommentBox = !!target?.closest('.obsidian-comment-box');
 		const onSelectionAction = !!target?.closest('.obsidian-selection-action');
-		
-		const shouldSuppressCursor = onHighlight || onButton || onCommentBox || onSelectionAction;
+		// While a grace period is running (the user is reaching for the menu) the
+		// menu is still up, so the cursor must stay suppressed to match it.
+		const inMenuGrace = actionMenuHideTimeout !== null
+			&& highlightActionMenu?.style.display === 'flex';
+
+		const shouldSuppressCursor = onHighlight || onButton || onCommentBox || onSelectionAction || inMenuGrace;
 		if (shouldSuppressCursor) {
 			document.body.classList.add('obsidian-highlighter-hover-suppress');
 		} else {
@@ -947,10 +992,25 @@ function handleHighlightHover(event: MouseEvent) {
 			}
 		} else {
 			clearPendingSwitch();
-			if (!onButton && !actionMenuHideTimeout && highlightActionMenu?.style.display === 'flex') {
-				actionMenuHideTimeout = window.setTimeout(hideHighlightActionMenu, 300);
+			if (!onButton && highlightActionMenu?.style.display === 'flex') {
+				// Off the highlight: hide in the same frame as the cursor change unless
+				// the pointer is closing in on the menu, in which case hold it just long
+				// enough to be reached.
+				if (isHeadingForActionMenu(clientX, clientY)) {
+					if (!actionMenuHideTimeout) {
+						actionMenuHideTimeout = window.setTimeout(hideHighlightActionMenu, 400);
+					}
+				} else {
+					hideHighlightActionMenu();
+					document.body.classList.remove('obsidian-highlighter-hover-suppress');
+					if (lastCursor !== '') { document.body.style.cursor = ''; lastCursor = ''; }
+				}
 			}
 		}
+
+		lastPointerX = clientX;
+		lastPointerY = clientY;
+		hasPointerSample = true;
 	});
 }
 

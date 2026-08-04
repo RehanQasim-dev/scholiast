@@ -63,7 +63,9 @@ interface StoredDrawings { url: string; strokes: { id: string; updatedAt?: numbe
 interface VideoFrame { dataUrl?: string; driveId?: string; [k: string]: unknown }
 interface VideoItem { id: string; notes?: string[]; updatedAt?: number; frame?: VideoFrame; [k: string]: unknown }
 interface StoredVideo { url: string; videoId?: string; title?: string; items: VideoItem[] }
-interface DiagramEntry { sceneData?: unknown; updatedAt?: number; driveId?: string; sceneDriveId?: string }
+// `pasted: true` marks an entry created for a pasted image: no editable scene, and
+// its PNG bytes never change after creation.
+interface DiagramEntry { sceneData?: unknown; updatedAt?: number; driveId?: string; sceneDriveId?: string; pasted?: boolean }
 type DiagramsMap = Record<string, DiagramEntry>;
 
 export interface SyncStatus {
@@ -71,6 +73,18 @@ export interface SyncStatus {
 	lastSyncedAt?: number;
 	lastError?: string;
 	syncing?: boolean;
+	// Live progress of the run in flight, for the settings UI. `total` is the number
+	// of pages this run will reconcile (0 while still discovering them), `done` how
+	// many have finished, and title/url identify the page being worked on right now.
+	progress?: SyncProgress;
+}
+
+export interface SyncProgress {
+	phase: 'discovering' | 'page';
+	done: number;
+	total: number;
+	title?: string;
+	url?: string;
 }
 
 // --- Page <-> local storage assembly -----------------------------------------
@@ -79,13 +93,16 @@ export interface SyncStatus {
 const frameFileName = (id: string) => `frame-${id}.jpg`;
 const diagramFileName = (id: string) => `diagram-${id}.png`;
 
-// Diagram ids referenced by a page's highlight comments (`<!--diagram:id-->`).
+// Image ids referenced by a page's highlight comments. Two kinds share the same
+// blob store (and therefore the same Drive sync path): a drawn diagram
+// (`<!--diagram:id-->`, one per comment) and pasted images (`<!--image:id-->`,
+// any number inside a comment's text).
+const IMAGE_REF_RE = /<!--(?:diagram|image):([A-Za-z0-9_-]+)-->/g;
 function collectDiagramIds(highlights: StoredHighlights['highlights']): string[] {
 	const ids = new Set<string>();
 	for (const h of highlights || []) {
 		for (const note of h.notes || []) {
-			const m = note.match(/<!--diagram:([A-Za-z0-9_-]+)-->/);
-			if (m) ids.add(m[1]);
+			for (const m of note.matchAll(IMAGE_REF_RE)) ids.add(m[1]);
 		}
 	}
 	return [...ids];
@@ -111,17 +128,20 @@ async function assembleLocalPage(url: string, diagrams: DiagramsMap): Promise<Pa
 		if (!rec.title && va.title) rec.title = va.title;
 	}
 	// Pointers only — the scene + PNG bytes travel as separate Drive files/blobs.
+	// An id referenced by a comment but absent from the map is still a real image on
+	// this device (e.g. pasted before entries were recorded) — emit a bare pointer so
+	// its bytes get uploaded; `pullImages` writes the resulting entry back.
 	rec.diagrams = collectDiagramIds(rec.highlights)
-		.map((id): PageDiagram | null => {
+		.map((id): PageDiagram => {
 			const d = diagrams[id];
-			return d ? {
+			if (!d) return { id };
+			return {
 				id,
 				updatedAt: d.updatedAt,
 				...(d.driveId ? { driveId: d.driveId } : {}),
 				...(d.sceneDriveId ? { sceneDriveId: d.sceneDriveId } : {}),
-			} : null;
-		})
-		.filter((d): d is PageDiagram => d !== null);
+			};
+		});
 	return rec;
 }
 
@@ -132,6 +152,20 @@ async function setStatus(patch: Partial<SyncStatus>): Promise<void> {
 		connected: false,
 	};
 	await browser.storage.local.set({ [STATUS_KEY]: { ...cur, ...patch } });
+}
+
+// Best-effort human label for a page being synced. The title is whatever the
+// highlight/video store recorded when the page was annotated; the UI falls back to
+// the url when there is none.
+async function pageLabel(url: string): Promise<string | undefined> {
+	const hl = await getPage<StoredHighlights>('hl', url);
+	if (hl?.title) return hl.title;
+	const va = await getPage<StoredVideo>('va', url);
+	return va?.title;
+}
+
+async function reportProgress(progress: SyncProgress): Promise<void> {
+	await setStatus({ progress });
 }
 
 export async function getStatus(): Promise<SyncStatus> {
@@ -218,6 +252,12 @@ async function pullImages(merged: PageRecord, diagrams: DiagramsMap, interactive
 				diagrams[d.id] = { sceneData, updatedAt: d.updatedAt, driveId: d.driveId, sceneDriveId: d.sceneDriveId };
 				diagramsChanged = true;
 			} catch { /* fetch next sync */ }
+		} else if (!entry && !d.sceneDriveId) {
+			// A pasted image (no editable scene): record the pointer so this device
+			// stops re-uploading the same bytes on every sync, and so a device that
+			// pulled the page knows the blob belongs to it.
+			diagrams[d.id] = { updatedAt: d.updatedAt, ...(d.driveId ? { driveId: d.driveId } : {}), pasted: true };
+			diagramsChanged = true;
 		} else if (entry) {
 			// Keep the local scene but refresh the pointers so we don't re-upload.
 			const next = { ...entry, updatedAt: d.updatedAt ?? entry.updatedAt, driveId: d.driveId, sceneDriveId: d.sceneDriveId };
@@ -311,11 +351,19 @@ export async function syncChanged(urls: string[], interactive = false): Promise<
 	return serialize(async () => {
 		await setStatus({ syncing: true, lastError: undefined });
 		try {
-			for (const url of urls) await syncPage(url, interactive);
-			await setStatus({ connected: true, syncing: false, lastSyncedAt: Date.now(), lastError: undefined });
+			let done = 0;
+			for (const url of urls) {
+				await reportProgress({ phase: 'page', done, total: urls.length, url, title: await pageLabel(url) });
+				await syncPage(url, interactive);
+				done++;
+			}
+			await setStatus({
+				connected: true, syncing: false, lastSyncedAt: Date.now(),
+				lastError: undefined, progress: undefined,
+			});
 		} catch (err) {
 			const message = err instanceof Error ? err.message : String(err);
-			await setStatus({ syncing: false, lastError: message });
+			await setStatus({ syncing: false, lastError: message, progress: undefined });
 			throw err;
 		}
 	});
@@ -324,6 +372,7 @@ export async function syncChanged(urls: string[], interactive = false): Promise<
 async function doFullSync(interactive: boolean): Promise<void> {
 	await setStatus({ syncing: true, lastError: undefined });
 	try {
+		await reportProgress({ phase: 'discovering', done: 0, total: 0 });
 		const urls = new Set<string>([
 			...(await getAllUrls('hl')),
 			...(await getAllUrls('dr')),
@@ -344,14 +393,20 @@ async function doFullSync(interactive: boolean): Promise<void> {
 				} catch { /* skip corrupt */ }
 			}
 		}
+		let done = 0;
 		for (const url of urls) {
+			await reportProgress({ phase: 'page', done, total: urls.size, url, title: await pageLabel(url) });
 			const meta = metaByName.get(await pageFileName(url)) ?? null;
 			await syncPage(url, interactive, meta);
+			done++;
 		}
-		await setStatus({ connected: true, syncing: false, lastSyncedAt: Date.now(), lastError: undefined });
+		await setStatus({
+			connected: true, syncing: false, lastSyncedAt: Date.now(),
+			lastError: undefined, progress: undefined,
+		});
 	} catch (err) {
 		const message = err instanceof Error ? err.message : String(err);
-		await setStatus({ syncing: false, lastError: message });
+		await setStatus({ syncing: false, lastError: message, progress: undefined });
 		throw err;
 	}
 }

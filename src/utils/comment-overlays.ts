@@ -137,12 +137,20 @@ const COMMENT_BOX_WIDTH = 384;
 const COMMENT_BOX_MARGIN = 20;
 const COMMENT_BOX_GAP = 12;
 
+// Layout width excluding the classic scrollbar — `innerWidth` includes it, which
+// made the gutter measurement optimistic by up to ~15px.
+const viewportWidth = () => document.documentElement.clientWidth || window.innerWidth;
+
 let activeCommentBoxes = new Map<string, HTMLElement>();
 let editingHighlightIds = new Set<string>();
 let focusedHighlightId: string | null = null;
 let expandedCommentIndexes = new Set<string>(); // highlightId-index
 let editingNoteKey: string | null = null; // highlightId-index
 const clickTimeouts = new Map<HTMLElement, ReturnType<typeof setTimeout>>();
+// Set when mousedown already expanded the comment being clicked (see the
+// document mousedown handler). The click that follows the same gesture must not
+// treat it as an "already expanded → collapse" toggle.
+let expandedOnMousedown: string | null = null;
 
 browser.storage.onChanged.addListener((changes, area) => {
 	if (area === 'local') {
@@ -160,6 +168,10 @@ browser.storage.onChanged.addListener((changes, area) => {
 		for (const [id, data] of Object.entries(newDiagrams)) {
 			const stamp = (data as any).updatedAt;
 			if (!stamp || stamp === oldDiagrams[id]?.updatedAt) continue;
+			// A pasted image's bytes never change after it's registered, and the <img>
+			// that referenced it is already rendered from the local cache — skip the
+			// forced rebuild (which would wipe any editor open elsewhere on the page).
+			if ((data as any).pasted && localDiagramCache.has(id)) continue;
 			// The rendered PNG now lives in IndexedDB (not in this entry) — fetch it
 			// into the cache, then render. Loading first avoids a flash of empty <img>.
 			loadDiagramImage(id).then((dataUrl) => {
@@ -189,6 +201,9 @@ browser.storage.onChanged.addListener((changes, area) => {
 // when the rendered content is unchanged keeps the editor DOM stable so typing
 // and saving work reliably. Keyed by box element so entries GC with the box.
 const boxRenderCache = new WeakMap<HTMLElement, string>();
+// The same render, split per comment item (+ the reply editor), so updateCommentBox
+// can replace only the pieces that actually changed. See its patch path.
+const boxItemCache = new WeakMap<HTMLElement, { items: string[]; editor: string }>();
 
 const localDiagramCache = new Map<string, string>();
 
@@ -382,7 +397,7 @@ export function renderCommentBoxes() {
 
 		const top = rect.top + window.scrollY;
 
-		const availableRight = window.innerWidth - rect.right;
+		const availableRight = viewportWidth() - rect.right;
 		const deficit = spaceNeeded - availableRight;
 		if (deficit > maxRightDeficit) maxRightDeficit = deficit;
 		rightLayoutItems.push({ id: highlight.id, top, height: boxHeight, el: box });
@@ -394,7 +409,7 @@ export function renderCommentBoxes() {
 
 		if (maxRightDeficit > 0) {
 			if (contentArea) {
-				const freeSpace = Math.max(0, window.innerWidth - contentArea.right);
+				const freeSpace = Math.max(0, viewportWidth() - contentArea.right);
 				finalRightMargin = Math.max(0, maxRightDeficit - freeSpace);
 			} else {
 				finalRightMargin = maxRightDeficit;
@@ -415,13 +430,28 @@ export function renderCommentBoxes() {
 	// Stack the column: each box sits at its highlight's top, pushed down just
 	// enough to clear the box above it.
 	rightLayoutItems.sort((a, b) => a.top - b.top);
+	// Anchor the column with an explicit `left` in page coordinates instead of
+	// `right`. `right` resolves against the containing block, so on any page whose
+	// body is positioned the reserved gutter (body margin-right) pushed the boxes
+	// left along with the content — straight back on top of the text. That showed
+	// up most on zoom, where the gutter is what makes the boxes fit at all.
+	const columnPageLeft = window.scrollX + Math.max(
+		COMMENT_BOX_MARGIN,
+		viewportWidth() - COMMENT_BOX_WIDTH - COMMENT_BOX_MARGIN
+	);
 	let currentYRight = 0;
 	for (const item of rightLayoutItems) {
 		const targetY = item.top;
 		const actualY = Math.max(currentYRight, targetY);
+		// Convert to the box's own containing block (usually the initial containing
+		// block, i.e. document origin — but a positioned ancestor shifts it).
+		const parent = item.el.offsetParent as HTMLElement | null;
+		const originX = parent
+			? parent.getBoundingClientRect().left + parent.clientLeft + window.scrollX
+			: 0;
 		item.el.style.top = `${actualY}px`;
-		item.el.style.right = `${COMMENT_BOX_MARGIN}px`;
-		item.el.style.left = 'auto';
+		item.el.style.left = `${columnPageLeft - originX}px`;
+		item.el.style.right = 'auto';
 		currentYRight = actualY + item.height + COMMENT_BOX_GAP;
 	}
 
@@ -446,6 +476,23 @@ export function renderCommentBoxes() {
 		});
 	});
 }
+
+// Window resize AND browser zoom both change how much room is left beside the
+// content, so the gutter reservation and the column's x position have to be
+// recomputed. Zoom fires `resize` (plus visualViewport `resize` for pinch-zoom);
+// without this the boxes kept a layout measured at the previous zoom level and
+// ended up over the text.
+let relayoutQueued = false;
+function relayoutCommentBoxes() {
+	if (relayoutQueued || activeCommentBoxes.size === 0) return;
+	relayoutQueued = true;
+	requestAnimationFrame(() => {
+		relayoutQueued = false;
+		if (activeCommentBoxes.size > 0) renderCommentBoxes();
+	});
+}
+window.addEventListener('resize', relayoutCommentBoxes);
+window.visualViewport?.addEventListener('resize', relayoutCommentBoxes);
 
 // --- Tag autocomplete ----------------------------------------------------------
 // Typing `#` in a comment editor pops a small dropdown of known tags (collected
@@ -680,6 +727,7 @@ function insertTagCompletion(ta: HTMLElement, tag: string) {
 	}
 	hideTagMenu();
 	ta.focus();
+	autosizeTextarea(ta);
 	renderCommentBoxes();
 }
 
@@ -762,21 +810,31 @@ function tagMenuHandleKey(e: KeyboardEvent, ta: HTMLElement): boolean {
 	return false;
 }
 
+// Toggle is-single-line/is-multi-line so the send button sits inline on the
+// right for a single line and drops below once the text wraps. Handles both the
+// legacy textarea and the contenteditable editor.
 function autosizeTextarea(ta: HTMLElement) {
-	if (!(ta instanceof HTMLTextAreaElement)) return;
 	const editorDiv = ta.closest('.obsidian-comment-editor');
-	if (editorDiv) {
-		editorDiv.classList.add('is-single-line');
-		editorDiv.classList.remove('is-multi-line');
-	}
-	ta.style.height = 'auto';
-	const isMulti = ta.scrollHeight > 35;
-	if (editorDiv && isMulti) {
-		editorDiv.classList.remove('is-single-line');
-		editorDiv.classList.add('is-multi-line');
+	if (!editorDiv) return;
+
+	// Measure with single-line padding (padding-right reserves room for the
+	// button) so wrapping is detected against the actual usable width.
+	editorDiv.classList.add('is-single-line');
+	editorDiv.classList.remove('is-multi-line');
+
+	if (ta instanceof HTMLTextAreaElement) {
 		ta.style.height = 'auto';
 	}
-	ta.style.height = `${ta.scrollHeight}px`;
+
+	if (ta.scrollHeight > 35) {
+		editorDiv.classList.remove('is-single-line');
+		editorDiv.classList.add('is-multi-line');
+	}
+
+	if (ta instanceof HTMLTextAreaElement) {
+		ta.style.height = 'auto';
+		ta.style.height = `${ta.scrollHeight}px`;
+	}
 }
 
 function wrapSelection(ta: HTMLElement, marker: string) {
@@ -848,26 +906,31 @@ function renderInlineMarkdown(escaped: string): string {
 		.replace(/\n/g, '<br>');
 }
 
+// Focus the edit editor **synchronously**, in the same task as the render that
+// created it. Deferring it (setTimeout) and re-rendering afterwards gave entering
+// edit mode two paints: the swapped-in editor first, then a second frame where the
+// caret/sizing/stacking settled — which read as a flicker.
 function focusEditTextarea(highlightId: string) {
-	setTimeout(() => {
-		const box = activeCommentBoxes.get(highlightId);
-		if (!box) return;
-		const ta = box.querySelector('.edit-comment-textarea') as HTMLElement | null;
-		if (!ta) return;
-		
-		ta.focus();
+	const box = activeCommentBoxes.get(highlightId);
+	if (!box) return;
+	const ta = box.querySelector('.edit-comment-textarea') as HTMLElement | null;
+	if (!ta) return;
 
-		const selection = window.getSelection();
-		if (selection) {
-			const range = document.createRange();
-			range.selectNodeContents(ta);
-			range.collapse(false);
-			selection.removeAllRanges();
-			selection.addRange(range);
-		}
-		
-		renderCommentBoxes();
-	}, 0);
+	ta.focus({ preventScroll: true });
+	autosizeTextarea(ta);
+	const editorDiv = ta.closest('.obsidian-comment-editor');
+	if (editorDiv && getEditorValue(ta).trim().length > 0) {
+		editorDiv.classList.add('has-text');
+	}
+
+	const selection = window.getSelection();
+	if (selection) {
+		const range = document.createRange();
+		range.selectNodeContents(ta);
+		range.collapse(false);
+		selection.removeAllRanges();
+		selection.addRange(range);
+	}
 }
 
 function createCommentBox(highlight: AnyHighlightData): HTMLElement {
@@ -938,6 +1001,13 @@ function createCommentBox(highlight: AnyHighlightData): HTMLElement {
 				clickTimeouts.delete(textEl);
 			}
 
+			// This gesture's mousedown already expanded it — don't read that as an
+			// "already expanded" state and collapse it right back.
+			if (expandedOnMousedown === expandKey) {
+				expandedOnMousedown = null;
+				return;
+			}
+
 			if (expandedCommentIndexes.has(expandKey)) {
 				const timeout = setTimeout(() => {
 					expandedCommentIndexes.delete(expandKey);
@@ -964,6 +1034,9 @@ function createCommentBox(highlight: AnyHighlightData): HTMLElement {
 		const target = e.target as HTMLElement;
 		const textEl = target.closest('.obsidian-comment-text') as HTMLElement;
 		if (textEl) {
+			// The native double-click word selection would land on text we're about to
+			// replace with the editor, and re-selecting it fights the caret we place.
+			e.preventDefault();
 			if (clickTimeouts.has(textEl)) {
 				clearTimeout(clickTimeouts.get(textEl));
 				clickTimeouts.delete(textEl);
@@ -972,6 +1045,8 @@ function createCommentBox(highlight: AnyHighlightData): HTMLElement {
 			if (noteIndex !== undefined) {
 				editingNoteKey = `${highlight.id}-${noteIndex}`;
 				expandedCommentIndexes.add(editingNoteKey);
+				// Render + focus in this same task, so the switch into edit mode is a
+				// single paint.
 				renderCommentBoxes();
 				focusEditTextarea(highlight.id);
 			}
@@ -983,6 +1058,7 @@ function createCommentBox(highlight: AnyHighlightData): HTMLElement {
 		const ta = e.target as HTMLElement;
 		if (ta.classList.contains('edit-comment-textarea') || ta.classList.contains('new-comment-textarea')) {
 			updateTagAutocomplete(ta);
+			autosizeTextarea(ta);
 
 			const editorDiv = ta.closest('.obsidian-comment-editor');
 			if (editorDiv) {
@@ -1240,8 +1316,6 @@ function updateCommentBox(box: HTMLElement, highlight: AnyHighlightData) {
 	// single slim box rather than a box-within-a-box.
 	box.classList.toggle('is-empty', notes.length === 0);
 
-	let html = '';
-
 	// The comment editor / reply field. Always rendered (hidden via CSS unless
 	// the box is focused) so toggling focus never rebuilds the DOM. It sits after
 	// the comment list, so the reply field is always at the end of the thread.
@@ -1259,8 +1333,12 @@ function updateCommentBox(box: HTMLElement, highlight: AnyHighlightData) {
 		</div>
 	`;
 
-	if (notes.length > 0) {
-		html += `<div class="obsidian-comment-list">`;
+	// Per-item markup, kept as separate strings so a render that changes ONE note
+	// (entering edit mode, a sync icon flipping) can patch just that note's element
+	// instead of replacing the card's innerHTML — which re-created every <img> in
+	// the thread and made the switch into edit mode visibly blink.
+	const itemHtmls: string[] = [];
+	{
 		notes.forEach((note, index) => {
 			const isEditingThisNote = editingNoteKey === `${highlight.id}-${index}`;
 			const parsed = parseNoteString(note);
@@ -1301,9 +1379,17 @@ function updateCommentBox(box: HTMLElement, highlight: AnyHighlightData) {
 			const bodyHtml = isEditingThisNote
 				? `<div class="obsidian-comment-editor sleek-input is-editing">
 						<div class="edit-comment-textarea obsidian-comment-editor-contenteditable" contenteditable="true">${renderCommentBodyToEditableHtml(parsed.text)}</div>
+						<div class="obsidian-comment-editor-actions">
+							<button class="obsidian-comment-diagram-new" aria-label="Add Diagram" title="Add Diagram">
+								<svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M8.3 10a.7.7 0 0 1-.626-1.079L11.4 3a.7.7 0 0 1 1.198-.043L16.3 8.9a.7.7 0 0 1-.572 1.1Z"/><rect x="3" y="14" width="7" height="7" rx="1"/><circle cx="17.5" cy="17.5" r="3.5"/></svg>
+							</button>
+							<button class="obsidian-comment-save-edit obsidian-comment-save-new" aria-label="Submit">
+								<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m5 12 7-7 7 7"/><path d="M12 19V5"/></svg>
+							</button>
+						</div>
 					</div>`
 				: `<div class="obsidian-comment-text" data-index="${index}">${displayHtml}</div>`;
-			html += `
+			itemHtmls.push(`
 				<div class="obsidian-comment-item">
 					<div class="obsidian-comment-item-header">
 						<span class="obsidian-comment-dot"></span>
@@ -1321,38 +1407,73 @@ function updateCommentBox(box: HTMLElement, highlight: AnyHighlightData) {
 							<button class="obsidian-comment-delete" data-index="${index}" aria-label="Delete comment">
 								<svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 6 6 18"/><path d="m6 6 12 12"/></svg>
 							</button>
-							${index === 0 ? `<button class="obsidian-comment-thread-delete" aria-label="Delete comment thread" title="Delete comment thread">
+							${index === 0 && notes.length > 1 ? `<button class="obsidian-comment-thread-delete" aria-label="Delete comment thread" title="Delete comment thread">
 								<svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 6h18"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/></svg>
 							</button>` : ''}
 						</div>
 					</div>
 					${bodyHtml}
 				</div>
-			`;
+			`);
 		});
-		html += `</div>`;
 	}
 
-	// While a note in this thread is being edited, hide the reply/new-comment
-	// field — an inline edit editor is already open, so a second editor below it
-	// is confusing and redundant.
+	// While a note in this thread is being edited, the reply/new-comment field is
+	// hidden — an inline edit editor is already open, so a second editor below it is
+	// confusing and redundant. It stays MOUNTED and is hidden by CSS (see the
+	// `is-editing-note` rules): removing it from the markup changed the box's height,
+	// so entering and leaving edit mode re-stacked the whole column.
 	const isEditingNoteInThisBox = editingNoteKey?.startsWith(`${highlight.id}-`) ?? false;
-	if (!isEditingNoteInThisBox) html += editorHtml;
+	box.classList.toggle('is-editing-note', isEditingNoteInThisBox);
 
-	// Only touch the DOM when the rendered content actually changed. An open
-	// editor's textarea value (and the add-comment editor's emptiness) is not
 	// Keep the color-matched border in sync if the highlight was recolored.
 	box.dataset.color = highlight.color || 'yellow';
 
-	// part of `html`, so skipping the rebuild preserves whatever the user has
-	// typed and keeps the Save/Cancel buttons attached across re-renders.
-	if (boxRenderCache.get(box) === html) {
+	// Only touch the DOM when the rendered content actually changed. An open
+	// editor's textarea value (and the add-comment editor's emptiness) is not part
+	// of the markup, so skipping the rebuild preserves whatever the user has typed
+	// and keeps the Save/Cancel buttons attached across re-renders.
+	const signature = itemHtmls.join('') + editorHtml;
+	if (boxRenderCache.get(box) === signature) {
 		syncDraftClass(box);
 		return;
 	}
-	boxRenderCache.set(box, html);
-	box.innerHTML = html;
+
+	const prev = boxItemCache.get(box);
+	const list = box.querySelector(':scope > .obsidian-comment-list');
+	const editorEl = box.querySelector(':scope > .obsidian-comment-editor');
+	// Same set of notes as last render → patch only the items that changed, leaving
+	// every other element (and its already-decoded images) untouched.
+	const canPatch = !!prev
+		&& !!editorEl
+		&& prev.items.length === itemHtmls.length
+		&& (itemHtmls.length === 0 || (!!list && list.children.length === itemHtmls.length));
+
+	if (canPatch) {
+		itemHtmls.forEach((itemHtml, index) => {
+			if (prev!.items[index] === itemHtml) return;
+			const replacement = htmlToElement(itemHtml);
+			if (replacement) list!.children[index].replaceWith(replacement);
+		});
+		if (prev!.editor !== editorHtml) {
+			const replacement = htmlToElement(editorHtml);
+			if (replacement) editorEl!.replaceWith(replacement);
+		}
+	} else {
+		box.innerHTML = (itemHtmls.length
+			? `<div class="obsidian-comment-list">${itemHtmls.join('')}</div>`
+			: '') + editorHtml;
+	}
+
+	boxItemCache.set(box, { items: itemHtmls, editor: editorHtml });
+	boxRenderCache.set(box, signature);
 	syncDraftClass(box);
+}
+
+function htmlToElement(html: string): Element | null {
+	const holder = document.createElement('div');
+	holder.innerHTML = html;
+	return holder.firstElementChild;
 }
 
 // A box whose reply editor holds draft text keeps that editor visible even
@@ -1399,6 +1520,7 @@ function originalTextForNoteKey(noteKey: string): string | undefined {
 document.addEventListener('mousedown', (e) => {
 	const target = e.target as HTMLElement | null;
 	const box = target?.closest('.obsidian-comment-box') as HTMLElement | null;
+	expandedOnMousedown = null;
 
 	if (!box) {
 		hideTagMenu();
@@ -1441,12 +1563,71 @@ document.addEventListener('mousedown', (e) => {
 	}
 
 	const highlightId = Array.from(activeCommentBoxes.entries()).find(([_, b]) => b === box)?.[0];
-	if (highlightId && focusedHighlightId !== highlightId) {
-		// Focus moves to this box; drafts elsewhere stay open untouched.
-		focusedHighlightId = highlightId;
-		renderCommentBoxes();
+	const focusChanged = !!highlightId && focusedHighlightId !== highlightId;
+	if (focusChanged) {
+		// Focus moves to this box; drafts elsewhere stay open untouched. Comments
+		// expanded in the box we just left collapse with it, matching what clicking
+		// on empty page does.
+		for (const key of [...expandedCommentIndexes]) {
+			if (!key.startsWith(`${highlightId}-`)) expandedCommentIndexes.delete(key);
+		}
+		focusedHighlightId = highlightId!;
 	}
+
+	// Expand a clamped comment on mousedown rather than waiting for the click.
+	// Focus (which reveals the thread's reply field) lands on mousedown, so
+	// expanding on the later click made the reply field appear one frame before
+	// the comment unfolded. Doing both here means a single render shows both.
+	let expandChanged = false;
+	const textEl = (e.target as HTMLElement | null)?.closest('.obsidian-comment-text') as HTMLElement | null;
+	if (highlightId && textEl && textEl.dataset.index !== undefined) {
+		const expandKey = `${highlightId}-${textEl.dataset.index}`;
+		const overflows = textEl.classList.contains('has-overflow') || textEl.scrollHeight > textEl.clientHeight;
+		if (!expandedCommentIndexes.has(expandKey) && overflows) {
+			expandedCommentIndexes.add(expandKey);
+			textEl.classList.remove('is-collapsed');
+			expandedOnMousedown = expandKey;
+			expandChanged = true;
+		}
+	}
+
+	if (focusChanged || expandChanged) renderCommentBoxes();
 }, true);
+
+// Pasted images live in the same IndexedDB store as diagrams, but nothing used to
+// record them in the `diagrams` map — and the sync engine derives a page's image
+// pointers from that map. So a pasted image was stored locally, never uploaded,
+// and came back as a blank <img> on a device that restored from backup. Registering
+// an entry here (at save time, so an abandoned draft leaves nothing behind) makes a
+// pasted image sync exactly like a drawn diagram. `pasted: true` marks the bytes as
+// immutable, which lets the storage listener skip a pointless re-render.
+async function registerPastedImages(text: string): Promise<void> {
+	const ids = [...text.matchAll(/<!--image:([A-Za-z0-9_-]+)-->/g)].map(m => m[1]);
+	if (ids.length === 0) return;
+	const res = await browser.storage.local.get('diagrams');
+	const diagrams = (res.diagrams || {}) as Record<string, any>;
+	let changed = false;
+	for (const id of ids) {
+		if (diagrams[id]) continue;
+		diagrams[id] = { updatedAt: Date.now(), pasted: true };
+		changed = true;
+	}
+	if (changed) await browser.storage.local.set({ diagrams });
+}
+
+// Drop `diagrams` map entries for images whose comment was deleted, so the sync
+// engine stops treating them as live pointers.
+async function forgetDiagramEntries(ids: string[]): Promise<void> {
+	const res = await browser.storage.local.get('diagrams');
+	const diagrams = (res.diagrams || {}) as Record<string, any>;
+	let changed = false;
+	for (const id of ids) {
+		if (!diagrams[id]) continue;
+		delete diagrams[id];
+		changed = true;
+	}
+	if (changed) await browser.storage.local.set({ diagrams });
+}
 
 function saveComment(highlightId: string, text: string) {
 	hideTagMenu();
@@ -1461,6 +1642,7 @@ function saveComment(highlightId: string, text: string) {
 	}
 	
 	const formattedText = `${text}<!--timestamp:${Date.now()}-->`;
+	void registerPastedImages(text);
 
 	const highlight = highlights.find(h => h.id === highlightId);
 	if (highlight) {
@@ -1485,6 +1667,8 @@ function saveEditedComment(highlightId: string, index: number, text: string) {
 		renderCommentBoxes();
 		return;
 	}
+
+	void registerPastedImages(text);
 
 	// `index` is into the group's flattened thread; resolve the piece that owns it.
 	const rep = highlights.find(h => h.id === highlightId);
@@ -1534,11 +1718,14 @@ function deleteComment(highlightId: string, index: number) {
 		
 		let imgMatch;
 		const imgRegex = /<!--image:([A-Za-z0-9_-]+)-->/g;
+		const imageIds: string[] = [];
 		while ((imgMatch = imgRegex.exec(parsedText)) !== null) {
 			const iid = imgMatch[1];
+			imageIds.push(iid);
 			localDiagramCache.delete(iid);
 			deleteDiagramImage(iid).catch(() => {});
 		}
+		if (imageIds.length) void forgetDiagramEntries(imageIds);
 		setActiveHighlight(null); // clear emphasis in case the box is removed
 		renderCommentBoxes();
 	}
@@ -1589,6 +1776,7 @@ function deleteCommentThread(highlightId: string) {
 		localDiagramCache.delete(iid);
 		deleteDiagramImage(iid).catch(() => {});
 	}
+	if (imageIds.length) void forgetDiagramEntries(imageIds);
 
 	setActiveHighlight(null); // clear emphasis — the box is about to be removed
 	renderCommentBoxes();

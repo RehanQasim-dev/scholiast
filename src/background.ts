@@ -788,7 +788,14 @@ browser.runtime.onMessage.addListener((request: unknown, sender: browser.Runtime
 					) || allActiveTabs[0];
 				}
 				if (currentTab && currentTab.id) {
-					sendResponse({tabId: currentTab.id});
+					// The url and the tool state ride along: the popup needs all three
+					// before it can paint, and a cold service worker makes every extra
+					// round trip cost real milliseconds.
+					sendResponse({
+						tabId: currentTab.id,
+						url: isReaderPageUrl(currentTab.url) ?? currentTab.url,
+						isHighlighterActive: getHighlighterModeForTab(currentTab.id),
+					});
 				} else {
 					sendResponse({error: 'No active tab found'});
 				}

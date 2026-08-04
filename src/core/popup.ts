@@ -130,15 +130,52 @@ const memoizedExtractPageContent = memoizeWithExpiration(
 // just the action icons (annotate / reader / dashboard / settings) plus a
 // "Clip this page" button. Content extraction — the expensive page-to-markdown
 // conversion — runs only when the user actually asks to clip. Side panel and
-// embedded iframe are deliberate clipping surfaces, so they skip the quick
-// state and load the full clipper immediately (clipUIReady starts true there).
+// embedded iframe are deliberate clipping surfaces, so they skip the quick state
+// and load the full clipper immediately.
+// Everything the *clipper* needs — templates, triggers, vault list, the property
+// skeleton — loads in loadClipDependencies rather than at popup boot, so opening
+// the popup only pays for the strip of buttons the user actually sees first.
 let clipUIReady = false;
 let clipUIStarting: Promise<void> | null = null;
+let clipDepsReady: Promise<boolean> | null = null;
+
+async function loadClipDependencies(): Promise<boolean> {
+	templates = await loadTemplates();
+	if (templates.length === 0) {
+		console.error('No templates loaded');
+		showError('noTemplates');
+		return false;
+	}
+	// Speeds up per-URL template matching.
+	initializeTriggers(templates);
+	currentTemplate = templates[0];
+
+	lastSelectedVault = await getLocalStorage('lastSelectedVault');
+	if (!lastSelectedVault && loadedSettings.vaults.length > 0) {
+		lastSelectedVault = loadedSettings.vaults[0];
+	}
+
+	updateVaultDropdown(loadedSettings.vaults);
+	populateTemplateDropdown();
+	if (currentTabId !== undefined) setupEventListeners(currentTabId);
+	await initializeUI();
+	determineMainAction();
+	return true;
+}
+
+function ensureClipDependencies(): Promise<boolean> {
+	if (!clipDepsReady) clipDepsReady = loadClipDependencies();
+	return clipDepsReady;
+}
 
 function startClipUI(): Promise<void> {
 	if (clipUIReady) return Promise.resolve();
 	if (clipUIStarting) return clipUIStarting;
 	clipUIStarting = (async () => {
+		if (!(await ensureClipDependencies())) {
+			clipUIStarting = null;
+			return;
+		}
 		document.documentElement.classList.remove('quick-state');
 		document.getElementById('popup-container')?.classList.remove('quick-state');
 		// Let the popup window grow before re-measuring — the height var still
@@ -186,21 +223,24 @@ function setPopupDimensions() {
 
 const debouncedSetPopupDimensions = debounce(setPopupDimensions, 100); // 100ms delay
 
-async function initializeExtension(tabId: number) {
+// Boot work that the first paint depends on. Deliberately small: no templates, no
+// vault list, no content extraction — those load with the clipper (see
+// loadClipDependencies). `tabUrl` and `highlighterActive` come from the same
+// getActiveTab response the caller already awaited, so this costs no extra
+// messages to the (possibly cold) service worker.
+async function initializeExtension(tabUrl: string, highlighterActive: boolean) {
 	try {
-		// Initialize translations
-		await translatePage();
-		
-		// Setup language and RTL support
-		await setupLanguageAndDirection();
-		
-		// First, add the browser class to allow browser-specific styles to apply
-		await addBrowserClassToHtml();
-		
+		// Translation, RTL setup and the browser class are independent of each other.
+		await Promise.all([
+			translatePage(),
+			setupLanguageAndDirection(),
+			addBrowserClassToHtml(),
+		]);
+
 		// Set an initial large height to allow the browser to determine the maximum height
 		// This is necessary for browsers that allow scaling the popup via page zoom
 		document.documentElement.style.setProperty('--chromium-popup-height', '2000px');
-		
+
 		// Use setTimeout to ensure the DOM has updated before we measure
 		setTimeout(() => {
 			setPopupDimensions();
@@ -208,37 +248,15 @@ async function initializeExtension(tabId: number) {
 
 		debugLog('Settings', 'General settings:', loadedSettings);
 
-		templates = await loadTemplates();
-		debugLog('Templates', 'Loaded templates:', templates);
-
-		if (templates.length === 0) {
-			console.error('No templates loaded');
-			return false;
-		}
-
-		// Initialize triggers to speed up template matching
-		initializeTriggers(templates);
-
-		currentTemplate = templates[0];
-		debugLog('Templates', 'Current template set to:', currentTemplate);
-
-		// Load last selected vault
-		lastSelectedVault = await getLocalStorage('lastSelectedVault');
-		if (!lastSelectedVault && loadedSettings.vaults.length > 0) {
-			lastSelectedVault = loadedSettings.vaults[0];
-		}
-		debugLog('Vaults', 'Last selected vault:', lastSelectedVault);
-
-		const tab = await getTabInfo(tabId);
-		if (!tab.url || isBlankPage(tab.url)) {
+		if (!tabUrl || isBlankPage(tabUrl)) {
 			showError('pageCannotBeClipped');
 			return;
 		}
-		if (!isValidUrl(tab.url)) {
+		if (!isValidUrl(tabUrl)) {
 			showError('onlyHttpSupported');
 			return;
 		}
-		if (isRestrictedUrl(tab.url)) {
+		if (isRestrictedUrl(tabUrl)) {
 			showError('pageCannotBeClipped');
 			return;
 		}
@@ -247,7 +265,7 @@ async function initializeExtension(tabId: number) {
 		setupMessageListeners();
 		setupStorageListeners();
 
-		await checkHighlighterModeState(tabId);
+		updateHighlighterModeUI(highlighterActive);
 
 		return true;
 	} catch (error) {
@@ -308,32 +326,44 @@ function setupMessageListeners() {
 					showError('onlyHttpSupported');
 				}
 			}
-		} else if (request.action === "updatePopupHighlighterUI") {
-			// This message is now handled by checkHighlighterModeState
-		} else if (request.action === "highlighterModeChanged") {
-			// This message is now handled by checkHighlighterModeState
 		}
 	});
 }
 
 document.addEventListener('DOMContentLoaded', async function() {
-	loadedSettings = await loadSettings();
 	if (isIframe) {
 		document.documentElement.classList.add('is-embedded');
 	}
 
 	const isSidePanel = document.documentElement.classList.contains('is-side-panel');
 
+	// Paint-critical work goes first and in parallel: the icons in the header strip
+	// are pure DOM (no I/O), and settings + active tab are two independent awaits
+	// that used to run back to back.
+	// One pass for the whole document — createIcons() always walks the document, so
+	// the per-button calls this replaces were re-doing the same work three times.
+	initializeIcons();
+	const settingsPromise = loadSettings();
+	const activeTabPromise = browser.runtime.sendMessage({ action: "getActiveTab" }) as Promise<
+		{ tabId?: number; url?: string; isHighlighterActive?: boolean; error?: string }
+	>;
+
 	try {
-		// Get the active tab via background script to handle Firefox compatibility
-		const response = await browser.runtime.sendMessage({ action: "getActiveTab" }) as { tabId?: number; error?: string };
+		const [settings, response] = await Promise.all([settingsPromise, activeTabPromise]);
+		loadedSettings = settings;
 		if (!response || response.error || !response.tabId) {
 			showError(getMessage('pleaseReload'));
 			return;
 		}
-		
+
 		currentTabId = response.tabId;
-		const tab = await getTabInfo(currentTabId);
+		// getActiveTab already told us the url; only fall back to a second round trip
+		// if this build's background didn't include it.
+		// An empty url means the background couldn't read it (e.g. a reader page
+		// without the tabs permission) — getTabInfo has the readerUrl fallback.
+		const tab = response.url
+			? { id: currentTabId, url: response.url }
+			: await getTabInfo(currentTabId);
 		const currentBrowser = await detectBrowser();
 		const isMobile = currentBrowser === 'mobile-safari';
 
@@ -399,7 +429,6 @@ document.addEventListener('DOMContentLoaded', async function() {
 					console.error('Error opening options page:', error);
 				}
 			});
-			initializeIcons(settingsButton);
 		}
 		const dashboardButton = document.getElementById('open-dashboard');
 		if (dashboardButton) {
@@ -411,46 +440,48 @@ document.addEventListener('DOMContentLoaded', async function() {
 					console.error('Error opening dashboard page:', error);
 				}
 			});
-			initializeIcons(dashboardButton);
 		}
 
 		// Initialize the rest of the popup
 		if (currentTabId) {
-			const initialized = await initializeExtension(currentTabId);
+			// The quick-actions state is the popup's resting state, so its class and
+			// its one button are wired before any further awaits.
+			const useQuickState = !isIframe && !isSidePanel;
+			if (useQuickState) {
+				document.documentElement.classList.add('quick-state');
+				document.getElementById('popup-container')?.classList.add('quick-state');
+				document.getElementById('start-clip-btn')?.addEventListener('click', (e) => {
+					e.preventDefault();
+					startClipUI();
+				});
+			}
+
+			// Tool buttons in the header strip work in the quick state, so they're
+			// wired here; the clipper's own fields are wired with the clipper.
+			setupToolEventListeners(currentTabId);
+
+			const initialized = await initializeExtension(
+				tab.url,
+				response.isHighlighterActive ?? false
+			);
 			if (!initialized) {
 				return;
 			}
 
 			try {
-				// DOM-dependent initializations
-				updateVaultDropdown(loadedSettings.vaults);
-				populateTemplateDropdown();
-				setupEventListeners(currentTabId);
-				await initializeUI();
+				// Page variables only exist once the page has been extracted, so this
+				// loads the clipper first and then opens the panel.
+				document.getElementById('show-variables')?.addEventListener('click', async (e) => {
+					e.preventDefault();
+					await startClipUI();
+					updateVariablesPanel(currentTemplate, currentVariables);
+					await showVariables();
+				});
 
-				determineMainAction();
-
-				const showMoreActionsButton = document.getElementById('show-variables');
-				if (showMoreActionsButton) {
-					showMoreActionsButton.addEventListener('click', (e) => {
-						e.preventDefault();
-						showVariables();
-					});
-				}
-
-				// Initial content load. In the quick-actions state extraction is
-				// deferred until the user clicks "Clip this page" (startClipUI);
-				// side panel / iframe load the full clipper immediately.
-				const useQuickState = !isIframe && !isSidePanel;
-				if (useQuickState) {
-					document.documentElement.classList.add('quick-state');
-					document.getElementById('popup-container')?.classList.add('quick-state');
-					const startClipButton = document.getElementById('start-clip-btn');
-					startClipButton?.addEventListener('click', (e) => {
-						e.preventDefault();
-						startClipUI();
-					});
-				} else {
+				// Content extraction — the expensive page-to-markdown pass — is deferred
+				// until the user clicks "Clip this page" (startClipUI). Side panel and
+				// embedded iframe are deliberate clipping surfaces, so they load it now.
+				if (!useQuickState) {
 					await startClipUI();
 				}
 			} catch (error) {
@@ -465,6 +496,28 @@ document.addEventListener('DOMContentLoaded', async function() {
 		showError(getMessage('pleaseReload'));
 	}
 });
+
+// Header-strip buttons: available the moment the popup opens, so they're wired
+// separately from the clipper's fields (which only exist once the clipper loads).
+function setupToolEventListeners(tabId: number) {
+	document.getElementById('highlighter-mode')
+		?.addEventListener('click', () => toggleHighlighterMode(tabId));
+
+	document.getElementById('embedded-mode')?.addEventListener('click', async () => {
+		try {
+			await browser.runtime.sendMessage({ action: "getActiveTabAndToggleIframe" });
+			setTimeout(() => window.close(), 50);
+		} catch (error) {
+			console.error('Error toggling embedded iframe:', error);
+		}
+	});
+
+	const readerModeButton = document.getElementById('reader-mode');
+	if (readerModeButton) {
+		readerModeButton.addEventListener('click', () => toggleReaderMode(tabId));
+		checkReaderModeState(tabId);
+	}
+}
 
 function setupEventListeners(tabId: number) {
 	const templateDropdown = document.getElementById('template-select') as HTMLSelectElement;
@@ -483,23 +536,6 @@ function setupEventListeners(tabId: number) {
 			}
 		});
 	}
-
-	const highlighterModeButton = document.getElementById('highlighter-mode');
-	if (highlighterModeButton) {
-		highlighterModeButton.addEventListener('click', () => toggleHighlighterMode(tabId));
-	}
-
-	const embeddedModeButton = document.getElementById('embedded-mode');
-		if (embeddedModeButton) {
-			embeddedModeButton.addEventListener('click', async function() {
-				try {
-					await browser.runtime.sendMessage({ action: "getActiveTabAndToggleIframe" });
-					setTimeout(() => window.close(), 50);
-				} catch (error) {
-					console.error('Error toggling emedded iframe:', error);
-				}
-			});
-		}
 
 	const moreButton = document.getElementById('more-btn');
 	const moreDropdown = document.getElementById('more-dropdown');
@@ -626,11 +662,6 @@ function setupEventListeners(tabId: number) {
 		});
 	}
 
-	const readerModeButton = document.getElementById('reader-mode');
-	if (readerModeButton) {
-		readerModeButton.addEventListener('click', () => toggleReaderMode(tabId));
-		checkReaderModeState(tabId);
-	}
 }
 
 async function initializeUI() {
@@ -641,19 +672,12 @@ async function initializeUI() {
 		console.warn('Clip button not found');
 	}
 
-	const showMoreActionsButton = document.getElementById('show-variables') as HTMLElement;
+	// The panel itself is created with the clipper; the button that opens it is
+	// wired at boot (it has to work in the quick state) and loads the clipper first.
 	const variablesPanel = document.createElement('div');
 	variablesPanel.className = 'variables-panel';
 	document.body.appendChild(variablesPanel);
-
-	if (showMoreActionsButton) {
-		showMoreActionsButton.addEventListener('click', async (e) => {
-			e.preventDefault();
-			// Initialize the variables panel with the latest data
-			initializeVariablesPanel(variablesPanel, currentTemplate, currentVariables);
-			await showVariables();
-		});
-	}
+	initializeVariablesPanel(variablesPanel, currentTemplate, currentVariables);
 
 	if (isSidePanel) {
 		browser.runtime.sendMessage({ action: "sidePanelOpened" });
@@ -1177,25 +1201,6 @@ async function checkReaderModeState(tabId: number) {
 	} catch (error) {
 		// Tab may not have content script loaded yet
 		console.error('Error checking reader mode state:', error);
-	}
-}
-
-async function checkHighlighterModeState(tabId: number) {
-	try {
-		const response = await browser.runtime.sendMessage({
-			action: "getHighlighterMode",
-			tabId: tabId
-		}) as { isActive: boolean };
-
-		const isHighlighterMode = response.isActive;
-		
-		loadedSettings = await loadSettings();
-		
-		updateHighlighterModeUI(isHighlighterMode);
-	} catch (error) {
-		console.error('Error checking highlighter mode state:', error);
-		// If there's an error, assume highlighter mode is off
-		updateHighlighterModeUI(false);
 	}
 }
 

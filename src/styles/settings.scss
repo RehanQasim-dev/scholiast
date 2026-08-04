@@ -633,3 +633,116 @@ label {
 	margin: 0;
 	color: var(--text-normal, #222);
 }
+
+/* --- Google Drive sync progress -------------------------------------------
+   One card, three rows: what's happening + how far along (top), the bar, and
+   which page is in flight + the page count (bottom). Shown only while a sync is
+   running or when the last run failed — see managers/sync-settings.ts. */
+.sync-progress-card {
+	width: 100%;
+	padding: 0.75rem 0.875rem;
+	border: 1px solid var(--background-modifier-border);
+	border-radius: var(--radius-m);
+	corner-shape: var(--corner-shape);
+	background: var(--background-secondary);
+	display: flex;
+	flex-direction: column;
+	gap: 0.5rem;
+}
+
+.sync-progress-top,
+.sync-progress-bottom {
+	display: flex;
+	align-items: center;
+	justify-content: space-between;
+	gap: 0.75rem;
+}
+
+.sync-progress-state {
+	display: inline-flex;
+	align-items: center;
+	gap: 0.4rem;
+	font-size: var(--font-ui-small);
+	font-weight: 600;
+	color: var(--text-normal);
+}
+
+.sync-progress-icon {
+	display: inline-flex;
+	color: var(--text-accent);
+
+	.lucide-icon {
+		width: 14px;
+		height: 14px;
+	}
+}
+
+/* The icon spins only while work is actually in flight. */
+.sync-progress-card.is-running .sync-progress-icon .lucide-icon {
+	animation: sync-progress-spin 1.1s linear infinite;
+}
+
+.sync-progress-card.is-error {
+	border-color: var(--text-error);
+
+	.sync-progress-icon {
+		color: var(--text-error);
+	}
+}
+
+.sync-progress-percent {
+	font-size: var(--font-ui-small);
+	font-weight: 600;
+	font-variant-numeric: tabular-nums;
+	color: var(--text-accent);
+}
+
+.sync-progress-track {
+	position: relative;
+	height: 6px;
+	border-radius: 999px;
+	background: var(--background-modifier-border);
+	overflow: hidden;
+}
+
+.sync-progress-fill {
+	height: 100%;
+	width: 0;
+	border-radius: 999px;
+	background: linear-gradient(90deg, var(--interactive-accent), var(--interactive-accent-hover));
+	transition: width 0.25s ease;
+}
+
+/* Page discovery has no measurable total yet, so the bar sweeps instead of
+   pretending to know a percentage. */
+.sync-progress-card.is-indeterminate .sync-progress-fill {
+	width: 35%;
+	animation: sync-progress-sweep 1.2s ease-in-out infinite;
+}
+
+.sync-progress-bottom {
+	font-size: var(--font-ui-smaller);
+	color: var(--text-muted);
+}
+
+.sync-progress-page {
+	flex: 1;
+	min-width: 0;
+	overflow: hidden;
+	text-overflow: ellipsis;
+	white-space: nowrap;
+}
+
+.sync-progress-count {
+	flex-shrink: 0;
+	font-variant-numeric: tabular-nums;
+}
+
+@keyframes sync-progress-spin {
+	to { transform: rotate(360deg); }
+}
+
+@keyframes sync-progress-sweep {
+	0%   { transform: translateX(-100%); }
+	100% { transform: translateX(285%); }
+}

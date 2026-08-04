@@ -735,6 +735,26 @@
 										<button type="button" id="sync-now-btn" style="display: none;" data-i18n="syncNow">Sync now</button>
 									</div>
 								</div>
+								<!-- Live sync progress. Populated by managers/sync-settings.ts from the
+								     sync_status record the background writes as it works. -->
+								<div class="setting-item" id="sync-progress-item" style="display: none;">
+									<div class="sync-progress-card" id="sync-progress-card">
+										<div class="sync-progress-top">
+											<span class="sync-progress-state">
+												<span class="sync-progress-icon" id="sync-progress-icon"><i data-lucide="refresh-cw"></i></span>
+												<span id="sync-progress-phase">Syncing…</span>
+											</span>
+											<span class="sync-progress-percent" id="sync-progress-percent">0%</span>
+										</div>
+										<div class="sync-progress-track">
+											<div class="sync-progress-fill" id="sync-progress-fill"></div>
+										</div>
+										<div class="sync-progress-bottom">
+											<span class="sync-progress-page" id="sync-progress-page"></span>
+											<span class="sync-progress-count" id="sync-progress-count"></span>
+										</div>
+									</div>
+								</div>
 								<div class="setting-item" id="sync-setup-note" style="display: none;">
 									<div class="setting-item-info">
 										<div class="setting-item-description" data-i18n="syncSetupNote">

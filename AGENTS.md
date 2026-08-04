@@ -139,7 +139,11 @@ exists** — the sharded keys are the only format. The shapes below are the per-
   icons + a "Clip this page" button) with **no content extraction**. The full clipper UI — and the
   expensive page-to-markdown conversion — loads only when "Clip this page" is pressed (or a quick
   clip is triggered). Side panel and embedded iframe skip the quick state and load the full clipper
-  immediately, as before.
+  immediately, as before. Boot cost is kept to what that first strip needs: settings and the active
+  tab load in parallel, `getActiveTab` returns the tab **url and highlighter state** with the tab id
+  (one service-worker round trip instead of three, which matters on a cold worker), icons are built
+  in a single pass, and templates / triggers / vault list / property skeleton load with the clipper
+  rather than at open (`loadClipDependencies`).
 - Annotating is an explicit, opt-in **annotation mode** per page: entered via the extension's
   highlighter toggle (or the `H`/`P` keys), never during normal browsing. Stored highlights and
   comment boxes still render on page load regardless of mode — mode only gates *creating/editing*.
@@ -160,6 +164,11 @@ exists** — the sharded keys are the only format. The shapes below are the per-
 - **`H`** toggles the highlighter tool (entering annotation mode if needed).
 - Smart cursor: hovering an annotation/comment card disables the highlighter (reverts to normal
   cursor) to avoid accidental highlights; restores on leave.
+- Hovering a highlight floats its **action bar** (colors / comment / delete) just above the text.
+  The strip of empty space between text and bar counts as part of the bar, so reaching for a button
+  doesn't flicker the highlighter cursor back or retarget the bar. Leaving a highlight hides the bar
+  and restores the cursor **in the same frame**, unless the pointer is measurably closing in on the
+  bar (two-sample distance check) — in which case it lingers ~400ms so it can be reached.
 - Selecting text shows a floating **color-swatch popup** (circular swatches above the selection).
   Picking a color recolors the whole linked group.
 - **`Ctrl`+highlight** → creates the highlight and immediately opens a new comment box for it.
@@ -177,17 +186,24 @@ exists** — the sharded keys are the only format. The shapes below are the per-
 - Comments render as floating **cards in a single right-side column**, stacked top-to-bottom in
   document order of their highlights without overlap; if the viewport lacks room, a body margin
   nudges content leftward. (Always-right avoids cards landing over left-side page chrome like a TOC.)
+  The column is anchored by an explicit `left` in page coordinates (not `right`), so the reserved
+  gutter can't drag the cards back over the text on pages with a positioned body, and the layout is
+  recomputed on window `resize` / `visualViewport` resize — which is what keeps it correct across
+  **browser zoom**.
 - **Empty comment editors are discarded on click-away**: the box disappears (the highlight stays)
   instead of lingering as an empty field.
 - **`Ctrl`+click** an existing highlight opens its comment bar for typing.
-- **Threaded replies**: a reply bar at the bottom of each card adds replies to the thread.
+- **Threaded replies**: a reply bar at the bottom of each card adds replies to the thread. Each reply
+  has its own delete button; the **delete-whole-thread** button only appears (on the first reply) once
+  the thread holds 2+ replies, since with one reply the two buttons would do the same thing.
 - **Smart truncation**: replies longer than 3 lines collapse; 4th line fades/blurs out.
-- **Seamless Expansion & Edit**: clicking a collapsed reply expands it immediately in a single step. Double-clicking any reply seamlessly enters edit mode and focuses the editor without triggering intermediate collapses, layout jumps, or blinking.
+- **Seamless Expansion & Edit**: clicking a collapsed reply expands it immediately in a single step, in the *same* render that reveals the thread's reply field (both are applied on mousedown, so neither appears a frame ahead of the other). Clicking away — on the page or on another card — collapses the reply and hides the reply field together. Double-clicking any reply enters edit mode in a **single paint**: a render only replaces the comment items whose markup actually changed (per-item diff, not the card's innerHTML — a full rebuild re-created every image in the thread and blinked), the reply field stays mounted and is hidden by CSS (`is-editing-note`) so the card's height and the column's stacking don't change, and the caret is placed synchronously in the same task as the render.
 - **WYSIWYG contenteditable Editor**: Replaced the traditional `<textarea>` with a `contenteditable` `div` for comment editing.
   - **Inline Pasted Images**: Pressing `Ctrl+V` pastes images directly into the cursor location in the editor, showing a visual preview rather than raw markdown.
   - **Image Gallery Layout**: Pasted images wrap into rows of up to 2 side-by-side images (50% width), forcing any subsequent text below them.
   - **Auto-linking pasted URLs**: Pasting or typing a URL (or opening an existing link) displays a blue clickable `<a>` link inline in the editor, opening in a new tab when clicked.
   - **Serialization**: Inline images and HTML links are cleanly converted back to their respective markdown formats (`<!--image:ID-->`, `[Text](URL)`, or raw URLs) when saved.
+  - **Backup/sync**: a pasted image is registered in the `diagrams` map on save (`{ updatedAt, pasted: true }` — no scene) so it travels to Drive on the same path as a drawn diagram: PNG blob out, blob pulled back into IndexedDB on another device, map entry dropped (and the remote blob tombstoned) when its comment is deleted.
   - **Keybinds**: `Enter` inserts a new line inside the editor; `Ctrl+Enter` saves/commits the comment.
 - **Google Sync Status Icon**: Each reply displays a cloud sync indicator icon in its top-right corner. It is styled with a light/dull gray color when pending sync, turning into a bright purple-bordered icon once successfully merged and synced to Google Drive.
 - **Diagrams**: An "Add Diagram" button in the comment editor opens a dedicated, isolated Excalidraw window. The comment is created **only when the editor saves** (the diagram-id→highlight mapping is held pending until the save lands), so closing the editor without saving leaves no orphan comment. The editable **scene JSON** is stored in `browser.storage.local` under the `diagrams` key (`{ sceneData, updatedAt }`); the **rendered PNG is stored as a binary blob in IndexedDB** (frame-store `diagrams` store, keyed by diagram id) and rehydrated on demand — never inline in any JSON. Editing reuses the same diagram id (overwrites in place, no orphan); deleting the comment drops both the `diagrams` entry and the IndexedDB blob.
@@ -251,6 +267,12 @@ exists** — the sharded keys are the only format. The shapes below are the per-
   (a diagram edit is mapped to its page via `findPagesForDiagrams`). **Pull/full reconcile**: periodic +
   on startup + **"Sync now"** walks every local page and every remote `pages/` file (the file listing is
   the change-manifest), reconciling each independently. See `GOOGLE_DRIVE_SYNC.md`.
+- **Live progress in settings**: the engine writes its phase into the `sync_status` record as it goes
+  (`progress: { phase, done, total, title, url }` — `discovering` while it works out which pages are in
+  play, then one update per page). The Sync section renders it as a card under the status line: state +
+  percentage on top, a bar, and the page being synced with a `done / total` count below. The bar sweeps
+  indeterminately during discovery, the card turns red with the message on failure, and it hides when
+  idle. The settings page follows the run via a `storage.onChanged` listener, so no polling.
 - The Obsidian companion plugin (§5) is the second client of this per-page Drive layout and uses the
   **same** `pages/page-<urlhash>.json` files (`shared/merge.pageFileName` gives both the identical name).
 
