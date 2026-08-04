@@ -6,6 +6,7 @@ import { normalizeUrl } from './url-utils';
 import {
 	commentTextToDisplayHtml, commentTextToEditableHtml, serializeCommentEditor,
 	applyCommentFormat, activeCommentFormats, toggleTaskFromClick, toggleTaskInMarkdown,
+	repairTaskList, CHECK_CLASS, TASK_LIST_CLASS,
 	type CommentFormatCommand,
 } from './comment-markdown';
 
@@ -836,6 +837,16 @@ function focusEditTextarea(highlightId: string) {
 	}
 }
 
+
+document.addEventListener('selectionchange', () => {
+	const sel = window.getSelection();
+	if (!sel || sel.rangeCount === 0) return;
+	const active = document.activeElement as HTMLElement | null;
+	if (active && (active.classList.contains('edit-comment-textarea') || active.classList.contains('new-comment-textarea'))) {
+		repairTaskList(active);
+	}
+});
+
 function createCommentBox(highlight: AnyHighlightData): HTMLElement {
 	const box = document.createElement('div');
 	box.className = 'obsidian-comment-box';
@@ -991,6 +1002,7 @@ function createCommentBox(highlight: AnyHighlightData): HTMLElement {
 	box.addEventListener('input', (e) => {
 		const ta = e.target as HTMLElement;
 		if (ta.classList.contains('edit-comment-textarea') || ta.classList.contains('new-comment-textarea')) {
+			repairTaskList(ta);
 			updateTagAutocomplete(ta);
 			autosizeTextarea(ta);
 
@@ -1011,6 +1023,7 @@ function createCommentBox(highlight: AnyHighlightData): HTMLElement {
 	const trackCaret = (e: Event) => {
 		const ta = e.target as HTMLElement;
 		if (ta.classList?.contains('edit-comment-textarea') || ta.classList?.contains('new-comment-textarea')) {
+			repairTaskList(ta);
 			syncFormatButtons(ta);
 		}
 	};
@@ -1179,6 +1192,76 @@ function createCommentBox(highlight: AnyHighlightData): HTMLElement {
 				renderCommentBoxes();
 			}
 			return;
+		}
+
+		// Prevent caret moving before checkbox on Home key inside a task item
+		if (e.key === 'Home' && !e.shiftKey) {
+			const sel = window.getSelection();
+			if (sel && sel.rangeCount > 0) {
+				const range = sel.getRangeAt(0);
+				let liNode: Node | null = range.startContainer;
+				while (liNode && liNode !== ta && liNode.nodeName !== 'LI') {
+					liNode = liNode.parentNode;
+				}
+				if (liNode && liNode.nodeName === 'LI') {
+					const checkSpan = (liNode as HTMLElement).querySelector(`:scope > .${CHECK_CLASS}`);
+					if (checkSpan) {
+						e.preventDefault();
+						const targetNode = checkSpan.nextSibling || checkSpan;
+						const newRange = document.createRange();
+						if (targetNode.nodeType === Node.TEXT_NODE) {
+							newRange.setStart(targetNode, 0);
+							newRange.setEnd(targetNode, 0);
+						} else {
+							newRange.setStartAfter(checkSpan);
+							newRange.setEndAfter(checkSpan);
+						}
+						sel.removeAllRanges();
+						sel.addRange(newRange);
+						return;
+					}
+				}
+			}
+		}
+
+		// Handle Backspace at start of task item text: turn task item back into bullet item or plain item
+		if (e.key === 'Backspace' && !e.ctrlKey && !e.metaKey && !e.altKey) {
+			const sel = window.getSelection();
+			if (sel && sel.rangeCount > 0 && sel.isCollapsed) {
+				const range = sel.getRangeAt(0);
+				let liNode: Node | null = range.startContainer;
+				while (liNode && liNode !== ta && liNode.nodeName !== 'LI') {
+					liNode = liNode.parentNode;
+				}
+				if (liNode && liNode.nodeName === 'LI') {
+					const li = liNode as HTMLLIElement;
+					const checkSpan = li.querySelector(`:scope > .${CHECK_CLASS}`);
+					if (checkSpan) {
+						let isAtStart = false;
+						if (range.startContainer === checkSpan.nextSibling && range.startOffset === 0) {
+							isAtStart = true;
+						} else if (range.startContainer === li) {
+							const checkIndex = Array.from(li.childNodes).indexOf(checkSpan);
+							if (range.startOffset <= checkIndex + 1) {
+								isAtStart = true;
+							}
+						}
+
+						if (isAtStart) {
+							e.preventDefault();
+							delete li.dataset.checked;
+							checkSpan.remove();
+							const ul = li.closest('ul');
+							if (ul && !ul.querySelector(`.${CHECK_CLASS}`)) {
+								ul.classList.remove(TASK_LIST_CLASS);
+							}
+							repairTaskList(ta);
+							syncFormatButtons(ta);
+							return;
+						}
+					}
+				}
+			}
 		}
 
 		// Ctrl/Cmd+B / +I format the selection for real (bold text, not `**bold**`).

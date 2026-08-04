@@ -315,13 +315,51 @@ export function applyCommentFormat(editor: HTMLElement, command: CommentFormatCo
 		document.execCommand('insertUnorderedList');
 	} else if (currentList) {
 		setListKind(currentList, wantTasks);
+		if (currentItem) placeCaretInItem(currentItem);
 	} else {
+		// After insertUnorderedList, Chrome often reports the selection as the editor
+		// root rather than the new item, so the list can't be found by selection
+		// alone — hence the before/after diff.
+		const before = new Set(Array.from(editor.querySelectorAll('ul')));
 		document.execCommand('insertUnorderedList');
-		const created = selectionListItem(editor)?.closest('ul') as HTMLElement | null;
-		if (created) setListKind(created, wantTasks);
+		const created = (selectionListItem(editor)?.closest('ul') as HTMLElement | null)
+			?? Array.from(editor.querySelectorAll('ul')).find(ul => !before.has(ul))
+			?? null;
+		if (created) {
+			setListKind(created, wantTasks);
+			const item = selectionListItem(editor) ?? created.querySelector('li');
+			if (item) placeCaretInItem(item as HTMLElement);
+		}
 	}
 
 	editor.dispatchEvent(new Event('input', { bubbles: true }));
+}
+
+/**
+ * Put the caret where typing should continue inside a list item: at the end of its
+ * text, or — for a freshly made empty item — immediately *after* the checkbox.
+ *
+ * A checkbox is the item's first child, and the browser leaves the caret at the
+ * item's start, so without this the caret is drawn on top of the box and typed
+ * text lands in front of it.
+ */
+function placeCaretInItem(li: HTMLElement): void {
+	const selection = window.getSelection();
+	if (!selection) return;
+	const box = li.querySelector(`:scope > .${CHECK_CLASS}`);
+	const range = document.createRange();
+	if ((li.textContent || '').trim().length > 0) {
+		range.selectNodeContents(li);
+		range.collapse(false);
+	} else if (box) {
+		range.setStartAfter(box);
+		range.collapse(true);
+	} else {
+		range.setStart(li, 0);
+		range.collapse(true);
+	}
+	selection.removeAllRanges();
+	selection.addRange(range);
 }
 
 function setListKind(list: HTMLElement, tasks: boolean): void {
@@ -345,6 +383,68 @@ function setListKind(list: HTMLElement, tasks: boolean): void {
 			box?.remove();
 		}
 	}
+}
+
+/**
+ * Put a checklist back in order after the browser has edited it.
+ *
+ * Three things the browser gets wrong, in one pass, so both the live comment box
+ * and the dashboard behave identically:
+ *  1. Splitting an item with Enter clones its attributes but not its
+ *     `contenteditable="false"` checkbox, leaving a boxless line.
+ *  2. Because the box is the item's first child and the caret sits at the item's
+ *     start, typed text can land *in front of* the box.
+ *  3. The caret itself can end up before or inside the box, where it is drawn on
+ *     top of it.
+ *
+ * Safe to call on input and right after an Enter (a macrotask later, once the
+ * browser has finished its own edit).
+ */
+export function repairTaskList(editor: HTMLElement): void {
+	const lists = editor.querySelectorAll<HTMLElement>(`ul.${TASK_LIST_CLASS}`);
+	if (lists.length === 0) return;
+	for (let i = 0; i < lists.length; i++) setListKind(lists[i], true);
+
+	// Anything that ended up in front of a box belongs after it.
+	for (const li of Array.from(editor.querySelectorAll('li'))) {
+		const box = li.querySelector(`:scope > .${CHECK_CLASS}`);
+		if (!box) continue;
+		let node = li.firstChild;
+		while (node && node !== box) {
+			const next = node.nextSibling;
+			if (box.nextSibling) li.insertBefore(node, box.nextSibling);
+			else li.appendChild(node);
+			node = next;
+		}
+		// The caret needs a text position to land in.
+		if (!box.nextSibling) li.appendChild(document.createTextNode(''));
+	}
+
+	const li = selectionListItem(editor);
+	if (!li) return;
+	const box = li.querySelector(`:scope > .${CHECK_CLASS}`);
+	if (!box) return;
+
+	const selection = window.getSelection();
+	const range = selection && selection.rangeCount > 0 ? selection.getRangeAt(0) : null;
+	if (!range || !editor.contains(range.startContainer)) return;
+
+	const atOrBeforeBox = range.startContainer === box
+		|| box.contains(range.startContainer)
+		|| (range.startContainer === li
+			&& range.startOffset <= Array.from(li.childNodes).indexOf(box));
+	if (!atOrBeforeBox) return;
+
+	// Just past the box, not at the end of the line: the caret was only in an
+	// impossible spot, and the writer's place in the text shouldn't move.
+	const target = document.createRange();
+	const next = box.nextSibling;
+	if (next && next.nodeType === Node.TEXT_NODE) target.setStart(next, 0);
+	else if (next) target.setStartBefore(next);
+	else target.setStartAfter(box);
+	target.collapse(true);
+	selection!.removeAllRanges();
+	selection!.addRange(target);
 }
 
 /**

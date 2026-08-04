@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<html class="dark" lang="en" id="highlights-page">
+<html lang="en" id="highlights-page">
 <head>
 	<meta charset="UTF-8">
 	<meta name="viewport" content="width=device-width, initial-scale=1.0">
@@ -7,65 +7,80 @@
 	<link rel="stylesheet" href="highlights-tailwind.css">
 	<script src="browser-polyfill.min.js"></script>
 </head>
-<body class="antialiased min-h-screen flex flex-col font-body-main text-body-main">
+<body>
 
-<div class="flex flex-1">
-	<!-- Sidebar -->
-	<nav class="bg-surface-container-low backdrop-blur-lg border-r border-outline-variant/10 fixed left-0 top-0 h-full w-64 z-40 flex flex-col p-md">
-		<div id="hl-home" class="mb-lg flex items-center gap-md cursor-pointer hover:bg-surface-container-highest transition-all p-sm rounded-lg">
-			<svg xmlns="http://www.w3.org/2000/svg" class="w-9 h-9 rounded-lg" fill="none" viewBox="0 0 256 256">
-				<path fill="#8c73fa" d="M94.82 149.44c6.53-1.94 17.13-4.9 29.26-5.71a102.97 102.97 0 0 1-7.64-48.84c1.63-16.51 7.54-30.38 13.25-42.1l3.47-7.14 4.48-9.18c2.35-5 4.08-9.38 4.9-13.56.81-4.07.81-7.64-.2-11.11-1.03-3.47-3.07-7.14-7.15-11.21a17.02 17.02 0 0 0-15.8 3.77l-52.81 47.5a17.12 17.12 0 0 0-5.5 10.2l-4.5 30.18a149.26 149.26 0 0 1 38.24 57.2ZM54.45 106l-1.02 3.06-27.94 62.2a17.33 17.33 0 0 0 3.27 18.96l43.94 45.16a88.7 88.7 0 0 0 8.97-88.5A139.47 139.47 0 0 0 54.45 106Z"/><path fill="#8c73fa" d="m82.9 240.79 2.34.2c8.26.2 22.33 1.02 33.64 3.06 9.28 1.73 27.73 6.83 42.82 11.21 11.52 3.47 23.45-5.8 25.08-17.73 1.23-8.67 3.57-18.46 7.75-27.53a94.81 94.81 0 0 0-25.9-40.99 56.48 56.48 0 0 0-29.56-13.35 96.55 96.55 0 0 0-40.99 4.79 98.89 98.89 0 0 1-15.29 80.34h.1Z"/><path fill="#8c73fa" d="M201.87 197.76a574.87 574.87 0 0 0 19.78-31.6 8.67 8.67 0 0 0-.61-9.48 185.58 185.58 0 0 1-21.82-35.9c-5.91-14.16-6.73-36.08-6.83-46.69 0-4.07-1.22-8.05-3.77-11.21l-34.16-43.33c0 1.94-.4 3.87-.81 5.81a76.42 76.42 0 0 1-5.71 15.9l-4.7 9.8-3.36 6.72a111.95 111.95 0 0 0-12.03 38.23 93.9 93.9 0 0 0 8.67 47.92 67.9 67.9 0 0 1 39.56 16.52 99.4 99.4 0 0 1 25.8 37.31Z"/>
+<a class="sc-skip" href="#hl-stream">Skip to annotations</a>
+
+<div class="sc-app">
+	<!-- Rail: sources, then tags -->
+	<nav class="sc-rail" aria-label="Library">
+		<div class="sc-rail__brand">
+			<svg class="sc-rail__mark" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 256 256" aria-hidden="true">
+				<path fill="currentColor" d="M94.82 149.44c6.53-1.94 17.13-4.9 29.26-5.71a102.97 102.97 0 0 1-7.64-48.84c1.63-16.51 7.54-30.38 13.25-42.1l3.47-7.14 4.48-9.18c2.35-5 4.08-9.38 4.9-13.56.81-4.07.81-7.64-.2-11.11-1.03-3.47-3.07-7.14-7.15-11.21a17.02 17.02 0 0 0-15.8 3.77l-52.81 47.5a17.12 17.12 0 0 0-5.5 10.2l-4.5 30.18a149.26 149.26 0 0 1 38.24 57.2ZM54.45 106l-1.02 3.06-27.94 62.2a17.33 17.33 0 0 0 3.27 18.96l43.94 45.16a88.7 88.7 0 0 0 8.97-88.5A139.47 139.47 0 0 0 54.45 106Z"/>
+				<path fill="currentColor" d="m82.9 240.79 2.34.2c8.26.2 22.33 1.02 33.64 3.06 9.28 1.73 27.73 6.83 42.82 11.21 11.52 3.47 23.45-5.8 25.08-17.73 1.23-8.67 3.57-18.46 7.75-27.53a94.81 94.81 0 0 0-25.9-40.99 56.48 56.48 0 0 0-29.56-13.35 96.55 96.55 0 0 0-40.99 4.79 98.89 98.89 0 0 1-15.29 80.34h.1Z"/>
+				<path fill="currentColor" d="M201.87 197.76a574.87 574.87 0 0 0 19.78-31.6 8.67 8.67 0 0 0-.61-9.48 185.58 185.58 0 0 1-21.82-35.9c-5.91-14.16-6.73-36.08-6.83-46.69 0-4.07-1.22-8.05-3.77-11.21l-34.16-43.33c0 1.94-.4 3.87-.81 5.81a76.42 76.42 0 0 1-5.71 15.9l-4.7 9.8-3.36 6.72a111.95 111.95 0 0 0-12.03 38.23 93.9 93.9 0 0 0 8.67 47.92 67.9 67.9 0 0 1 39.56 16.52 99.4 99.4 0 0 1 25.8 37.31Z"/>
 			</svg>
-			<div>
-				<p id="hl-annotation-count" class="font-label-caps text-label-caps text-on-surface-variant">0 Annotations</p>
-			</div>
+			<span class="sc-rail__name">Scholiast</span>
 		</div>
 
-		<!-- Search Sources -->
-		<div class="relative mb-md">
-			<span class="material-symbols-outlined absolute left-2 top-1/2 -translate-y-1/2 text-[16px] text-on-surface-variant">search</span>
-			<input id="hl-source-search" class="w-full bg-surface-container-highest border-none rounded-lg py-1.5 pl-8 pr-2 text-xs text-on-surface placeholder:text-on-surface-variant/50 focus:ring-1 focus:ring-[#8c73fa]" placeholder="Search sources..." type="text" autocomplete="off" spellcheck="false"/>
+		<div class="sc-field sc-field--rail">
+			<span class="material-symbols-outlined sc-i" aria-hidden="true">search</span>
+			<input id="hl-source-search" type="text" placeholder="Filter sources" autocomplete="off" spellcheck="false" aria-label="Filter sources">
 		</div>
 
-		<!-- Sources tree (domains -> pages) — capped so tags start ~60% down -->
-		<div id="hl-source-list" class="grow-[3] shrink basis-0 min-h-0 overflow-y-auto space-y-sm pr-xs"></div>
+		<div class="sc-rail__scroll" id="hl-sources"></div>
 
-		<!-- Tags — fills the lower ~40% of the sidebar -->
-		<div id="hl-tags-panel" class="grow-[2] shrink basis-0 min-h-0 overflow-y-auto mt-md pt-md border-t border-outline-variant/10">
-			<p class="font-label-caps text-label-caps text-on-surface-variant mb-md px-sm">TAGS</p>
-			<div id="hl-tag-list" class="space-y-xs"></div>
-		</div>
+		<div class="sc-rail__spacer"></div>
 
-		<div class="shrink-0 pt-md border-t border-outline-variant/10 space-y-sm">
-			<a href="settings.html" class="flex items-center gap-md px-sm py-[6px] text-on-surface-variant hover:bg-surface-container-high rounded-lg hover:text-primary transition-colors font-label-caps text-label-caps">
-				<span class="material-symbols-outlined text-[18px]">settings</span>
-				Settings
+		<section class="sc-rail__tags" id="hl-tags" hidden>
+			<h2 class="sc-rail__heading">Tags</h2>
+			<div class="sc-rail__taglist" id="hl-tag-list"></div>
+		</section>
+
+		<footer class="sc-rail__foot">
+			<a class="sc-btn sc-btn--quiet" href="settings.html">
+				<span class="material-symbols-outlined sc-i" aria-hidden="true">settings</span>
+				<span class="sc-btn__label">Settings</span>
 			</a>
-		</div>
+		</footer>
 	</nav>
 
-	<!-- Main Content Area -->
-	<main class="flex-1 ml-64 flex flex-col w-full bg-background relative pb-xl">
-		<!-- Context Header -->
-		<div class="sticky top-0 z-30 bg-surface/80 backdrop-blur-xl border-b border-outline-variant/10 px-lg py-md flex justify-between items-center gap-md">
-			<div id="hl-breadcrumb" class="flex items-center gap-sm font-label-caps text-label-caps text-on-surface-variant"></div>
-			<div class="flex items-center gap-md">
-				<button id="hl-export-btn" class="flex items-center gap-sm px-md py-sm bg-transparent border border-outline-variant/50 text-on-surface rounded-DEFAULT hover:bg-surface-container transition-colors font-label-caps text-label-caps group">
-					<span class="material-symbols-outlined text-[18px] group-hover:text-primary transition-colors">download</span>
-					Export
+	<!-- Main -->
+	<main class="sc-main">
+		<header class="sc-head">
+			<div class="sc-crumbs" id="hl-breadcrumb" aria-label="Breadcrumb"></div>
+
+			<div class="sc-head__tools">
+				<div class="sc-field sc-field--search">
+					<span class="material-symbols-outlined sc-i" aria-hidden="true">search</span>
+					<input id="hl-search" type="text" placeholder="Search annotations" autocomplete="off" spellcheck="false" aria-label="Search annotations">
+					<span class="sc-field__count" id="hl-search-count"></span>
+					<button class="sc-btn sc-btn--ghost sc-btn--icon sc-field__clear" id="hl-search-clear" type="button" aria-label="Clear search" hidden>
+						<span class="material-symbols-outlined sc-i" aria-hidden="true">close</span>
+					</button>
+				</div>
+
+				<button class="sc-btn sc-btn--ghost" id="hl-filter" type="button">
+					<span class="material-symbols-outlined sc-i" aria-hidden="true">filter_alt</span>
+					<span class="sc-btn__label">Filter</span>
 				</button>
-				<button id="hl-delete-btn" class="flex items-center gap-sm px-md py-sm bg-transparent border border-outline-variant/50 text-on-surface rounded-DEFAULT hover:bg-error-container hover:text-on-error-container transition-colors font-label-caps text-label-caps">
-					<span class="material-symbols-outlined text-[18px]">delete</span>
-					Delete
+				<button class="sc-btn sc-btn--ghost" id="hl-sort" type="button">
+					<span class="material-symbols-outlined sc-i" aria-hidden="true">swap_vert</span>
+					<span class="sc-btn__label">Newest first</span>
+				</button>
+				<button class="sc-btn sc-btn--ghost sc-btn--icon" id="hl-more" type="button" aria-label="More actions">
+					<span class="material-symbols-outlined sc-i" aria-hidden="true">more_horiz</span>
 				</button>
 			</div>
-		</div>
+		</header>
 
-		<!-- Content Workspace -->
-		<div id="hl-content" class="flex-1 w-full max-w-[1100px] mx-auto p-xl space-y-xl"></div>
-		<div id="hl-empty" class="flex-1 w-full max-w-[1100px] mx-auto p-xl text-center text-on-surface-variant font-label-caps text-label-caps" style="display:none;">No annotations found</div>
+		<div class="sc-filters" id="hl-filters" hidden></div>
+
+		<div class="sc-stream" id="hl-stream" tabindex="-1"></div>
 	</main>
 </div>
+
+<div class="sc-selbar" id="hl-selection" role="region" aria-label="Selection actions"></div>
 
 <script type="module" src="highlights.js"></script>
 </body>

@@ -28,13 +28,13 @@ This branch adds **live-webpage annotation** (highlights, comments, freehand dra
 | `src/utils/comment-overlays.ts` | Comment card layout (right column), threads, truncation, edit/save/delete, WYSIWYG editor. |
 | `src/utils/comment-markdown.ts` | The comment markdown subset: markdown ↔ display HTML ↔ editable HTML, formatting commands. Shared by the comment box and the dashboard. |
 | `src/utils/pencil-overlays.ts` | Freehand SVG drawing, stroke storage, color switching, marquee select/delete. |
-| `src/core/highlights.ts` | Annotation-manager (dashboard) logic: sources tree, tags, collapsible page items + annotation cards, search/export/delete; folds in video annotations. Renders the `designs/code.html` UI (Tailwind + Material Symbols). |
-| `src/highlights.html` | Dashboard page markup (Tailwind shell; loads `highlights-tailwind.css` only). |
-| `src/highlights-tailwind.scss` | Isolated Tailwind entry for the dashboard (`@tailwind` + self-hosted `@font-face`s + Material Symbols base). Compiled to `highlights-tailwind.css`; fonts in `src/fonts/`. |
+| `src/core/highlights/` | Annotation-manager (dashboard). One module per concern: `index` (bootstrap, render dispatch, keyboard), `store` (state + prefs), `data` (load/merge `hl`+`va`+`dr`, filter, sort), `nav`, `rail`, `header`, `stream`, `card`, `comment`, `editor`, `actions`, `home`, `format`, `ui` (menus/tooltips/toasts/dialogs), `shortcuts`. Webpack entry is `highlights/index.ts`. |
+| `src/highlights.html` | Dashboard shell markup (static chrome only; every list is rendered by `core/highlights/`). |
+| `src/styles/_dashboard.scss` | The dashboard's design system and every component style (`.sc-*`), including its tokens and motion. |
+| `src/highlights-tailwind.scss` | The dashboard's stylesheet entry: Tailwind preflight (reset only), self-hosted `@font-face`s + Material Symbols base, then `@import 'styles/dashboard'`. Compiled to `highlights-tailwind.css`; fonts in `src/fonts/`. |
 | `src/utils/video/` | YouTube video notes: `youtube-detect` (player/SPA), `frame-capture` (canvas + screenshot fallback), `video-annotator` (in-page frame/draw overlay), `video-markup` (draw renderer), `video-storage` (metadata in `chrome.storage.local`), `frame-store` (frame JPEG blobs in IndexedDB; bg-owned, content scripts message in), `video-notes`, `video-transcript` (caption-track fetch/parse), `video-transcript-panel` (the `T` transcript-annotation panel), `video-comments` (per-video conversation comment panel). |
-| `src/core/video-highlights.ts` | Dashboard render path for video frame cards + timestamped notes. |
 | `src/utils/sync-engine.ts` | 3-way merge sync state machine, tombstones, push/pull (highlights, drawings, video). |
-| `src/utils/google-drive.ts` | Google Drive REST + OAuth (implicit grant), appdata file + binary blobs. |
+| `src/utils/google-drive.ts` | Google Drive REST + OAuth (implicit on Chromium, code+PKCE on Firefox), appdata file + binary blobs. The three OAuth client values are injected at build time from a gitignored `oauth.local.json` (or `GOOGLE_OAUTH_*` env vars) — never committed, since the desktop client secret has to ship in the bundle but must not be published. |
 | `src/managers/sync-settings.ts` | Settings UI for connect/disconnect/"Sync now". |
 | `src/utils/obsidian-rest.ts` | Local REST API client (config, ping, note/binary PUT/GET). |
 | `src/utils/obsidian-export.ts` | Pure serializers: annotations → Markdown (managed region, `<mark>` colors, callouts). |
@@ -178,7 +178,7 @@ exists** — the sharded keys are the only format. The shapes below are the per-
   "Clip highlights" menu bar was removed entirely (its actions live elsewhere — clip via the
   popup, undo/redo via `Ctrl+Z`/`Ctrl+Shift+Z`, exit via the toolbar ×).
 - **`Esc` steps down one level**: active tool → Select; already on Select → exit annotation mode.
-  An open comment draft dims the tool buttons (annotation suspended — see §3.2).
+- **YouTube Frame Annotator UI**: Reused Excalidraw iframe (`video-excalidraw.tsx` / `video-excalidraw.html`) uses solid dark backdrop (`#0b0d14`) masking background video bleed-through, hides native hamburger menu (`≡`), hides canvas hint banners, positions undo/redo in a compact `24px` high dark glass pill flush at bottom-left (`bottom: 4px`), high-contrast purple Dim percentage text, and presents glassmorphic action buttons (`Esc Cancel`, `C Comment`, `↵ Save` in vibrant purple `#8b7cf6`) with enlarged `↵` keycaps and `:active` scale feedback.
 
 ### 3.1 Text highlighting (Marker)
 - **`H`** toggles the highlighter tool (entering annotation mode if needed).
@@ -224,7 +224,11 @@ exists** — the sharded keys are the only format. The shapes below are the per-
   - **Auto-linking pasted URLs**: Pasting or typing a URL (or opening an existing link) displays a blue clickable `<a>` link inline in the editor, opening in a new tab when clicked.
   - **Formatting bar**: the editor's bottom row holds **bullet list / checklist / bold / italic** on the left, with the diagram + send buttons on the right. That row is always its own line (the buttons never float into the text), so the space beside them is used rather than left blank. Buttons light up for whatever applies to the caret, `Ctrl+B`/`Ctrl+I` do the same thing, and formatting is applied through the browser's own editing commands so undo and caret behaviour stay native.
   - **Real formatting while editing**: bold, italic, bullets and checkboxes render as themselves in the editor — never as raw `**` markers. Checklist items can be ticked in a *saved* comment too, which rewrites and saves the comment's markdown (so the state syncs).
-  - **Serialization**: `utils/comment-markdown.ts` is the single definition of the comment markdown subset — `**bold**`, `*italic*`, `[text](url)`, bare urls, `#tag`, `- item`, `- [ ] task`, `<!--image:ID-->`, `<!--diagram:ID-->` — with three conversions: markdown → display HTML, markdown → editable HTML, and editor DOM → markdown. Every surface (comment box, its editor, the dashboard) goes through it, so a comment reads the same everywhere and stays valid Obsidian markdown. Covered by `comment-markdown.test.ts` (round-trip + escaping).
+  - **Checklist Caret Enforcement**: `enforceCheckboxCaret` guarantees the text cursor (caret) can never land before or inside a task item's `<span class="ob-md-check">` checkbox element during typing, clicks, `Home` keypresses, or selection changes. Pressing `Backspace` at the start of a task line gracefully removes the checkbox and converts it to a standard list/text item.
+  - **Serialization**: `utils/comment-markdown.ts` is the single definition of the comment markdown subset — `**bold**`, `*italic*`, `[text](url)`, bare urls, `#tag`, `- item`, `- [ ] task`, `<!--image:ID-->`, `<!--diagram:ID-->` — with three conversions: markdown → display HTML, markdown → editable HTML, and editor DOM → markdown. Every surface (comment box, its editor, the dashboard) goes through it, so a comment reads the same everywhere and stays valid Obsidian markdown. Covered by `comment-markdown.test.ts` (round-trip + escaping). Checklist editing keeps the caret
+    *after* the (uneditable) checkbox: applying the format resolves the new list without relying on
+    the browser's reported selection, and `repairTaskList` re-adds the box the browser drops when
+    Enter splits an item.
   - **Backup/sync**: a pasted image is registered in the `diagrams` map on save (`{ updatedAt, pasted: true }` — no scene) so it travels to Drive on the same path as a drawn diagram: PNG blob out, blob pulled back into IndexedDB on another device, map entry dropped (and the remote blob tombstoned) when its comment is deleted.
   - **Keybinds**: `Enter` inserts a new line inside the editor; `Ctrl+Enter` saves/commits the comment.
 - **Google Sync Status Icon**: Each reply displays a cloud sync indicator icon in its top-right corner. It is styled with a light/dull gray color when pending sync, turning into a bright purple-bordered icon once successfully merged and synced to Google Drive.
@@ -242,58 +246,95 @@ exists** — the sharded keys are the only format. The shapes below are the per-
 - Pencil and highlighter are mutually exclusive (entering one exits the other).
 
 ### 3.4 Highlights dashboard (annotation manager)
-- **`Alt+E`** opens `highlights.html` in a new tab (content → `open_dashboard` → background creates tab).
-- **Rebuilt UI** (`designs/code.html` is the source design): a self-contained **Tailwind** page,
-  dark theme, purple accent `#8c73fa`, **Material Symbols** icons, self-hosted **Geist** / **Libre
-  Caslon Text** fonts. Tailwind is isolated to its own entry `src/highlights-tailwind.scss`
-  (compiled via `postcss-loader` → `highlights-tailwind.css`) so its preflight never touches the
-  other extension pages; fonts live in `src/fonts/*.woff2` and are emitted to `dist/fonts/` by a
-  webpack `asset/resource` rule. The page loads **only** `highlights-tailwind.css` (no `style.css`).
-- **Sidebar sources tree**: domains → pages, favicons (a domain's stored favicon; globe `public`
-  fallback), highlight-count badges. Clicking a domain expands it and shows *all its pages'*
-  annotations; clicking a nested page scopes to that one page. **`Ctrl`+click** opens the real
-  site/page in a new tab.
-- **Main pane**: page items are built in batches of 40 across frames (a render token guards against two
-  fills interleaving), so a large library paints immediately instead of blocking on one long task.
-  Collapsible **page items** — collapsed shows favicon + title + "N Annotations •
-  last-edited"; expanded shows a header (favicon, title, source URL) and a list of **annotation
-  cards**. Each card: tinted **quote** block(s) (grouped multi-block highlights render stacked,
-  separated by a `more_vert` divider), a **comment thread**, a focus-gated **reply** field, and one
-  annotation-level **delete** in a right-hand gutter. Comments show relative timestamps, `#tag`
-  purple pills, per-comment **edit/delete**, and **Excalidraw diagram** comments render as their
-  image (from the IndexedDB blob store; click reopens the editor).
-- **Comment bodies match the live page**: display and editing both go through
-  `utils/comment-markdown.ts`, so bold/italic/links/bullets/checklists and pasted images render
-  here too (they used to show as raw markdown). The reply/edit field is the same **WYSIWYG
-  contenteditable** editor with the bullet/checklist/bold/italic bar; `Enter` submits except inside
-  a list, where it starts the next item.
-- **Video annotations** fold into the same cards, rendered by kind: **frame** (captured image with
-  its markup drawings repainted via `renderMarkupSvg`), **transcript** (colored quote + `M:SS–M:SS`
-  range chip), or **note** (jump-to-moment chip); every chip links to `…?t=Ns`. Their comment
-  threads are fully editable — reply / edit / delete route through the video store
-  (`updateVideoItemNotes` / `removeVideoItem`), at parity with the on-page video comments panel.
-- **Source search** (sidebar) filters domains by hostname/custom name. **Navigation**: all → domain →
-  page, reflected in breadcrumbs and the URL query (`?domain=&url=`).
-- Header **Export** (JSON) / **Delete** and footer **Bulk Export / Bulk Delete**, scoped to the
-  current selection (all / domain / page).
-- **Tags panel** (sidebar): a **nested tag tree** from `#tag` tokens in comment text (nesting via
-  slashes, e.g. `#question/important`; a parent matches all descendants). Clicking a tag filters the
-  main pane *on top of* the current nav/search scope (click again to clear); counts are scoped to the
-  current selection.
+- **`Alt+E`** opens `highlights.html` in a new tab (content → `open_dashboard` → background creates
+  tab). Navigation is all → domain → page, mirrored into `?domain=&url=` so a tab survives a reload.
+- **Design system, not utility classes.** The page is styled by `src/styles/_dashboard.scss`: CSS
+  variable tokens (surfaces, hairlines, text, accent, radii, easings) plus one named component class
+  per thing (`.sc-ann`, `.sc-quote`, `.sc-group`, `.sc-menu`…). Tailwind is present only for its
+  preflight reset and the self-hosted fonts (Geist for chrome, **Libre Caslon Text for quoted source
+  text**, Material Symbols for icons). The three highlight hues are the *same* values the highlighter
+  paints on the page, so an annotation is never one colour live and another here.
+- **One text column.** Rail (264px) → header (52px) → a 736px reading column. Hero titles, page
+  titles, quotes, card metadata and comments all measure from the same left edge; the 22px gutter to
+  their left holds the annotation's colour rail and the page favicon. Numbers use tabular figures.
+- **Rail**: sources → pages (both newest-first, matching the stream), then a tag tree that only
+  appears when tags exist. `Ctrl`+click a source or page opens the real site.
+- **Header**: breadcrumb, **annotation search** (matches quote text, comment text and url; matches are
+  marked in place and counted), **sort** (newest / oldest / page order / by colour — applied to both
+  page order and the annotations inside a page), **filter** (colour, date range, only-with-comments)
+  surfaced as removable chips, and an overflow menu holding Export ▸ JSON/Markdown, Copy all as
+  Markdown, density, the shortcut sheet, and a scope-labelled **Delete…**.
+- **Stream**: a flat feed of annotation cards under **sticky page headers** (favicon, cleaned title —
+  the CMS's ` | Site` tail is dropped — url, count, open, page menu). Scoped to one page, that header
+  becomes a hero with counts, date span and the page's tags. Cards are **reused by content signature**
+  and pages **build their cards lazily** when they scroll near the viewport, so a storage event never
+  resets scroll, hover or focus, and a large library paints immediately.
+- **The card**: a full-height rail in the highlight's colour, a tinted quote set in the serif face
+  (clamped to 8 lines with *Show more*), then a metadata line — select, hybrid timestamp (`14:02`
+  today, `3d ago` this week, `Aug 4` beyond, exact date on hover), colour, comment count — and the
+  actions: **open the page at this annotation**, copy, and a menu with copy-as-Markdown, recolour
+  (writes back to the `hl` store, so the live page follows) and delete.
+- **Deep link back to the page.** The open action points at `<url>#sc-hl=<highlightId>`; the content
+  script reads that hash on load and on `hashchange`, paints the highlights, scrolls the annotation a
+  third of the way down the viewport and flashes it with the existing active-highlight emphasis
+  (`revealHighlight` in `utils/highlighter-overlays.ts`, retried briefly for lazy-loading pages).
+  Video cards keep their `?t=` chip instead; drawings just open the page.
+- **Order and dates come from when an annotation was *made*** (`createdOf`: the numeric highlight id,
+  or the base-36 timestamp inside a video item id), never from `updatedAt`. Sorting by last-modified
+  made the annotation you were commenting on jump out from under the cursor. Grouped highlights (one selection across blocks) render as one
+  card whose parts are joined through the rail. Quote HTML is sanitised to inline tags only, with
+  `style`/`class` stripped and page images re-based on the source url (falling back to a labelled chip
+  instead of a broken image).
+- **Comments** sit in an indented thread; each comment's own metadata is directly under its text
+  (never in a right-hand column), with edit/delete on hover. Every thread ends with a permanent
+  *Add a comment* row. Display and editing share one set of type metrics, so entering edit mode does
+  not move the text. Bodies go through `utils/comment-markdown.ts` — bold/italic/links/bullets/
+  checklists/`#tag` pills/pasted images/diagrams — with the same WYSIWYG editor as the live page.
+- **Video annotations** fold into the same cards by kind: **frame** (image with its markup repainted),
+  **transcript** (quote + `M:SS–M:SS` chip) or **note** (jump chip); replies/edits/deletes route
+  through the video store.
+- **Freehand drawings** now appear too: a per-page card that renders an SVG thumbnail from the stored
+  stroke bounding box, so a page you only drew on is no longer invisible here.
+- **Bulk actions**: select cards (click, `x`, Shift for a range, or select-all from a page menu) and a
+  floating bar offers copy-as-Markdown or delete.
+- **Nothing blocks and nothing is silent**: deletes are optimistic and offer **Undo** (the page record
+  is snapshotted first); only library- or domain-wide deletes ask first, with a dialog that names the
+  exact count and, for the whole library, requires typing `delete`. No native `confirm()` or `title`
+  tooltips anywhere — menus, tooltips, toasts and dialogs are the page's own, keyboard operable.
+- **Home** (All sources, unfiltered): a stat strip, a 13-week activity heatmap, most-annotated sources,
+  then the newest-first stream.
+- **Keyboard**: `/` or `⌘K` search · `j`/`k` move · `o` open · `c` comment · `y` copy · `e` expand ·
+  `x` select · `⌫` delete · `g g` top · `?` shortcuts · `Esc` unwinds selection → search → filters.
+  The stream is patched in place (never emptied and refilled), so nothing scrolls or reorders while
+  you write.
+  Everything is a real button/link with visible focus, mutations are announced, and
+  `prefers-reduced-motion` drops every transform.
 - **Tag autocomplete**: typing `#` in a comment editor (live page) pops a dropdown of known tags from
   all pages' comments, filtered by prefix; arrows navigate, Enter/Tab/click inserts, Escape closes
   (without touching the draft).
 
 ### 3.5 Google Drive sync (per-page)
-- Google OAuth via `browser.identity` (implicit grant); connect/disconnect from settings.
-- **Redirect URI is a hosted bridge** (`google-drive.REDIRECT_BRIDGE`): Google allows no wildcard
-  redirect URIs, and Firefox's `identity.getRedirectURL()` embeds a random **per-install** UUID that can
-  never be pre-registered. So a static page (own repo, GitHub Pages) is the one registered URI for every
-  browser and user; the extension passes its own redirect URL in the OAuth `state`, and the page forwards
-  the response fragment to it after checking it against the browsers' extension-redirect formats. Chrome's
-  id is pinned by the manifest `key`, so its redirect URL is stable too. Distribution steps, ids and the
-  Google Cloud setup live in `DISTRIBUTION.md`; the verification submission (so any user can connect, not
-  just listed testers) is pre-filled in `GOOGLE_VERIFICATION.md`.
+- Google OAuth via `browser.identity.launchWebAuthFlow`; connect/disconnect from settings.
+- **Two flows, one per browser**, because Google and Firefox impose incompatible constraints: Google
+  allows no wildcard redirect URIs and, for a sensitive scope, ties a URI's domain to an Authorized
+  domain you own (excluding both `chromiumapp.org` and `extensions.allizom.org`), while Firefox rejects
+  any `redirect_uri` outside its own redirect URL (`redirect_uri not allowed`). So:
+  - **Chromium** — implicit grant against a "Web application" client, redirecting to a **hosted bridge**
+    (`google-drive.REDIRECT_BRIDGE`): a static page in our own repo is the one registered URI, the
+    extension passes its own redirect URL in the OAuth `state`, and the page forwards the response
+    fragment there after checking it is a browser-owned extension URL. Renews silently via `prompt=none`.
+  - **Firefox** — authorization code + **PKCE** against a "Desktop app" client, redirecting to
+    `http://127.0.0.1/mozoauth2/<sha1(add-on id)>`, the form Mozilla whitelists precisely because Google
+    won't take its default (bug 1635344); loopback needs no domain ownership. This yields a **refresh
+    token**, so renewal is a plain `fetch` with no window — necessary because Firefox's silent
+    `launchWebAuthFlow` path only follows server-side redirects and so can never renew via a window.
+  - Both redirect URIs are stable for every user and install: extension ids are pinned (Chrome via the
+    manifest `key`, Firefox via `browser_specific_settings.gecko.id`, which the Firefox hash derives
+    from — it is *not* a per-install UUID). Treat the Firefox add-on id as frozen; changing it changes
+    the redirect URI. `getRegisteredRedirectUri()` reports the right one per browser.
+- Distribution steps, ids and the Google Cloud setup (two clients, same project) live in
+  `DISTRIBUTION.md`; the verification submission (so any user can connect, not just listed testers) is
+  pre-filled in `GOOGLE_VERIFICATION.md`.
 - Syncs highlights + drawings + video (transcript items, notes, frame markup) **and Excalidraw comment
   diagrams** — **one Drive file per page** (`pages/page-<urlhash>.json`), with frame/diagram images and
   diagram scenes as separate blobs (see §2 "Sync state").
@@ -421,8 +462,11 @@ exists** — the sharded keys are the only format. The shapes below are the per-
 | `N` (YouTube watch) | Comment-only (frameless, timestamped) |
 | `T` (YouTube watch) | Transcript annotation panel (highlight spoken lines) |
 | `Enter` / `C` / `Esc` (capture overlay) | Save · save+comment · cancel |
-| `Ctrl`+click (dashboard list) | Open the real website in a new tab |
+| `Ctrl`+click (dashboard rail) | Open the real website in a new tab |
 | `Ctrl`+`B` / `Ctrl`+`I` (editor) | Bold / italic markdown |
+
+Dashboard-only keys (see §3.4): `/` or `⌘K` search · `j`/`k` move · `o` open · `c` comment ·
+`y` copy · `e` expand · `x` select · `⌫` delete · `g g` top · `?` shortcuts · `Esc` unwind.
 
 ---
 

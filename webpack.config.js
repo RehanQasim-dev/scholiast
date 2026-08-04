@@ -67,7 +67,7 @@ module.exports = (env, argv) => {
 		entry: {
 			popup: './src/core/popup.ts',
 			settings: './src/core/settings.ts',
-			highlights: './src/core/highlights.ts',
+			highlights: './src/core/highlights/index.ts',
 			'reader-page': './src/core/reader-view.ts',
 			content: './src/content.ts',
 			background: './src/background.ts',

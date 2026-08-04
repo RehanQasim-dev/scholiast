@@ -3,7 +3,7 @@ import * as highlighter from './utils/highlighter';
 import * as pencil from './utils/pencil-overlays';
 import * as annotationToolbar from './utils/annotation-toolbar';
 import { undoLast, redoLast } from './utils/undo-manager';
-import { removeExistingHighlights } from './utils/highlighter-overlays';
+import { removeExistingHighlights, revealHighlight } from './utils/highlighter-overlays';
 import { loadSettings, generalSettings } from './utils/storage-utils';
 import { getDomain } from './utils/string-utils';
 import { extractContentBySelector as extractContentBySelectorShared } from './utils/shared';
@@ -487,7 +487,27 @@ declare global {
 		}
 
 		updateHasHighlights();
+		void jumpToHashHighlight();
 	}
+
+	/**
+	 * `#sc-hl=<id>` in the url asks for one annotation to be revealed — that's how
+	 * the dashboard's "Open on page" link lands on the exact highlight. The
+	 * highlights have to be painted first, and lazy-loading pages often move the
+	 * anchor after first paint, so this retries briefly before giving up.
+	 */
+	async function jumpToHashHighlight(): Promise<void> {
+		const id = window.location.hash.match(/(?:^|[#&])sc-hl=([^&]+)/)?.[1];
+		if (!id) return;
+		await ensureHighlighterCSS();
+		highlighter.applyHighlights();
+		for (let attempt = 0; attempt < 12; attempt++) {
+			if (revealHighlight(decodeURIComponent(id))) return;
+			await new Promise(resolve => setTimeout(resolve, 250));
+		}
+	}
+
+	window.addEventListener('hashchange', () => { void jumpToHashHighlight(); });
 
 	// Initialize highlighter
 	initializeHighlighter();

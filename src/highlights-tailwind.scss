@@ -1,5 +1,9 @@
-/* Annotation manager (highlights) page — self-contained Tailwind build.
-   Isolated from the global style.scss so Tailwind preflight only affects this page. */
+/* Annotation manager (highlights) page — self-contained build.
+   Isolated from the global style.scss so the reset only affects this page.
+
+   Tailwind is here for its preflight reset and the self-hosted @font-faces below;
+   the page itself is styled by `styles/_dashboard.scss`, where components are named
+   and their states live next to them. */
 @tailwind base;
 @tailwind components;
 @tailwind utilities;
@@ -121,7 +125,7 @@
   src: url(fonts/material-12.woff2) format('woff2');
 }
 
-/* In @layer base so Tailwind text-size utilities (e.g. text-[18px]) override the
+/* In @layer base so the size set by a component class wins over the font's
    default 24px glyph size instead of losing to source order. */
 @layer base {
   .material-symbols-outlined {
@@ -142,73 +146,5 @@
   }
 }
 
-/* --- Custom scrollbars (from design) --- */
-::-webkit-scrollbar { width: 8px; }
-::-webkit-scrollbar-track { background: transparent; }
-::-webkit-scrollbar-thumb { background: theme('colors.surface-container-highest'); border-radius: 4px; }
-::-webkit-scrollbar-thumb:hover { background: theme('colors.outline'); }
-
-body { background-color: theme('colors.background'); color: theme('colors.on-surface'); }
-
-/* --- Comment bodies -------------------------------------------------------
-   The markdown subset from utils/comment-markdown.ts, styled the same whether a
-   comment is being displayed or edited, so entering edit mode doesn't move text. */
-.ob-md-body {
-  strong { font-weight: 700; }
-  em { font-style: italic; }
-  a { color: #a78bfa; text-decoration: underline; }
-
-  .ob-md-list {
-    list-style: disc;
-    margin: 0.25rem 0;
-    padding-left: 1.35rem;
-
-    li { margin: 0.125rem 0; }
-
-    /* Task list: the disc gives way to the checkbox drawn on .ob-md-check. */
-    &.ob-md-tasks {
-      list-style: none;
-      padding-left: 0.25rem;
-
-      li {
-        display: flex;
-        align-items: flex-start;
-        gap: 0.45rem;
-      }
-    }
-  }
-
-  .ob-md-check {
-    flex: 0 0 auto;
-    width: 15px;
-    height: 15px;
-    margin-top: 0.3rem;
-    border: 1.5px solid theme('colors.outline');
-    border-radius: 3px;
-    cursor: pointer;
-    user-select: none;
-    transition: background 0.12s ease, border-color 0.12s ease;
-  }
-
-  li[data-checked='true'] {
-    opacity: 0.6;
-    text-decoration: line-through;
-
-    .ob-md-check {
-      border-color: #8c73fa;
-      background: #8c73fa
-        url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='white' stroke-width='3.5' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='m5 13 4 4L19 7'/%3E%3C/svg%3E")
-        center / 11px 11px no-repeat;
-    }
-  }
-
-  /* Placeholder for the contenteditable reply/edit field (a real <textarea>
-     placeholder has no equivalent here). */
-  &.is-empty[contenteditable]:empty::before,
-  &.is-empty[contenteditable]:has(> br:only-child)::before {
-    content: attr(data-placeholder);
-    color: theme('colors.on-surface-variant');
-    opacity: 0.6;
-    pointer-events: none;
-  }
-}
+/* The dashboard itself. */
+@import 'styles/dashboard';

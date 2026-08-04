@@ -248,6 +248,46 @@ export function setActiveHighlight(id: string | null): void {
 	}
 }
 
+/**
+ * Scroll one annotation into view and emphasize it — how the dashboard's
+ * "Open on page" link lands you on the exact highlight rather than the top of
+ * the article. Returns false when the id isn't on this page (yet).
+ *
+ * Text highlights have no DOM element of their own (they're painted with the CSS
+ * Custom Highlight API), so the scroll target comes from their stored Range.
+ */
+export function revealHighlight(id: string): boolean {
+	const highlight = highlights.find((h: AnyHighlightData) => h.id === id);
+	if (!highlight) return false;
+
+	let target: DOMRect | null = null;
+	if (highlight.type === 'text') {
+		const range = textHighlightRanges.get(id)?.[0];
+		const rect = range?.getBoundingClientRect();
+		if (rect && (rect.width || rect.height)) target = rect;
+		// Fall back to the anchor element when the range hasn't been painted yet.
+		if (!target) {
+			const node = range?.startContainer;
+			const element = node?.nodeType === Node.ELEMENT_NODE
+				? node as Element
+				: node?.parentElement ?? null;
+			target = element?.getBoundingClientRect() ?? null;
+		}
+	} else {
+		const overlay = document.querySelector(`.obsidian-highlight-overlay[data-highlight-id="${id}"]`);
+		target = overlay?.getBoundingClientRect() ?? null;
+	}
+	if (!target) return false;
+
+	// Put it a third of the way down rather than dead centre — reading resumes
+	// forward from a highlight, so its context below matters more.
+	const top = target.top + window.scrollY - window.innerHeight / 3;
+	window.scrollTo({ top: Math.max(0, top), behavior: 'smooth' });
+	setActiveHighlight(id);
+	window.setTimeout(() => setActiveHighlight(null), 2600);
+	return true;
+}
+
 function findOverlayAtPoint(x: number, y: number): HTMLElement | null {
 	const overlays = document.querySelectorAll<HTMLElement>('.obsidian-highlight-overlay');
 	for (let i = 0; i < overlays.length; i++) {
