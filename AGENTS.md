@@ -8,7 +8,7 @@ whenever a feature is added or significantly changed (see maintenance rules in `
 
 ## 1. Project overview
 
-Browser extension (Chrome MV3 / Firefox / Safari), shipped as **Marginalia** — its own name, icon
+Browser extension (Chrome MV3 / Firefox / Safari), shipped as **Scholiast** — its own name, icon
 (`src/icons/logo.svg`) and homepage, so the fork isn't mistaken for the official Obsidian extension.
 Base product clips web pages to Obsidian.
 This branch adds **live-webpage annotation** (highlights, comments, freehand drawing), a

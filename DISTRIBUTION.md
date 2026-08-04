@@ -1,6 +1,6 @@
-# Distributing Marginalia (and getting Drive sync to work for other people)
+# Distributing Scholiast (and getting Drive sync to work for other people)
 
-The fork ships as **Marginalia** — its own name, icon and homepage, so it isn't
+The fork ships as **Scholiast** — its own name, icon and homepage, so it isn't
 mistaken for the official Obsidian extension (which also matters for Google's
 branding review). Site + logo: <https://rehanqasim-dev.github.io/clipper-oauth-redirect/>.
 

@@ -4,7 +4,7 @@ Goal: anyone can connect Drive sync without being added as a test user and witho
 seeing the "Google hasn't verified this app" screen. Free. Do it from the Google
 account that owns the Cloud project (`rehanbhatti0317@gmail.com`).
 
-The app is called **Marginalia**. Deliberately not "Obsidian Web Clipper": Google's
+The app is called **Scholiast**. Deliberately not "Obsidian Web Clipper": Google's
 branding review flags apps whose name or logo suggests they belong to someone else,
 and you don't own the Obsidian trademark. The homepage says it's a fork and links
 upstream, which is the honest framing they want to see.
@@ -13,7 +13,7 @@ Assets are live and ready:
 
 | Field in Google's form | Value |
 |---|---|
-| App name | `Marginalia` |
+| App name | `Scholiast` |
 | User support email | `rehanbhatti0317@gmail.com` |
 | Developer contact email | `rehanbhatti0317@gmail.com` |
 | App logo (120×120 PNG) | `logo-120.png` in the site repo → [direct link](https://rehanqasim-dev.github.io/clipper-oauth-redirect/logo-120.png) |
@@ -64,7 +64,7 @@ Pages site, with the homepage/privacy URLs updated to match. Nothing else change
 **Data access** (older consoles: *Scopes*) → add
 `https://www.googleapis.com/auth/drive.appdata`. Justification — paste this:
 
-> Marginalia is a browser extension that lets users annotate web pages (highlights,
+> Scholiast is a browser extension that lets users annotate web pages (highlights,
 > comments, freehand drawings). It stores those annotations as small JSON files and
 > PNG images in Drive's hidden application-data folder, so a user's own annotations
 > follow them between their browsers and machines. `drive.appdata` is the narrowest
