@@ -535,10 +535,35 @@ function renderContent() {
 	emptyEl.style.display = 'none';
 	contentEl.style.display = '';
 
-	for (const { page, domain, units } of pages) {
+	// Built in batches: with a large library this is hundreds of cards, and doing
+	// them all in one task blocks the first paint. The first batch covers more than
+	// a screenful, so the page is usable immediately and the rest fills in.
+	const BATCH = 40;
+	const first = pages.slice(0, BATCH);
+	for (const { page, domain, units } of first) {
 		contentEl.appendChild(createPageItem(page, domain, units));
 	}
+	if (pages.length <= BATCH) return;
+
+	// A render token guards against a second renderContent() (nav, edit, storage
+	// change) landing mid-fill and interleaving two lists into the same container.
+	const token = ++renderToken;
+	let next = BATCH;
+	const fill = () => {
+		if (token !== renderToken) return;
+		const slice = pages.slice(next, next + BATCH);
+		const frag = document.createDocumentFragment();
+		for (const { page, domain, units } of slice) {
+			frag.appendChild(createPageItem(page, domain, units));
+		}
+		contentEl.appendChild(frag);
+		next += BATCH;
+		if (next < pages.length) requestAnimationFrame(fill);
+	};
+	requestAnimationFrame(fill);
 }
+
+let renderToken = 0;
 
 function createPageItem(page: PageGroup, domain: string, units: RenderUnit[]): HTMLElement {
 	const expanded = expandedPages.has(page.url) || currentNav.type === 'page';

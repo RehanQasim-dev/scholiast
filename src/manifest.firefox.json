@@ -85,7 +85,7 @@
 	},
 	"browser_specific_settings": {
 		"gecko": {
-			"id": "clipper@obsidian.md",
+			"id": "clipper-annotate@rehanqasim-dev.github.io",
 			"strict_min_version": "113.0",
 			"data_collection_permissions": {
 				"required": ["none"]

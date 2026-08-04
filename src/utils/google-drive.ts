@@ -13,15 +13,30 @@ import browser from './browser-polyfill';
 // a hidden, per-application folder. It never appears in the user's normal Drive UI
 // and the extension can only ever see its own files (scope drive.appdata).
 //
-// SETUP (one-time, by the user): create a Google Cloud project, enable the Drive
-// API, configure an OAuth consent screen (External + add yourself as a Test user),
-// create an OAuth client of type "Web application", and register the redirect URI
-// that getRedirectUrl() returns in each browser. Then paste the client id below.
-// On first connect the redirect URI is logged to the service-worker console.
+// Redirect URI: Google requires every redirect URI to be registered in advance and
+// permits no wildcards. Chrome is fine — the extension id is pinned by the manifest
+// `key`, so `identity.getRedirectURL()` is the same for every user. Firefox is not:
+// its redirect URL embeds a random per-INSTALL UUID
+// (https://<uuid>.extensions.allizom.org/), which differs for every user and can
+// never be pre-registered. So a static page we host is registered instead, and it
+// forwards the response to whichever extension URL started the flow (see
+// REDIRECT_BRIDGE below and DISTRIBUTION.md). One registered URI covers every
+// browser and every user.
+//
+// SETUP (one-time, by the maintainer): create a Google Cloud project, enable the
+// Drive API, configure an OAuth consent screen (External; add testers under
+// Audience → Test users), create an OAuth client of type "Web application", and
+// register the bridge URL below as an Authorized redirect URI. Then paste the client
+// id here. No client secret is involved (implicit flow), so nothing secret ships.
 
 // 👇 PASTE YOUR OAUTH CLIENT ID HERE (looks like 1234567890-abc...apps.googleusercontent.com)
-// No client secret is needed — this uses the OAuth implicit flow.
 export const GOOGLE_CLIENT_ID = '625860450889-1elphiutt0jjmdv0n92kdqu3ng5pmu3i.apps.googleusercontent.com';
+
+// The registered redirect URI: a static page that forwards the OAuth response
+// fragment back to this extension's own redirect URL (passed in `state`). Set to ''
+// to go direct instead — only viable on Chrome, and only for redirect URIs you have
+// registered yourself.
+export const REDIRECT_BRIDGE = 'https://rehanqasim-dev.github.io/clipper-oauth-redirect/oauth.html';
 
 const SCOPE = 'https://www.googleapis.com/auth/drive.appdata';
 const AUTH_ENDPOINT = 'https://accounts.google.com/o/oauth2/v2/auth';
@@ -48,8 +63,18 @@ export interface DriveFileMeta {
 	headRevisionId?: string;
 }
 
+/** This browser's own extension redirect URL — where the flow ultimately lands. */
 export function getRedirectUrl(): string {
 	return browser.identity.getRedirectURL();
+}
+
+/**
+ * The URI that must be registered in the Google OAuth client. With the bridge in
+ * place this is the same string for every user and browser, which is the whole
+ * point; without it, each install's own redirect URL has to be registered.
+ */
+export function getRegisteredRedirectUri(): string {
+	return REDIRECT_BRIDGE || getRedirectUrl();
 }
 
 export function isConfigured(): boolean {
@@ -58,14 +83,22 @@ export function isConfigured(): boolean {
 
 // --- Auth --------------------------------------------------------------------
 
+// base64url, so the extension redirect URL survives a round trip through `state`.
+function encodeState(value: string): string {
+	return btoa(value).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
+}
+
 function buildAuthUrl(interactive: boolean): string {
 	const params = new URLSearchParams({
 		client_id: GOOGLE_CLIENT_ID,
 		response_type: 'token',
-		redirect_uri: getRedirectUrl(),
+		redirect_uri: getRegisteredRedirectUri(),
 		scope: SCOPE,
 		// Silent renewals must not pop UI; the first/interactive grant asks for consent.
 		prompt: interactive ? 'consent' : 'none',
+		// The bridge reads this to know where to forward the response. Harmless (and
+		// unused) when going direct.
+		state: encodeState(getRedirectUrl()),
 	});
 	return `${AUTH_ENDPOINT}?${params.toString()}`;
 }

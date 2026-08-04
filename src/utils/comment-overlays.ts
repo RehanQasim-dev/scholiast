@@ -2,7 +2,6 @@ import { AnyHighlightData, highlights, saveHighlights, updateHighlights, getPage
 import { getElementByXPath } from './dom-utils';
 import { textHighlightRanges, setActiveHighlight } from './highlighter-overlays';
 import { loadDiagramImage, deleteDiagramImage, saveDiagramImage } from './video/frame-store';
-import { getAll } from './page-store';
 import { normalizeUrl } from './url-utils';
 import {
 	commentTextToDisplayHtml, commentTextToEditableHtml, serializeCommentEditor,
@@ -452,30 +451,55 @@ const TAG_TOKEN_RE = /(^|\s)#([A-Za-z0-9_/-]*)$/;
 let tagMenuEl: HTMLDivElement | null = null;
 let tagMenuTags: string[] = [];
 let tagMenuIndex = 0;
-let tagMenuTa: HTMLTextAreaElement | null = null;
+let tagMenuTa: HTMLElement | null = null;
 // All tags across every page; invalidated whenever a comment is saved.
 let knownTagsCache: string[] | null = null;
 
+function tagsIn(notes: string[] | undefined, into: Set<string>): void {
+	for (const n of notes || []) {
+		const clean = n.replace(/<!--[^>]*-->/g, ' ');
+		KNOWN_TAG_RE.lastIndex = 0;
+		let m: RegExpExecArray | null;
+		while ((m = KNOWN_TAG_RE.exec(clean))) into.add(m[2]);
+	}
+}
+
+// Suggestions come from a small index key, not from the library: reading every
+// page's annotations here meant each tab deserialised the whole dataset the first
+// time someone typed `#`. This page's own tags are merged in live, so a tag is
+// suggestible the moment it's used even before the index write lands.
 async function collectKnownTags(): Promise<string[]> {
 	if (knownTagsCache) return knownTagsCache;
 	const tags = new Set<string>();
-	const addFrom = (notes?: string[]) => {
-		for (const n of notes || []) {
-			const clean = n.replace(/<!--[^>]*-->/g, ' ');
-			KNOWN_TAG_RE.lastIndex = 0;
-			let m: RegExpExecArray | null;
-			while ((m = KNOWN_TAG_RE.exec(clean))) tags.add(m[2]);
-		}
-	};
-	for (const h of highlights) addFrom(h.notes);
+	for (const h of highlights) tagsIn(h.notes, tags);
 	try {
-		const all = await getAll<{ highlights?: AnyHighlightData[] }>('hl');
-		for (const page of Object.values(all)) {
-			for (const h of page.highlights || []) addFrom(h.notes);
-		}
-	} catch { /* storage unavailable — fall back to current page's tags */ }
+		for (const tag of await readTagIndex()) tags.add(tag);
+	} catch { /* storage unavailable — fall back to this page's tags */ }
 	knownTagsCache = [...tags].sort();
 	return knownTagsCache;
+}
+
+const TAG_INDEX_KEY = 'tag_index';
+
+async function readTagIndex(): Promise<string[]> {
+	const got = await browser.storage.local.get(TAG_INDEX_KEY);
+	const stored = got[TAG_INDEX_KEY];
+	return Array.isArray(stored) ? stored as string[] : [];
+}
+
+// Fold this page's tags into the shared index after a save. Union-only, so a
+// concurrent write from another tab can't lose a tag; the index is a suggestion
+// list, and `rebuildTagIndex` (background, on full sync) prunes deleted ones.
+async function updateTagIndex(): Promise<void> {
+	const mine = new Set<string>();
+	for (const h of highlights) tagsIn(h.notes, mine);
+	if (mine.size === 0) return;
+	const existing = await readTagIndex();
+	const merged = new Set(existing);
+	const before = merged.size;
+	for (const tag of mine) merged.add(tag);
+	if (merged.size === before) return;
+	await browser.storage.local.set({ [TAG_INDEX_KEY]: [...merged].sort() });
 }
 
 function hideTagMenu() {
@@ -1001,7 +1025,7 @@ function createCommentBox(highlight: AnyHighlightData): HTMLElement {
 			if (!clipboardData) return;
 
 			let hasImage = false;
-			for (const item of clipboardData.items) {
+			for (const item of Array.from(clipboardData.items)) {
 				if (item.type.startsWith('image/')) {
 					hasImage = true;
 					e.preventDefault();
@@ -1556,15 +1580,27 @@ document.addEventListener('mousedown', (e) => {
 // an entry here (at save time, so an abandoned draft leaves nothing behind) makes a
 // pasted image sync exactly like a drawn diagram. `pasted: true` marks the bytes as
 // immutable, which lets the storage listener skip a pointless re-render.
+// Each entry also records the page it belongs to, so the background can route a
+// change straight to its page instead of scanning every stored annotation for the
+// referencing comment.
 async function registerPastedImages(text: string): Promise<void> {
-	const ids = [...text.matchAll(/<!--image:([A-Za-z0-9_-]+)-->/g)].map(m => m[1]);
+	const ids = [...text.matchAll(/<!--(?:image|diagram):([A-Za-z0-9_-]+)-->/g)].map(m => m[1]);
 	if (ids.length === 0) return;
+	const pageUrl = normalizeUrl(getPageUrl());
 	const res = await browser.storage.local.get('diagrams');
 	const diagrams = (res.diagrams || {}) as Record<string, any>;
 	let changed = false;
 	for (const id of ids) {
-		if (diagrams[id]) continue;
-		diagrams[id] = { updatedAt: Date.now(), pasted: true };
+		const existing = diagrams[id];
+		if (existing) {
+			// A drawn diagram already has an entry (the editor wrote its scene); only
+			// the page stamp may be missing.
+			if (existing.pageUrl === pageUrl) continue;
+			diagrams[id] = { ...existing, pageUrl };
+			changed = true;
+			continue;
+		}
+		diagrams[id] = { updatedAt: Date.now(), pasted: true, pageUrl };
 		changed = true;
 	}
 	if (changed) await browser.storage.local.set({ diagrams });
@@ -1610,6 +1646,7 @@ function saveComment(highlightId: string, text: string) {
 		const newHighlights = highlights.map(h => h.id === highlightId ? updated : h);
 		updateHighlights(newHighlights);
 		saveHighlights();
+		void updateTagIndex(); // after the note lands, so its tags are indexed
 	}
 	stopAddingComment(highlightId);
 }
@@ -1642,6 +1679,7 @@ function saveEditedComment(highlightId: string, index: number, text: string) {
 		const newHighlights = highlights.map(h => h.id === owner.id ? updated : h);
 		updateHighlights(newHighlights);
 		saveHighlights();
+		void updateTagIndex(); // after the edit lands, so its tags are indexed
 		renderCommentBoxes();
 	}
 }

@@ -55,6 +55,20 @@ export async function getAllUrls(kind: PageKind): Promise<string[]> {
 	return Object.keys(all).filter(k => k.startsWith(pfx)).map(k => k.slice(pfx.length));
 }
 
+// Every page url that has a record of any of `kinds`, from a SINGLE storage read.
+// `getAllUrls` costs a full read per kind, so callers wanting more than one kind
+// (the sync engines) should use this instead of several calls.
+export async function listAllPageUrls(kinds: PageKind[] = ALL_KINDS): Promise<string[]> {
+	const all = await browser.storage.local.get(null);
+	const urls = new Set<string>();
+	for (const k of Object.keys(all)) {
+		for (const kind of kinds) {
+			if (k.startsWith(PREFIX[kind])) urls.add(k.slice(PREFIX[kind].length));
+		}
+	}
+	return [...urls];
+}
+
 export async function clearAll(kind: PageKind): Promise<void> {
 	const keys = (await getAllUrls(kind)).map(u => keyFor(kind, u));
 	if (keys.length) await browser.storage.local.remove(keys);

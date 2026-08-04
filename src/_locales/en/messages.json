@@ -754,7 +754,7 @@
 		"message": "Sync is not configured in this build."
 	},
 	"syncSetupNote": {
-		"message": "Google Drive sync isn't configured in this build. A developer must add a Google OAuth client id. The OAuth redirect URI for this browser is shown below — register it in your Google Cloud OAuth client."
+		"message": "Google Drive sync isn't configured in this build. A developer must add a Google OAuth client id and register the redirect URI shown below in the Google Cloud OAuth client. The same URI works for every browser and every user, so it only has to be registered once."
 	},
 	"propertyName": {
 		"message": "Property name"

@@ -55,7 +55,8 @@ is stored under its **own key**: `hl:<normalizedUrl>` (highlights), `dr:<…>` (
 (video). A write touches only that page's record. `page-store` is the single access layer:
 `getPage`/`setPage`/`removePage` for one page (the content-script hot path); `getAll`/`getAllUrls`/
 `clearAll`/`setAll` reassemble the whole map via `get(null)` + prefix filter for the dashboard, sync,
-and Obsidian paths; `changedPages`/`anyPageChanged` interpret `storage.onChanged` batches (a change
+and Obsidian paths; `listAllPageUrls(kinds)` does that in **one** read for several kinds at once (three
+`getAllUrls` calls meant three full-store reads); `changedPages`/`anyPageChanged` interpret `storage.onChanged` batches (a change
 arrives as `changes['hl:<url>']`, not `changes.highlights`). **No legacy/monolithic-key migration
 exists** — the sharded keys are the only format. The shapes below are the per-page value types.
 
@@ -83,14 +84,30 @@ exists** — the sharded keys are the only format. The shapes below are the per-
 ### Drawings — key `dr:<normalizedUrl>`: `{ url, strokes: PencilStroke[] }`
 - `PencilStroke` = `{ id, color, width, points:[x,y,x,y,...], updatedAt? }` (flattened document coords).
 
+### Page sources — key `src:<normalizedUrl>`: `PageSource`
+- The readable page captured as Markdown (`{ url, title, markdown, capturedAt }`), for the Obsidian note
+  body. **One key per page** for the same reason annotations are sharded, and more urgently: a source is
+  the largest record here (tens of KB), so a single `page_sources` map meant capturing page N
+  re-serialised all N-1 before it and reading one source deserialised the whole library.
+- Written once per page (the source is immutable) and deleted after a successful Obsidian sync.
+
+### Tag index — key `tag_index`: `string[]`
+- Every `#tag` ever used in a comment, so the `#` autocomplete can suggest across pages without a
+  content script reading the entire library (it used to `get(null)` per tab on first use). Union-only on
+  write, so concurrent tabs can't drop a tag.
+
 ### Domains — key `domains`: `Record<hostname, DomainSettings>` (custom site name, etc.)
 
-### Diagrams — key `diagrams`: `Record<diagramId, { sceneData, updatedAt }>`
+### Diagrams — key `diagrams`: `Record<diagramId, { sceneData?, updatedAt, driveId?, sceneDriveId?, pasted?, pageUrl? }>`
 - Excalidraw comment diagrams (see §3.2). `sceneData` = `{ elements, appState, files }` (the editable
   scene, kept in `chrome.storage.local` so the editor can reopen it). The **rendered PNG is NOT here** —
   it lives in the IndexedDB blob store keyed by `diagramId` (see frame-store below), exactly like video
   frames, and is rehydrated on demand for display. No synced JSON ever carries diagram image bytes — only
   the id. (`sceneData.files` may still carry base64 if a raster is pasted into the diagram — minor.)
+- Pasted comment images share this map (`pasted: true`, no scene) so they sync on the same path.
+- `pageUrl` records which page's comment references the image, so a change routes straight to its page
+  instead of scanning every annotation record. Still **one key for all diagrams**, so it is re-serialised
+  on every scene save — the remaining known scale limit; shard it if scenes get numerous.
 
 ### Video annotations — key `va:<normalizedUrl>`: `VideoAnnotationData`
 - Kept separate from `highlights`/`drawings` so the dashboard routes them to their own card
@@ -234,7 +251,9 @@ exists** — the sharded keys are the only format. The shapes below are the per-
   fallback), highlight-count badges. Clicking a domain expands it and shows *all its pages'*
   annotations; clicking a nested page scopes to that one page. **`Ctrl`+click** opens the real
   site/page in a new tab.
-- **Main pane**: collapsible **page items** — collapsed shows favicon + title + "N Annotations •
+- **Main pane**: page items are built in batches of 40 across frames (a render token guards against two
+  fills interleaving), so a large library paints immediately instead of blocking on one long task.
+  Collapsible **page items** — collapsed shows favicon + title + "N Annotations •
   last-edited"; expanded shows a header (favicon, title, source URL) and a list of **annotation
   cards**. Each card: tinted **quote** block(s) (grouped multi-block highlights render stacked,
   separated by a `more_vert` divider), a **comment thread**, a focus-gated **reply** field, and one
@@ -264,7 +283,14 @@ exists** — the sharded keys are the only format. The shapes below are the per-
   (without touching the draft).
 
 ### 3.5 Google Drive sync (per-page)
-- Google OAuth via `browser.identity`; connect/disconnect from settings.
+- Google OAuth via `browser.identity` (implicit grant); connect/disconnect from settings.
+- **Redirect URI is a hosted bridge** (`google-drive.REDIRECT_BRIDGE`): Google allows no wildcard
+  redirect URIs, and Firefox's `identity.getRedirectURL()` embeds a random **per-install** UUID that can
+  never be pre-registered. So a static page (own repo, GitHub Pages) is the one registered URI for every
+  browser and user; the extension passes its own redirect URL in the OAuth `state`, and the page forwards
+  the response fragment to it after checking it against the browsers' extension-redirect formats. Chrome's
+  id is pinned by the manifest `key`, so its redirect URL is stable too. Distribution steps, ids and the
+  Google Cloud setup live in `DISTRIBUTION.md`.
 - Syncs highlights + drawings + video (transcript items, notes, frame markup) **and Excalidraw comment
   diagrams** — **one Drive file per page** (`pages/page-<urlhash>.json`), with frame/diagram images and
   diagram scenes as separate blobs (see §2 "Sync state").
@@ -272,13 +298,21 @@ exists** — the sharded keys are the only format. The shapes below are the per-
   devices are kept; deletions tracked as **per-page tombstones** so they don't resurrect. The merge is
   **never** over the whole dataset — always a single page at a time.
 - **Push is targeted**: a change enqueues only the affected page URL(s) and reconciles just those files
-  (a diagram edit is mapped to its page via `findPagesForDiagrams`). **Pull/full reconcile**: periodic +
-  on startup + **"Sync now"** walks every local page and every remote `pages/` file (the file listing is
-  the change-manifest), reconciling each independently. See `GOOGLE_DRIVE_SYNC.md`.
+  (a diagram edit is mapped to its page via `findPagesForDiagrams`, which reads the entry's `pageUrl`
+  stamp and only falls back to scanning annotations for un-stamped ids). **Pull/full reconcile**:
+  periodic + on startup + **"Sync now"** walks every local page and every remote `pages/` file (the file
+  listing is the change-manifest), reconciling each independently. See `GOOGLE_DRIVE_SYNC.md`.
+- **Unchanged pages are skipped without network** (`isPageInSync`): a page is only reconciled when the
+  Drive file's `headRevisionId` differs from the one recorded in `pagemeta:<url>`, or the local record no
+  longer matches its `snap:` (compared on an entity fingerprint that excludes tombstones, which the local
+  side never rebuilds). Without this every poll downloaded and re-merged **every** page — O(library)
+  network every 5 minutes, which at a few hundred pages never finishes inside the interval and leaves
+  sync running permanently. The check is an optimisation only: anything missing or ambiguous reconciles.
 - **Live progress in settings**: the engine writes its phase into the `sync_status` record as it goes
   (`progress: { phase, done, total, title, url }` — `discovering` while it works out which pages are in
   play, then one update per page). The Sync section renders it as a card under the status line: state +
-  percentage on top, a bar, and the page being synced with a `done / total` count below. The bar sweeps
+  percentage on top, a bar, and the page being synced with a `done / total` count below (writes are
+  rate-limited, so a large reconcile doesn't cost a storage write per page). The bar sweeps
   indeterminately during discovery, the card turns red with the message on failure, and it hides when
   idle. The settings page follows the run via a `storage.onChanged` listener, so no polling.
 - The Obsidian companion plugin (§5) is the second client of this per-page Drive layout and uses the
@@ -363,8 +397,8 @@ exists** — the sharded keys are the only format. The shapes below are the per-
   - **Delete all data on Google Drive** → `wipeDriveData` → `google-drive.wipeAppData()` deletes every
     file in the appData folder (pages/frames/diagrams + any legacy `clipper-sync.json`) and resets local
     sync bookkeeping. Local annotations are untouched.
-  - **Delete all local data** → `wipeLocalData` → removes all `hl:`/`dr:`/`va:`/`snap:`/`pagemeta:` keys
-    plus `diagrams`/`page_sources` from `storage.local` and clears both IndexedDB image stores
+  - **Delete all local data** → `wipeLocalData` → removes all `hl:`/`dr:`/`va:`/`snap:`/`pagemeta:`/`src:`
+    keys plus `diagrams` from `storage.local` and clears both IndexedDB image stores
     (`frame-store.clearAllImages`). Settings, templates, and the Drive connection are kept; Drive data is
     untouched (a later sync may restore it).
 
@@ -438,7 +472,7 @@ imports the other's `src/`).
   single implementation. (The legacy whole-dataset `mergeSyncFiles`/`mergeHighlightsStorage` remain — the
   plugin still uses `mergeHighlightsStorage` to merge a single page's highlight list.)
 - **Full page source → Obsidian:** the extension captures the readable page as Markdown
-  (`page-source-capture.ts`, Defuddle) on first save and temporarily stores it under `page_sources`.
+  (`page-source-capture.ts`, Defuddle) on first save and temporarily stores it under `src:<url>`.
   The Obsidian sync writes it below the managed region on note creation (immutable; re-syncs never
   touch it), so the plugin has content to render and re-anchor against. Once successfully synced to Obsidian,
   the stored page source is automatically deleted from local storage to conserve space.

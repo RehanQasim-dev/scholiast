@@ -6,7 +6,7 @@ import { debounce } from './utils/debounce';
 import { Settings } from './types/types';
 import { debugLog } from './utils/debug';
 import { sync as syncToDrive, syncChanged, findPagesForDiagrams, getStatus as getSyncStatus, resetSyncState } from './utils/sync-engine';
-import { connect as connectDrive, disconnect as disconnectDrive, getRedirectUrl, isConfigured as isSyncConfigured, wipeAppData } from './utils/google-drive';
+import { connect as connectDrive, disconnect as disconnectDrive, getRegisteredRedirectUri, isConfigured as isSyncConfigured, wipeAppData } from './utils/google-drive';
 import {
 	markDirty as obsidianMarkDirty,
 	enqueueAll as obsidianEnqueueAll,
@@ -487,14 +487,14 @@ browser.runtime.onMessage.addListener((request: unknown, _sender: browser.Runtim
 					break;
 			}
 			const status = await getSyncStatus();
-			sendResponse({ success: true, status, configured: isSyncConfigured(), redirectUrl: getRedirectUrl() });
+			sendResponse({ success: true, status, configured: isSyncConfigured(), redirectUrl: getRegisteredRedirectUri() });
 		} catch (err) {
 			if (obsidianActions.includes(action)) {
 				sendResponse({ success: false, error: err instanceof Error ? err.message : String(err), config: await getObsidianConfig(), status: await getObsidianStatus() });
 				return;
 			}
 			const status = await getSyncStatus();
-			sendResponse({ success: false, error: err instanceof Error ? err.message : String(err), status, configured: isSyncConfigured(), redirectUrl: getRedirectUrl() });
+			sendResponse({ success: false, error: err instanceof Error ? err.message : String(err), status, configured: isSyncConfigured(), redirectUrl: getRegisteredRedirectUri() });
 		}
 	})();
 	return true;
@@ -515,7 +515,7 @@ browser.runtime.onMessage.addListener((request: unknown, _sender, sendResponse: 
 			} else {
 				const all = await browser.storage.local.get(null);
 				const keys = Object.keys(all).filter(k =>
-					/^(hl:|dr:|va:|snap:|pagemeta:)/.test(k) || k === 'diagrams' || k === 'page_sources' || k === 'sync_snapshot');
+					/^(hl:|dr:|va:|snap:|pagemeta:|src:)/.test(k) || k === 'diagrams' || k === 'sync_snapshot');
 				if (keys.length) await browser.storage.local.remove(keys);
 				await clearAllImages();
 				sendResponse({ success: true, count: keys.length });
@@ -528,7 +528,7 @@ browser.runtime.onMessage.addListener((request: unknown, _sender, sendResponse: 
 });
 
 // Log the OAuth redirect URI once so it can be registered in Google Cloud.
-console.info('[Obsidian Clipper sync] OAuth redirect URI to register:', getRedirectUrl());
+console.info('[Obsidian Clipper sync] OAuth redirect URI to register:', getRegisteredRedirectUri());
 
 browser.runtime.onMessage.addListener((request: unknown, sender: browser.Runtime.MessageSender, sendResponse: (response?: any) => void): true | undefined => {
 	if (typeof request === 'object' && request !== null) {

@@ -19,7 +19,7 @@ import {
 	CLIP_CSS_VERSION,
 } from './obsidian-export';
 import { getPageSource, deletePageSource } from './page-source';
-import { getPage, getAllUrls } from './page-store';
+import { getPage, listAllPageUrls } from './page-store';
 
 // Background orchestrator for pushing annotations into Obsidian via the Local
 // REST API. Live on change: edits enqueue their normalized URL; a debounced flush
@@ -246,10 +246,9 @@ export async function markDirty(urls: string[]): Promise<void> {
 
 /** Enqueue every page/video that has annotations (the "Sync all" button). */
 export async function enqueueAll(): Promise<void> {
-	const urls = new Set<string>([
-		...(await getAllUrls('hl')),
-		...(await getAllUrls('va')),
-	]);
+	// Drawings aren't rendered into notes, so only highlight/video pages qualify.
+	// One storage read for both kinds, rather than one per kind.
+	const urls = new Set<string>(await listAllPageUrls(['hl', 'va']));
 	const queue = new Set(await getQueue());
 	for (const u of urls) queue.add(u);
 	await setQueue([...queue]);

@@ -17,7 +17,7 @@ import {
 	loadFrameImage, saveFrameImage, hasFrameImage,
 	loadDiagramImage, saveDiagramImage, hasDiagramImage, deleteDiagramImage,
 } from './video/frame-store';
-import { getPage, setPage, removePage, getAll, getAllUrls } from './page-store';
+import { getPage, setPage, removePage, getAll, getAllUrls, listAllPageUrls } from './page-store';
 // The 3-way merge logic is shared verbatim with the Obsidian plugin. The per-page
 // reconcile uses `mergePageRecord` (one page at a time); types come from shared.
 import {
@@ -65,7 +65,12 @@ interface VideoItem { id: string; notes?: string[]; updatedAt?: number; frame?: 
 interface StoredVideo { url: string; videoId?: string; title?: string; items: VideoItem[] }
 // `pasted: true` marks an entry created for a pasted image: no editable scene, and
 // its PNG bytes never change after creation.
-interface DiagramEntry { sceneData?: unknown; updatedAt?: number; driveId?: string; sceneDriveId?: string; pasted?: boolean }
+interface DiagramEntry {
+	sceneData?: unknown; updatedAt?: number; driveId?: string; sceneDriveId?: string; pasted?: boolean;
+	// Normalized url of the page whose comment references this image. Lets a change
+	// be routed to its page without scanning every annotation record.
+	pageUrl?: string;
+}
 type DiagramsMap = Record<string, DiagramEntry>;
 
 export interface SyncStatus {
@@ -164,7 +169,15 @@ async function pageLabel(url: string): Promise<string | undefined> {
 	return va?.title;
 }
 
-async function reportProgress(progress: SyncProgress): Promise<void> {
+// Progress is a UI nicety, so it must not turn a big reconcile into a storage
+// write per page: updates are rate-limited, and the first/last of a run always
+// land (`force`) so the panel opens and closes cleanly.
+const PROGRESS_MIN_INTERVAL_MS = 400;
+let lastProgressAt = 0;
+async function reportProgress(progress: SyncProgress, force = false): Promise<void> {
+	const now = Date.now();
+	if (!force && now - lastProgressAt < PROGRESS_MIN_INTERVAL_MS) return;
+	lastProgressAt = now;
 	await setStatus({ progress });
 }
 
@@ -353,7 +366,7 @@ export async function syncChanged(urls: string[], interactive = false): Promise<
 		try {
 			let done = 0;
 			for (const url of urls) {
-				await reportProgress({ phase: 'page', done, total: urls.length, url, title: await pageLabel(url) });
+				await reportProgress({ phase: 'page', done, total: urls.length, url, title: await pageLabel(url) }, done === 0);
 				await syncPage(url, interactive);
 				done++;
 			}
@@ -372,12 +385,10 @@ export async function syncChanged(urls: string[], interactive = false): Promise<
 async function doFullSync(interactive: boolean): Promise<void> {
 	await setStatus({ syncing: true, lastError: undefined });
 	try {
-		await reportProgress({ phase: 'discovering', done: 0, total: 0 });
-		const urls = new Set<string>([
-			...(await getAllUrls('hl')),
-			...(await getAllUrls('dr')),
-			...(await getAllUrls('va')),
-		]);
+		await reportProgress({ phase: 'discovering', done: 0, total: 0 }, true);
+		// One pass over the key list for all three kinds — each getAllUrls call is a
+		// full storage read, so three of them cost three times what they need to.
+		const urls = new Set<string>(await listAllPageUrls());
 		// Discover remote-only pages: list pages/, and for any file we don't have
 		// locally, download it once to learn its url (the filename is a hash).
 		const remoteFiles = await listFolder('pages', interactive);
@@ -393,13 +404,25 @@ async function doFullSync(interactive: boolean): Promise<void> {
 				} catch { /* skip corrupt */ }
 			}
 		}
+		// A page only needs reconciling if something moved since the last one: either
+		// the Drive file has a new revision, or this device edited it. Without this
+		// check every page was downloaded and re-merged on every 5-minute poll —
+		// O(library) network per cycle, which at a few hundred pages never finishes
+		// inside the poll interval and leaves sync running permanently.
+		const diagrams = await loadDiagrams();
 		let done = 0;
+		let skipped = 0;
 		for (const url of urls) {
-			await reportProgress({ phase: 'page', done, total: urls.size, url, title: await pageLabel(url) });
 			const meta = metaByName.get(await pageFileName(url)) ?? null;
+			if (await isPageInSync(url, meta, diagrams)) { skipped++; continue; }
+			await reportProgress(
+				{ phase: 'page', done, total: urls.size - skipped, url, title: await pageLabel(url) },
+				done === 0,
+			);
 			await syncPage(url, interactive, meta);
 			done++;
 		}
+		if (skipped) console.debug(`Drive sync: ${done} page(s) reconciled, ${skipped} already in sync`);
 		await setStatus({
 			connected: true, syncing: false, lastSyncedAt: Date.now(),
 			lastError: undefined, progress: undefined,
@@ -417,6 +440,48 @@ async function doFullSync(interactive: boolean): Promise<void> {
  * Drive revision), pull any missing images, then write the merge back locally.
  * `knownMeta` (when provided) skips the initial file lookup on the first attempt.
  */
+/**
+ * Can this page be skipped entirely? True only when all three agree:
+ *  - we have a reconciled snapshot and the Drive revision we last wrote,
+ *  - the Drive file still carries that same revision (nobody else wrote it),
+ *  - and the local record is byte-identical to that snapshot (we didn't either).
+ * Any missing piece means "reconcile" — this is an optimisation, never a decision
+ * about the data. Costs two small storage reads and no network.
+ */
+async function isPageInSync(
+	url: string,
+	remoteMeta: DriveFileMeta | null,
+	diagrams: DiagramsMap,
+): Promise<boolean> {
+	if (!remoteMeta?.headRevisionId) return false;
+	const keys = [snapKey(url), pageMetaKey(url)];
+	const got = await browser.storage.local.get(keys);
+	const snap = got[snapKey(url)] as PageRecord | undefined;
+	const meta = got[pageMetaKey(url)] as PageMeta | undefined;
+	if (!snap || !meta?.headRevisionId) return false;
+	if (meta.fileId !== remoteMeta.id || meta.headRevisionId !== remoteMeta.headRevisionId) return false;
+
+	const local = await assembleLocalPage(url, diagrams);
+	return entityFingerprint(local) === entityFingerprint(snap);
+}
+
+// The entities a reconcile would actually move, in a stable order. Deliberately
+// excludes tombstones and `deletedAt`: those live in the snapshot but are never
+// rebuilt by assembleLocalPage, so including them would make every page that ever
+// had a deletion look permanently out of sync.
+function entityFingerprint(rec: PageRecord): string {
+	const byId = <T extends { id?: string }>(items: T[] = []) =>
+		[...items].sort((a, b) => String(a.id).localeCompare(String(b.id)));
+	return JSON.stringify({
+		title: rec.title ?? '',
+		videoId: rec.videoId ?? '',
+		highlights: byId(rec.highlights as { id?: string }[]),
+		drawings: byId(rec.drawings as { id?: string }[]),
+		videoItems: byId(stripForUpload(rec).videoItems as { id?: string }[]),
+		diagrams: byId(rec.diagrams),
+	});
+}
+
 async function syncPage(url: string, interactive: boolean, knownMeta?: DriveFileMeta | null): Promise<void> {
 	const fileName = await pageFileName(url);
 	const snap = ((await browser.storage.local.get(snapKey(url)))[snapKey(url)] as PageRecord) || null;
@@ -454,7 +519,8 @@ async function syncPage(url: string, interactive: boolean, knownMeta?: DriveFile
 		}
 
 		// If a content script edited this page during our network I/O, our merge is
-		// stale — redo it rather than clobbering the edit.
+		// stale — redo it rather than clobbering the edit. The diagrams map is re-read
+		// because a *diagram* edit during the same window counts as an edit too.
 		const localNow = JSON.stringify(await assembleLocalPage(url, await loadDiagrams()));
 		if (localNow !== localBefore && attempt < 3) continue;
 
@@ -479,12 +545,23 @@ async function syncPage(url: string, interactive: boolean, knownMeta?: DriveFile
 export async function findPagesForDiagrams(diagramIds: string[]): Promise<string[]> {
 	if (!diagramIds.length) return [];
 	const want = new Set(diagramIds);
-	const all = await getAll<StoredHighlights>('hl');
-	const out: string[] = [];
-	for (const url of Object.keys(all)) {
-		if (collectDiagramIds(all[url].highlights || []).some((id) => want.has(id))) out.push(url);
+	const out = new Set<string>();
+
+	// Fast path: entries written by the comment editor record the page they belong
+	// to, so the common case needs no scan at all. Only ids without that stamp
+	// (older entries) fall through to reading the annotation records.
+	const diagrams = await loadDiagrams();
+	for (const id of [...want]) {
+		const pageUrl = diagrams[id]?.pageUrl;
+		if (pageUrl) { out.add(pageUrl); want.delete(id); }
 	}
-	return out;
+	if (want.size === 0) return [...out];
+
+	const all = await getAll<StoredHighlights>('hl');
+	for (const url of Object.keys(all)) {
+		if (collectDiagramIds(all[url].highlights || []).some((id) => want.has(id))) out.add(url);
+	}
+	return [...out];
 }
 
 /** Clear local sync bookkeeping (called on disconnect). */
