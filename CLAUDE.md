@@ -7,6 +7,8 @@ annotation: highlights, comments, freehand drawing; a highlights dashboard; and 
 - **Architecture & all features (implemented)** → `AGENTS.md`
 - **Shipping builds to other people (extension ids, OAuth redirect bridge, AMO/Chrome, Google test
   users)** → `DISTRIBUTION.md`
+- **Getting the Google OAuth app verified so anyone can sync (all values pre-filled)** →
+  `GOOGLE_VERIFICATION.md`
 
 ## How to work here
 - `AGENTS.md` is the single source of truth for what this fork does. Whenever a feature is

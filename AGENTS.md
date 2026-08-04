@@ -8,7 +8,9 @@ whenever a feature is added or significantly changed (see maintenance rules in `
 
 ## 1. Project overview
 
-Browser extension (Chrome MV3 / Firefox / Safari). Base product clips web pages to Obsidian.
+Browser extension (Chrome MV3 / Firefox / Safari), shipped as **Marginalia** — its own name, icon
+(`src/icons/logo.svg`) and homepage, so the fork isn't mistaken for the official Obsidian extension.
+Base product clips web pages to Obsidian.
 This branch adds **live-webpage annotation** (highlights, comments, freehand drawing), a
 **highlights dashboard**, **Google Drive sync**, and **YouTube video frame notes**.
 
@@ -290,7 +292,8 @@ exists** — the sharded keys are the only format. The shapes below are the per-
   browser and user; the extension passes its own redirect URL in the OAuth `state`, and the page forwards
   the response fragment to it after checking it against the browsers' extension-redirect formats. Chrome's
   id is pinned by the manifest `key`, so its redirect URL is stable too. Distribution steps, ids and the
-  Google Cloud setup live in `DISTRIBUTION.md`.
+  Google Cloud setup live in `DISTRIBUTION.md`; the verification submission (so any user can connect, not
+  just listed testers) is pre-filled in `GOOGLE_VERIFICATION.md`.
 - Syncs highlights + drawings + video (transcript items, notes, frame markup) **and Excalidraw comment
   diagrams** — **one Drive file per page** (`pages/page-<urlhash>.json`), with frame/diagram images and
   diagram scenes as separate blobs (see §2 "Sync state").

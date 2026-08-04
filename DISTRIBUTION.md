@@ -1,4 +1,8 @@
-# Distributing this fork (and getting Drive sync to work for other people)
+# Distributing Marginalia (and getting Drive sync to work for other people)
+
+The fork ships as **Marginalia** — its own name, icon and homepage, so it isn't
+mistaken for the official Obsidian extension (which also matters for Google's
+branding review). Site + logo: <https://rehanqasim-dev.github.io/clipper-oauth-redirect/>.
 
 Everything here is free. No store fees are required for either browser.
 
@@ -43,14 +47,17 @@ In the project that owns the client id in `src/utils/google-drive.ts`:
    `https://rehanqasim-dev.github.io/clipper-oauth-redirect/oauth.html`
    (You can drop the per-extension `chromiumapp.org` URI; the bridge replaces it.)
 2. **APIs & Services → OAuth consent screen / Audience:** keep the app in
-   **Testing**, and add each tester's Google account under **Test users**.
+   **Testing**, and add each tester's Google account under **Test users**. To drop the
+   test-user list entirely and let anyone connect, follow `GOOGLE_VERIFICATION.md` —
+   every field is pre-filled there.
    - Up to 100 testers, instant, free, no review.
    - `drive.appdata` is a *sensitive* scope, so anyone **not** on that list gets the
      "Access blocked / app not verified" screen. This is the only reason your friends
      see it — nothing in the extension needs changing.
-3. Only if you ever distribute beyond ~100 people: submit for **OAuth verification**
-   (needs a privacy policy URL, a homepage, a verified domain and a demo video).
-   Free; usually days, occasionally weeks. Not needed for testing.
+3. To remove the "unverified app" screen and the test-user list: submit for **OAuth
+   verification** — see `GOOGLE_VERIFICATION.md` (homepage, privacy policy and logo are
+   already published; what's left is the console form, domain verification and a demo
+   video). Free; usually days, occasionally weeks.
 
 Each tester only needs to be added once; they then sign in normally.
 

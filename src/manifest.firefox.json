@@ -1,10 +1,10 @@
 {
 	"manifest_version": 3,
 	"default_locale": "en",
-	"name": "Obsidian Web Clipper",
-	"homepage_url": "https://obsidian.md/",
+	"name": "Marginalia",
+	"homepage_url": "https://rehanqasim-dev.github.io/clipper-oauth-redirect/",
 	"version": "1.6.3",
-	"description": "Save and highlight web pages in a private and durable format that you can access offline. The official extension for Obsidian.",
+	"description": "Annotate live web pages — highlights, threaded comments and freehand drawing — synced to your own Google Drive and Obsidian vault.",
 	"permissions": [
 		"activeTab",
 		"clipboardWrite",
