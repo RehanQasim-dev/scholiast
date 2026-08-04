@@ -2,44 +2,82 @@ import browser from './browser-polyfill';
 
 // Google Drive client for the annotation sync feature.
 //
-// Auth: OAuth 2.0 *implicit* grant via browser.identity.launchWebAuthFlow. This
-// works in both Chrome and Firefox (unlike chrome.identity.getAuthToken, which is
-// Chrome-only and tied to a published extension id) and needs no client secret —
-// so nothing secret is embedded in the shipped extension. The access token is
-// short-lived (~1h); when it expires we silently re-mint it with prompt=none, and
-// only fall back to an interactive consent window if the silent attempt fails.
+// Auth: two flows, because the browsers impose incompatible constraints. Both run
+// through browser.identity.launchWebAuthFlow; neither uses chrome.identity
+// .getAuthToken (Chrome-only and tied to a published extension id).
+//
+//   Chromium (Chrome/Edge/Brave) — OAuth 2.0 *implicit* grant against a "Web
+//     application" client, redirecting to the hosted bridge page (REDIRECT_BRIDGE).
+//     No refresh token exists, but Chromium re-mints silently with prompt=none in a
+//     hidden tab, so that costs nothing here.
+//
+//   Firefox — authorization code + PKCE against a "Desktop app" client, redirecting
+//     to http://127.0.0.1/mozoauth2/<sha1(extension id)>. This yields a refresh
+//     token, so renewals are a plain fetch to the token endpoint with no window at
+//     all. See the two constraints below for why nothing simpler works.
 //
 // Storage: a single JSON file `clipper-sync.json` lives in Drive's appDataFolder —
 // a hidden, per-application folder. It never appears in the user's normal Drive UI
 // and the extension can only ever see its own files (scope drive.appdata).
 //
-// Redirect URI: Google requires every redirect URI to be registered in advance and
-// permits no wildcards. Chrome is fine — the extension id is pinned by the manifest
-// `key`, so `identity.getRedirectURL()` is the same for every user. Firefox is not:
-// its redirect URL embeds a random per-INSTALL UUID
-// (https://<uuid>.extensions.allizom.org/), which differs for every user and can
-// never be pre-registered. So a static page we host is registered instead, and it
-// forwards the response to whichever extension URL started the flow (see
-// REDIRECT_BRIDGE below and DISTRIBUTION.md). One registered URI covers every
-// browser and every user.
+// Redirect URI, constraint 1 — Google requires every redirect URI to be registered
+// in advance, permits no wildcards, and (for a sensitive scope like ours) ties the
+// URI's domain to an Authorized domain you have proven you own in Search Console.
+// That rules out both browsers' built-in redirect hosts: `chromiumapp.org` is
+// Google's and `extensions.allizom.org` is Mozilla's. Hence the bridge page on our
+// own domain for Chromium, and a loopback URI — exempt, since nobody owns
+// 127.0.0.1 — for Firefox.
+//
+// Redirect URI, constraint 2 — Firefox's launchWebAuthFlow *rejects* any
+// `redirect_uri` in the auth URL that isn't under its own redirect URL, failing with
+// "redirect_uri not allowed" before any window opens. So Firefox cannot use the
+// bridge, and Mozilla whitelists the loopback form above precisely because Google
+// will not accept the `<sha1>.extensions.allizom.org` URL it hands out by default
+// (Mozilla bug 1635344). Note the redirect URL is a hash of the *pinned* add-on id
+// from manifest.firefox.json, so it is identical for every user and install —
+// contrary to a persistent myth, it is not a per-install UUID.
 //
 // SETUP (one-time, by the maintainer): create a Google Cloud project, enable the
 // Drive API, configure an OAuth consent screen (External; add testers under
-// Audience → Test users), create an OAuth client of type "Web application", and
-// register the bridge URL below as an Authorized redirect URI. Then paste the client
-// id here. No client secret is involved (implicit flow), so nothing secret ships.
+// Audience → Test users), then create *two* OAuth clients in that same project so
+// one consent screen and one verification covers both:
+//   1. type "Web application", with the bridge URL below as an Authorized redirect
+//      URI  → GOOGLE_CLIENT_ID
+//   2. type "Desktop app", with the loopback URI as an Authorized redirect URI
+//      → GOOGLE_NATIVE_CLIENT_ID
+// The exact loopback URI to register is logged at startup and shown in sync
+// settings; see DISTRIBUTION.md.
 
-// 👇 PASTE YOUR OAUTH CLIENT ID HERE (looks like 1234567890-abc...apps.googleusercontent.com)
-export const GOOGLE_CLIENT_ID = '625860450889-1elphiutt0jjmdv0n92kdqu3ng5pmu3i.apps.googleusercontent.com';
+// The three values below are injected at build time from `oauth.local.json` (or the
+// GOOGLE_OAUTH_* env vars) — see webpack.config.js and oauth.local.example.json. They
+// are deliberately NOT in the repository: a client secret in a public repo gets
+// scraped and revoked, and GitHub's push protection blocks it outright. A build
+// without them compiles fine and simply reports sync as unconfigured.
 
-// The registered redirect URI: a static page that forwards the OAuth response
-// fragment back to this extension's own redirect URL (passed in `state`). Set to ''
-// to go direct instead — only viable on Chrome, and only for redirect URIs you have
-// registered yourself.
-export const REDIRECT_BRIDGE = 'https://rehanqasim-dev.github.io/clipper-oauth-redirect/oauth.html';
+// "Web application" OAuth client id — used by Chromium.
+export const GOOGLE_CLIENT_ID = OAUTH_WEB_CLIENT_ID;
+
+// "Desktop app" OAuth client id — used by Firefox.
+export const GOOGLE_NATIVE_CLIENT_ID = OAUTH_NATIVE_CLIENT_ID;
+
+// Google documents client_secret as *optional* for installed apps, but its token
+// endpoint rejects the exchange without it (`invalid_request: client_secret is
+// missing`), so it has to ship. This is expected for installed-app clients — Google's
+// own docs say the flow "assumes that you cannot keep the client secret
+// confidential". PKCE is what actually secures the exchange: the code_verifier is
+// generated per flow and never leaves the extension, so a copied client id + secret
+// cannot redeem an intercepted authorization code.
+export const GOOGLE_NATIVE_CLIENT_SECRET = OAUTH_NATIVE_CLIENT_SECRET;
+
+// The registered redirect URI for the Chromium flow: a static page that forwards the
+// OAuth response fragment back to this extension's own redirect URL (passed in
+// `state`). Set to '' to go direct to `<id>.chromiumapp.org` instead — only viable if
+// you have registered that URI yourself.
+export const REDIRECT_BRIDGE = 'https://rehanqasim-dev.github.io/scholiast-web/oauth.html';
 
 const SCOPE = 'https://www.googleapis.com/auth/drive.appdata';
 const AUTH_ENDPOINT = 'https://accounts.google.com/o/oauth2/v2/auth';
+const TOKEN_ENDPOINT = 'https://oauth2.googleapis.com/token';
 const DRIVE_FILES = 'https://www.googleapis.com/drive/v3/files';
 const DRIVE_UPLOAD = 'https://www.googleapis.com/upload/drive/v3/files';
 const TOKEN_KEY = 'gdrive_token';
@@ -54,6 +92,8 @@ export type DriveFolder = 'pages' | 'frames' | 'diagrams';
 interface CachedToken {
 	accessToken: string;
 	expiresAt: number; // epoch ms
+	/** Firefox (code + PKCE) only — absent on the Chromium implicit flow. */
+	refreshToken?: string;
 }
 
 export interface DriveFileMeta {
@@ -69,16 +109,40 @@ export function getRedirectUrl(): string {
 }
 
 /**
- * The URI that must be registered in the Google OAuth client. With the bridge in
- * place this is the same string for every user and browser, which is the whole
- * point; without it, each install's own redirect URL has to be registered.
+ * Which flow this browser uses. Chromium's redirect URL is always
+ * `https://<extension-id>.chromiumapp.org/`; everything else here means Firefox.
+ */
+function isChromiumFlow(): boolean {
+	return getRedirectUrl().includes('.chromiumapp.org');
+}
+
+/**
+ * Firefox's loopback redirect URI: `http://127.0.0.1/mozoauth2/<sha1(extension id)>`.
+ * The hash is exactly the leading label of `getRedirectURL()`'s host, so we read it
+ * from there rather than recomputing it. No port — Firefox compares its whitelisted
+ * prefix literally, so adding one would break the match.
+ */
+function loopbackRedirectUri(): string {
+	const host = new URL(getRedirectUrl()).hostname; // <sha1>.extensions.allizom.org
+	return `http://127.0.0.1/mozoauth2/${host.split('.')[0]}`;
+}
+
+/**
+ * The URI that must be registered in the Google OAuth client for *this* browser:
+ * the bridge page for Chromium, the loopback URI for Firefox. Both are the same
+ * string for every user, which is the whole point.
  */
 export function getRegisteredRedirectUri(): string {
+	if (!isChromiumFlow()) return loopbackRedirectUri();
 	return REDIRECT_BRIDGE || getRedirectUrl();
 }
 
+function activeClientId(): string {
+	return isChromiumFlow() ? GOOGLE_CLIENT_ID : GOOGLE_NATIVE_CLIENT_ID;
+}
+
 export function isConfigured(): boolean {
-	return GOOGLE_CLIENT_ID.trim().length > 0;
+	return activeClientId().trim().length > 0;
 }
 
 // --- Auth --------------------------------------------------------------------
@@ -86,6 +150,28 @@ export function isConfigured(): boolean {
 // base64url, so the extension redirect URL survives a round trip through `state`.
 function encodeState(value: string): string {
 	return btoa(value).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
+}
+
+function base64urlBytes(bytes: Uint8Array): string {
+	let s = '';
+	for (const b of bytes) s += String.fromCharCode(b);
+	return btoa(s).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
+}
+
+function randomUrlSafe(byteLength: number): string {
+	return base64urlBytes(crypto.getRandomValues(new Uint8Array(byteLength)));
+}
+
+/** PKCE (RFC 7636) S256 pair: a high-entropy verifier and its SHA-256 challenge. */
+async function pkcePair(): Promise<{ verifier: string; challenge: string }> {
+	const verifier = randomUrlSafe(48); // 64 chars — inside the 43–128 range
+	const digest = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(verifier));
+	return { verifier, challenge: base64urlBytes(new Uint8Array(digest)) };
+}
+
+async function saveToken(token: CachedToken): Promise<CachedToken> {
+	await browser.storage.local.set({ [TOKEN_KEY]: token });
+	return token;
 }
 
 function buildAuthUrl(interactive: boolean): string {
@@ -123,9 +209,78 @@ async function launch(interactive: boolean): Promise<CachedToken> {
 		interactive,
 	});
 	if (!redirect) throw new Error('OAuth flow returned no redirect');
-	const token = parseTokenFromRedirect(redirect);
-	await browser.storage.local.set({ [TOKEN_KEY]: token });
-	return token;
+	return saveToken(parseTokenFromRedirect(redirect));
+}
+
+// --- Firefox: authorization code + PKCE --------------------------------------
+
+function buildNativeAuthUrl(challenge: string, state: string): string {
+	const params = new URLSearchParams({
+		client_id: GOOGLE_NATIVE_CLIENT_ID,
+		response_type: 'code',
+		redirect_uri: loopbackRedirectUri(),
+		scope: SCOPE,
+		code_challenge: challenge,
+		code_challenge_method: 'S256',
+		// A refresh token is the whole point; `consent` guarantees one is issued even
+		// on a re-grant (Google otherwise returns it only on the very first grant).
+		access_type: 'offline',
+		prompt: 'consent',
+		state,
+	});
+	return `${AUTH_ENDPOINT}?${params.toString()}`;
+}
+
+async function tokenRequest(body: Record<string, string>): Promise<CachedToken> {
+	const form: Record<string, string> = { ...body, client_id: GOOGLE_NATIVE_CLIENT_ID };
+	if (GOOGLE_NATIVE_CLIENT_SECRET) form.client_secret = GOOGLE_NATIVE_CLIENT_SECRET;
+	const res = await fetch(TOKEN_ENDPOINT, {
+		method: 'POST',
+		headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+		body: new URLSearchParams(form).toString(),
+	});
+	const data = await res.json().catch(() => ({}));
+	if (!res.ok || !data.access_token) {
+		const detail = data.error_description ? ` (${data.error_description})` : '';
+		throw new Error(`OAuth token request failed: ${data.error || res.status}${detail}`);
+	}
+	return {
+		accessToken: data.access_token,
+		expiresAt: Date.now() + ((data.expires_in || 3600) - 60) * 1000,
+		refreshToken: data.refresh_token,
+	};
+}
+
+/** Full interactive grant: consent window, then exchange the code for tokens. */
+async function launchNative(): Promise<CachedToken> {
+	const { verifier, challenge } = await pkcePair();
+	const state = randomUrlSafe(16);
+	const redirect = await browser.identity.launchWebAuthFlow({
+		url: buildNativeAuthUrl(challenge, state),
+		interactive: true,
+	});
+	if (!redirect) throw new Error('OAuth flow returned no redirect');
+	// The code flow answers in the query string, not the fragment.
+	const params = new URL(redirect).searchParams;
+	const error = params.get('error');
+	if (error) throw new Error(`OAuth error: ${error}`);
+	if (params.get('state') !== state) throw new Error('OAuth state mismatch');
+	const code = params.get('code');
+	if (!code) throw new Error('No authorization code in OAuth response');
+	const token = await tokenRequest({
+		grant_type: 'authorization_code',
+		code,
+		code_verifier: verifier,
+		redirect_uri: loopbackRedirectUri(),
+	});
+	return saveToken(token);
+}
+
+/** Renew without any window — the reason Firefox uses this flow at all. */
+async function refreshNative(refreshToken: string): Promise<CachedToken> {
+	const token = await tokenRequest({ grant_type: 'refresh_token', refresh_token: refreshToken });
+	// A refresh response omits refresh_token, so carry the existing one forward.
+	return saveToken({ ...token, refreshToken: token.refreshToken || refreshToken });
 }
 
 async function getCachedToken(): Promise<CachedToken | null> {
@@ -144,7 +299,24 @@ export async function getAccessToken(interactive: boolean): Promise<string> {
 	const cached = await getCachedToken();
 	if (cached && cached.expiresAt > Date.now()) return cached.accessToken;
 
-	// Try a silent renewal first (works once the user has granted consent).
+	if (!isChromiumFlow()) {
+		// Firefox: refresh over plain HTTP, no window. Firefox's silent
+		// launchWebAuthFlow path only follows server-side redirects, so a
+		// window-based renewal could never work here.
+		if (cached?.refreshToken) {
+			try {
+				return (await refreshNative(cached.refreshToken)).accessToken;
+			} catch (err) {
+				// invalid_grant — revoked, or expired past recovery. Needs a new grant.
+				await browser.storage.local.remove(TOKEN_KEY);
+				if (!interactive) throw err;
+			}
+		}
+		if (!interactive) throw new Error('Not connected to Google Drive');
+		return (await launchNative()).accessToken;
+	}
+
+	// Chromium: no refresh token exists, but prompt=none renews in a hidden tab.
 	try {
 		const token = await launch(false);
 		return token.accessToken;
@@ -158,16 +330,18 @@ export async function getAccessToken(interactive: boolean): Promise<string> {
 
 export async function isConnected(): Promise<boolean> {
 	const cached = await getCachedToken();
-	return !!cached;
+	return !!(cached?.accessToken || cached?.refreshToken);
 }
 
 export async function disconnect(): Promise<void> {
 	const cached = await getCachedToken();
 	await browser.storage.local.remove(TOKEN_KEY);
 	// Best-effort revoke so re-connecting prompts cleanly and Drive access is dropped.
-	if (cached?.accessToken) {
+	// Revoking a refresh token also invalidates the access tokens minted from it.
+	const revokable = cached?.refreshToken || cached?.accessToken;
+	if (revokable) {
 		try {
-			await fetch(`https://oauth2.googleapis.com/revoke?token=${cached.accessToken}`, { method: 'POST' });
+			await fetch(`https://oauth2.googleapis.com/revoke?token=${encodeURIComponent(revokable)}`, { method: 'POST' });
 		} catch {
 			/* offline / already revoked — token is cleared locally regardless */
 		}
@@ -176,6 +350,10 @@ export async function disconnect(): Promise<void> {
 
 /** Force an interactive consent flow (used by the Connect button). */
 export async function connect(): Promise<void> {
+	if (!isChromiumFlow()) {
+		await launchNative();
+		return;
+	}
 	await launch(true);
 }
 
@@ -185,8 +363,12 @@ async function driveFetch(url: string, init: RequestInit, interactive = false): 
 	let token = await getAccessToken(interactive);
 	let res = await fetch(url, { ...init, headers: { ...(init.headers || {}), Authorization: `Bearer ${token}` } });
 	if (res.status === 401) {
-		// Token rejected (revoked / clock skew) — drop it and re-mint once.
-		await browser.storage.local.remove(TOKEN_KEY);
+		// Token rejected (revoked / clock skew) — invalidate it and re-mint once.
+		// Expire the access token rather than dropping the record, so Firefox's
+		// refresh token survives and can renew without a consent window.
+		const cached = await getCachedToken();
+		if (cached?.refreshToken) await browser.storage.local.set({ [TOKEN_KEY]: { ...cached, expiresAt: 0 } });
+		else await browser.storage.local.remove(TOKEN_KEY);
 		token = await getAccessToken(interactive);
 		res = await fetch(url, { ...init, headers: { ...(init.headers || {}), Authorization: `Bearer ${token}` } });
 	}

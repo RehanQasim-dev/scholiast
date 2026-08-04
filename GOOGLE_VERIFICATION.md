@@ -16,21 +16,38 @@ Assets are live and ready:
 | App name | `Scholiast` |
 | User support email | `rehanbhatti0317@gmail.com` |
 | Developer contact email | `rehanbhatti0317@gmail.com` |
-| App logo (120×120 PNG) | `logo-120.png` in the site repo → [direct link](https://rehanqasim-dev.github.io/clipper-oauth-redirect/logo-120.png) |
-| Application home page | `https://rehanqasim-dev.github.io/clipper-oauth-redirect/` |
-| Application privacy policy | `https://rehanqasim-dev.github.io/clipper-oauth-redirect/privacy.html` |
+| App logo (120×120 PNG) | `logo-120.png` in the site repo → [direct link](https://rehanqasim-dev.github.io/scholiast-web/logo-120.png) |
+| Application home page | `https://rehanqasim-dev.github.io/scholiast-web/` |
+| Application privacy policy | `https://rehanqasim-dev.github.io/scholiast-web/privacy.html` |
 | Terms of service | leave blank (optional) |
 | Authorized domain | `rehanqasim-dev.github.io` |
-| Authorized redirect URI | `https://rehanqasim-dev.github.io/clipper-oauth-redirect/oauth.html` |
+| Authorized redirect URI (Chromium, "Web application" client) | `https://rehanqasim-dev.github.io/scholiast-web/oauth.html` |
+| Redirect URI (Firefox, "Desktop app" client) — *not registered anywhere, see step 1* | `http://127.0.0.1/mozoauth2/b1cdafa9ace86cc892098074bbe7c2ed10db49d1` |
 | Scope requested | `https://www.googleapis.com/auth/drive.appdata` |
 
-## Step 1 — register the redirect URI (do this first; sync needs it)
+## Step 1 — register the redirect URIs (do this first; sync needs it)
 
-Cloud Console → **APIs & Services → Credentials** → your OAuth 2.0 Client ID (type
-"Web application") → **Authorized redirect URIs** → **+ ADD URI** → paste the URI
-above → **Save**. Allow a few minutes to propagate. Keep the old
+Two OAuth clients, both in **this same project**, so one consent screen and one
+verification covers both browsers. See `DISTRIBUTION.md` §1 for why the two browsers
+can't share a flow.
+
+**Chromium** — Cloud Console → **APIs & Services → Credentials** → your OAuth 2.0
+Client ID (type "Web application") → **Authorized redirect URIs** → **+ ADD URI** →
+paste the bridge URI above → **Save**. Keep the old
 `https://cgldpjhhpjhpcfbnnbgdkfmimkchihie.chromiumapp.org/` entry until you've
 confirmed the bridge works, then delete it.
+
+**Firefox** — **+ CREATE CREDENTIALS → OAuth client ID → Desktop app**, then put the
+new client id in `nativeClientId` and that client's secret in `nativeClientSecret` in
+your gitignored `oauth.local.json` (see `oauth.local.example.json`; the values are
+injected at build time, never committed). Google calls the secret optional for
+installed apps but the token endpoint refuses the exchange without it.
+
+**Nothing to register for Firefox.** Desktop app clients accept loopback redirects
+implicitly — the console shows no *Authorized redirect URIs* field on them — so the
+loopback URI in the table above is informational only. It also needs no Authorized
+domain and no Search Console ownership: nobody owns `127.0.0.1`, so RFC 8252 §7.3
+exempts it. Allow a few minutes for the Chromium change to propagate.
 
 ## Step 2 — branding
 

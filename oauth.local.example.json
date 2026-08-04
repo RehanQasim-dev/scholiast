@@ -1,0 +1,6 @@
+{
+  "_comment": "Copy to oauth.local.json (gitignored) and fill in. Created in one Google Cloud project so a single consent screen covers both clients: a 'Web application' client whose authorized redirect URI is the bridge page (Chromium), and a 'Desktop app' client whose authorized redirect URI is the loopback address logged at startup (Firefox). See DISTRIBUTION.md. Env vars GOOGLE_OAUTH_WEB_CLIENT_ID / GOOGLE_OAUTH_NATIVE_CLIENT_ID / GOOGLE_OAUTH_NATIVE_CLIENT_SECRET take precedence, for CI.",
+  "webClientId": "000000000000-xxxxxxxxxxxxxxxxxxxxxxxxxxxx.apps.googleusercontent.com",
+  "nativeClientId": "000000000000-yyyyyyyyyyyyyyyyyyyyyyyyyyyy.apps.googleusercontent.com",
+  "nativeClientSecret": "GOCSPX-zzzzzzzzzzzzzzzzzzzzzzzz"
+}

@@ -7,6 +7,31 @@ const package = require('./package.json');
 const webpack = require('webpack');
 const TerserPlugin = require('terser-webpack-plugin');
 
+// Google OAuth client values live outside the repo: `oauth.local.json` (gitignored)
+// or GOOGLE_OAUTH_* environment variables for CI. They are injected below with
+// DefinePlugin. Missing config is not an error — the values become empty strings and
+// sync reports itself as unconfigured.
+function loadOAuthConfig() {
+	let file = {};
+	const path_ = path.resolve(__dirname, 'oauth.local.json');
+	if (fs.existsSync(path_)) {
+		try {
+			file = JSON.parse(fs.readFileSync(path_, 'utf8'));
+		} catch (error) {
+			console.warn('[build] oauth.local.json is not valid JSON — ignoring it.', error.message);
+		}
+	}
+	const config = {
+		webClientId: process.env.GOOGLE_OAUTH_WEB_CLIENT_ID || file.webClientId || '',
+		nativeClientId: process.env.GOOGLE_OAUTH_NATIVE_CLIENT_ID || file.nativeClientId || '',
+		nativeClientSecret: process.env.GOOGLE_OAUTH_NATIVE_CLIENT_SECRET || file.nativeClientSecret || '',
+	};
+	if (!config.webClientId || !config.nativeClientId || !config.nativeClientSecret) {
+		console.warn('[build] No Google OAuth config found — Drive sync will be disabled in this build. See oauth.local.example.json.');
+	}
+	return config;
+}
+
 // Remove .DS_Store files
 function removeDSStore(dir) {
 	const files = fs.readdirSync(dir);
@@ -35,6 +60,7 @@ module.exports = (env, argv) => {
 
 	const outputDir = getOutputDir();
 	const browserName = isFirefox ? 'firefox' : (isSafari ? 'safari' : 'chrome');
+	const oauth = loadOAuthConfig();
 
 	const mainConfig = {
 		mode: argv.mode,
@@ -206,7 +232,10 @@ module.exports = (env, argv) => {
 			},
 			new webpack.DefinePlugin({
 				'process.env.NODE_ENV': JSON.stringify(argv.mode),
-				'DEBUG_MODE': JSON.stringify(!isProduction)
+				'DEBUG_MODE': JSON.stringify(!isProduction),
+				'OAUTH_WEB_CLIENT_ID': JSON.stringify(oauth.webClientId),
+				'OAUTH_NATIVE_CLIENT_ID': JSON.stringify(oauth.nativeClientId),
+				'OAUTH_NATIVE_CLIENT_SECRET': JSON.stringify(oauth.nativeClientSecret)
 			}),
 			...(isProduction ? [
 				new ZipPlugin({

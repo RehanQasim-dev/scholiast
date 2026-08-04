@@ -33,3 +33,6 @@ client/
 h/
 *.log
 excalidraw.log
+
+# Local OAuth client config (never commit: contains a client secret)
+oauth.local.json

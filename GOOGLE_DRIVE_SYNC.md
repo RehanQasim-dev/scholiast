@@ -41,13 +41,26 @@ You only need to do this **once**. It's free.
 > generated private key for unpacked installs — the public `key` in the manifest
 > is enough.
 
-## 4. Paste the Client ID into the extension
+## 4. Give the build your Client ID
 
-Open `src/utils/google-drive.ts` and set:
+The OAuth client values are **not** in the source — they are injected at build time,
+so a client secret never lands in the repository. Copy the template and fill it in:
 
-```ts
-export const GOOGLE_CLIENT_ID = '<your-client-id>.apps.googleusercontent.com';
+```bash
+cp oauth.local.example.json oauth.local.json
 ```
+
+```json
+{
+  "webClientId": "<your-web-client-id>.apps.googleusercontent.com",
+  "nativeClientId": "<your-desktop-client-id>.apps.googleusercontent.com",
+  "nativeClientSecret": "<your-desktop-client-secret>"
+}
+```
+
+`oauth.local.json` is gitignored. CI can pass `GOOGLE_OAUTH_WEB_CLIENT_ID`,
+`GOOGLE_OAUTH_NATIVE_CLIENT_ID` and `GOOGLE_OAUTH_NATIVE_CLIENT_SECRET` instead —
+env vars win over the file. Building without either only disables sync.
 
 Then rebuild:
 
