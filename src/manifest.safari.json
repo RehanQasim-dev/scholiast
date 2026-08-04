@@ -1,8 +1,8 @@
 {
 	"manifest_version": 3,
 	"name": "Scholiast",
-	"homepage_url": "https://rehanqasim-dev.github.io/clipper-oauth-redirect/",
-	"version": "1.6.3",
+	"homepage_url": "https://rehanqasim-dev.github.io/scholiast-web/",
+	"version": "0.1.0",
 	"description": "Save content from the web to Obsidian, in a private and durable format you can always access offline.",
 	"permissions": [
 		"activeTab",

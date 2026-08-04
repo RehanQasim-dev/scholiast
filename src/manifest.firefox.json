@@ -2,8 +2,8 @@
 	"manifest_version": 3,
 	"default_locale": "en",
 	"name": "Scholiast",
-	"homepage_url": "https://rehanqasim-dev.github.io/clipper-oauth-redirect/",
-	"version": "1.6.3",
+	"homepage_url": "https://rehanqasim-dev.github.io/scholiast-web/",
+	"version": "0.1.0",
 	"description": "Annotate live web pages — highlights, threaded comments and freehand drawing — synced to your own Google Drive and Obsidian vault.",
 	"permissions": [
 		"activeTab",
@@ -85,14 +85,14 @@
 	},
 	"browser_specific_settings": {
 		"gecko": {
-			"id": "clipper-annotate@rehanqasim-dev.github.io",
-			"strict_min_version": "113.0",
+			"id": "scholiast@rehanqasim-dev.github.io",
+			"strict_min_version": "140.0",
 			"data_collection_permissions": {
 				"required": ["none"]
 			}
 		},
 		"gecko_android": {
-			"strict_min_version": "113.0",
+			"strict_min_version": "142.0",
 			"data_collection_permissions": {
 				"required": ["none"]
 			}
