@@ -1,11 +1,12 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { createRoot } from 'react-dom/client';
-import { Excalidraw } from '@excalidraw/excalidraw';
+import { Excalidraw, exportToBlob } from '@excalidraw/excalidraw';
 import * as Icons from './excalidraw-icons';
 
 function App() {
 	const lockedViewRef = useRef<{scrollX: number, scrollY: number, zoom: number} | null>(null);
 	const [excalidrawAPI, setExcalidrawAPI] = useState<any>(null);
+	const excalidrawAPIRef = useRef<any>(null);
 	const [frameDataUrl, setFrameDataUrl] = useState<string | null>(null);
 	const [frameSize, setFrameSize] = useState({ w: 0, h: 0 });
 	// Bumped on every INIT_FRAME so the scene-setup effect re-runs even when the
@@ -36,6 +37,54 @@ function App() {
 	// between them so nothing overlaps the drawing.
 	const TOP_BAND = 40;
 	const BOTTOM_BAND = 40;
+
+	const handleApiChange = (api: any) => {
+		setExcalidrawAPI(api);
+		excalidrawAPIRef.current = api;
+	};
+
+	const save = async (action: 'save' | 'comment') => {
+		const api = excalidrawAPIRef.current || excalidrawAPI;
+		if (!api) {
+			console.warn('[vid-excali] save called before API ready');
+			return;
+		}
+		const elements = api.getSceneElements();
+		const state = api.getAppState();
+		const files = api.getFiles();
+		
+		try {
+			const blob = await exportToBlob({
+				elements,
+				mimeType: 'image/jpeg',
+				appState: { ...state, exportBackground: true },
+				files
+			});
+			
+			const reader = new FileReader();
+			reader.onloadend = () => {
+				const bakedDataUrl = reader.result as string;
+				window.parent.postMessage({ 
+					type: 'SAVE_ANNOTATION', 
+					action, 
+					sceneData: { 
+						elements, 
+						appState: { viewBackgroundColor: state.viewBackgroundColor }, 
+						files,
+						bakedDataUrl
+					} 
+				}, '*');
+			};
+			reader.readAsDataURL(blob as Blob);
+		} catch (e) {
+			console.error('[vid-excali] Failed to export Excalidraw scene to blob:', e);
+			window.parent.postMessage({ type: 'SAVE_ANNOTATION', action, sceneData: { elements, appState: { viewBackgroundColor: state.viewBackgroundColor }, files } }, '*');
+		}
+	};
+
+	const discard = () => {
+		window.parent.postMessage({ type: 'DISCARD_ANNOTATION' }, '*');
+	};
 
 	useEffect(() => {
 		const handleMessage = (e: MessageEvent) => {
@@ -93,7 +142,7 @@ function App() {
 			link: null, locked: true, fileId: fileId, scale: [1, 1]
 		}, {
 			type: 'rectangle', version: 1, versionNonce: Date.now(), isDeleted: false,
-			id: 'bg-dim', backgroundColor: '#000000', fillStyle: 'solid', strokeWidth: 0, strokeStyle: 'solid',
+			id: 'bg-dim', backgroundColor: '#010101', fillStyle: 'solid', strokeWidth: 0, strokeStyle: 'solid',
 			strokeColor: 'transparent', roughness: 0, opacity: dimOpacity, angle: 0, x: 0, y: 0,
 			width: frameSize.w, height: frameSize.h, seed: 1, groupIds: [],
 			frameId: null, roundness: null, boundElements: [], updated: Date.now(),
@@ -133,8 +182,9 @@ function App() {
 	}, [excalidrawAPI, frameDataUrl, initSeq]);
 
 	const cycleProp = (key: string, optionsList: any[]) => {
-		if (!excalidrawAPI) return;
-		const state = excalidrawAPI.getAppState();
+		const api = excalidrawAPIRef.current || excalidrawAPI;
+		if (!api) return;
+		const state = api.getAppState();
 		const current = activePopup === key ? tempSelectedValue : state[key];
 		let currentIndex = optionsList.findIndex(o => {
 			if (key === 'currentItemRoundness') {
@@ -152,7 +202,12 @@ function App() {
 
 	useEffect(() => {
 		const handleKeyDown = (e: KeyboardEvent) => {
-			if (document.activeElement?.tagName === 'INPUT' || document.activeElement?.tagName === 'TEXTAREA' || document.activeElement?.getAttribute('contenteditable') === 'true') {
+			const activeTag = document.activeElement?.tagName;
+			const isTextEditing = activeTag === 'INPUT' || activeTag === 'TEXTAREA' || 
+			                      document.activeElement?.getAttribute('contenteditable') === 'true' ||
+			                      document.activeElement?.classList?.contains('excalidraw-text-editor');
+
+			if (isTextEditing) {
 				if (e.key === 'Escape') return;
 				return;
 			}
@@ -195,55 +250,14 @@ function App() {
 		return () => window.removeEventListener('keydown', handleKeyDown, true);
 	}, [excalidrawAPI, activePopup, tempSelectedValue]);
 
-	const save = async (action: 'save' | 'comment') => {
-		if (!excalidrawAPI) return;
-		const elements = excalidrawAPI.getSceneElements();
-		const state = excalidrawAPI.getAppState();
-		const files = excalidrawAPI.getFiles();
-		
-		try {
-			const { exportToBlob } = await import('@excalidraw/excalidraw');
-			const blob = await exportToBlob({
-				elements,
-				mimeType: 'image/jpeg',
-				appState: { ...state, exportBackground: true },
-				files
-			});
-			
-			const reader = new FileReader();
-			reader.onloadend = () => {
-				const bakedDataUrl = reader.result;
-				window.parent.postMessage({ 
-					type: 'SAVE_ANNOTATION', 
-					action, 
-					sceneData: { 
-						elements, 
-						appState: { viewBackgroundColor: state.viewBackgroundColor }, 
-						files,
-						bakedDataUrl
-					} 
-				}, '*');
-			};
-			reader.readAsDataURL(blob as Blob);
-		} catch (e) {
-			console.error("Failed to export Excalidraw scene to blob:", e);
-			window.parent.postMessage({ type: 'SAVE_ANNOTATION', action, sceneData: { elements, appState: { viewBackgroundColor: state.viewBackgroundColor }, files } }, '*');
-		}
-	};
-
-	const discard = () => {
-		window.parent.postMessage({ type: 'DISCARD_ANNOTATION' }, '*');
-	};
-
-
-
 	useEffect(() => {
-		if (!excalidrawAPI) return;
-		const elements = excalidrawAPI.getSceneElements();
+		const api = excalidrawAPIRef.current || excalidrawAPI;
+		if (!api) return;
+		const elements = api.getSceneElements();
 		const dimEl = elements.find((el: any) => el.id === 'bg-dim');
 		if (dimEl && dimEl.opacity !== dimOpacity) {
 			const updated = elements.map((el: any) => el.id === 'bg-dim' ? { ...el, opacity: dimOpacity, version: (el.version || 1) + 1, versionNonce: Date.now() } : el);
-			excalidrawAPI.updateScene({ elements: updated });
+			api.updateScene({ elements: updated });
 		}
 	}, [dimOpacity, excalidrawAPI]);
 
@@ -476,7 +490,7 @@ function App() {
 		<>
 			<div style={{ width: '100%', height: '100%', position: 'absolute', top: 0, left: 0 }}>
 				<Excalidraw 
-					excalidrawAPI={(api) => setExcalidrawAPI(api)} 
+					excalidrawAPI={handleApiChange} 
 					onChange={handleExcalidrawChange}
 					zenModeEnabled={false}
 					viewModeEnabled={false}
@@ -493,9 +507,15 @@ function App() {
 			
 			{frameDataUrl && <div className="custom-ui">
 				<div className="top-right-bar">
-					<button className="action-btn secondary" onClick={discard}>Esc Cancel</button>
-					<button className="action-btn secondary" onClick={() => save('comment')}>C Comment</button>
-					<button className="action-btn" onClick={() => save('save')}>Enter Save</button>
+					<button className="action-btn action-btn-cancel" onClick={discard} title="Discard annotation (Esc)">
+						<kbd className="btn-kbd">Esc</kbd> Cancel
+					</button>
+					<button className="action-btn action-btn-comment" onClick={() => save('comment')} title="Save & start comment thread (C)">
+						<kbd className="btn-kbd">C</kbd> Comment
+					</button>
+					<button className="action-btn action-btn-save" onClick={() => save('save')} title="Save annotation (Enter)">
+						<kbd className="btn-kbd btn-kbd-primary btn-kbd-lg">↵</kbd> Save
+					</button>
 				</div>
 				
 				{(isShape || isLine || isArrow || isFreedraw || isText) && (
@@ -567,10 +587,10 @@ function App() {
 					</div>
 				)}
 
-				<div style={{ pointerEvents: 'auto', position: 'absolute', bottom: 12, right: 12, display: 'flex', alignItems: 'center', gap: '8px', background: 'var(--ob-vid-surface)', padding: '6px 12px', borderRadius: '4px', border: '1px solid var(--ob-vid-border)', color: 'var(--ob-vid-text)' }}>
-					<label style={{ fontSize: '12px', fontWeight: 600 }}>Dim</label>
-					<input type="range" min="0" max="50" value={dimOpacity} onChange={(e) => setDimOpacity(parseInt(e.target.value))} style={{ width: '80px', accentColor: 'var(--ob-vid-accent)' }} />
-					<span style={{ fontSize: '12px', minWidth: '3ch', textAlign: 'right' }}>{dimOpacity}%</span>
+				<div style={{ pointerEvents: 'auto', position: 'absolute', bottom: 4, right: 10, display: 'flex', alignItems: 'center', gap: '8px', background: 'rgba(23, 27, 38, 0.92)', backdropFilter: 'blur(12px)', WebkitBackdropFilter: 'blur(12px)', padding: '3px 10px', borderRadius: '8px', border: '1px solid rgba(255, 255, 255, 0.14)', color: '#e7eaf1', boxShadow: '0 4px 14px rgba(0, 0, 0, 0.4)' }}>
+					<label style={{ fontSize: '12px', fontWeight: 600, color: '#e7eaf1' }}>Dim</label>
+					<input type="range" min="0" max="50" value={dimOpacity} onChange={(e) => setDimOpacity(parseInt(e.target.value))} style={{ width: '80px', accentColor: '#8b7cf6', cursor: 'pointer' }} />
+					<span style={{ fontSize: '12px', fontWeight: 600, minWidth: '3ch', textAlign: 'right', color: '#a78bfa' }}>{dimOpacity}%</span>
 				</div>
 			</div>}
 		</>
