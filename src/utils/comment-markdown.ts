@@ -1,3 +1,4 @@
+import katex from 'katex';
 import { escapeHtml } from './string-utils';
 
 // The markdown subset a comment body can hold, in one place, so every surface that
@@ -34,6 +35,66 @@ export const CHECK_CLASS = 'ob-md-check';
 const TAG_RE = /(^|\s)(#[A-Za-z0-9_-]+(?:\/[A-Za-z0-9_-]+)*)/g;
 const BULLET_RE = /^\s*[-*]\s+(?!\[[ xX]\]\s)(.*)$/;
 const TASK_RE = /^\s*[-*]\s+\[([ xX])\]\s*(.*)$/;
+
+// --- LaTeX --------------------------------------------------------------------
+// `$inline$` and `$$block$$`, the same delimiters Obsidian uses — the stored text
+// stays plain markdown, so a comment with math renders in the note too.
+//
+// Math is pulled out of the text BEFORE escaping and the inline-markdown passes and
+// put back after: TeX is full of characters those passes would otherwise claim
+// (`*`, `_`, `\`, `<`). The placeholder uses private-use codepoints, which no pass
+// touches and which can't appear in real comment text.
+const MATH_MARK_OPEN = '\uE000';
+const MATH_MARK_CLOSE = '\uE001';
+const MATH_BLOCK_RE = /\$\$([\s\S]+?)\$\$/g;
+// Opening `$` not preceded by a backslash and not followed by whitespace; content
+// on one line, not ending in whitespace. That last rule is what keeps prose about
+// money ("$5 or $6 each") from being read as math.
+const MATH_INLINE_RE = /(?<!\\)\$(?!\s)((?:[^\n$\\]|\\.)+?)(?<!\s)\$/g;
+
+// KaTeX in MathML mode: the browser lays the formula out itself, so there are no
+// font files to ship and no KaTeX stylesheet for a host page's CSS to fight.
+function renderMath(tex: string, displayMode: boolean): string {
+	try {
+		const html = katex.renderToString(tex, {
+			output: 'mathml',
+			displayMode,
+			throwOnError: false,
+			strict: 'ignore',
+		});
+		// KaTeX tucks the TeX source into <annotation>. Nothing reads it, and it is not
+		// on DOMPurify's MathML allowlist — the dashboard would drop the tag but keep
+		// its text, printing the raw source next to the rendered formula.
+		return html.replace(/<annotation\b[^>]*>[\s\S]*?<\/annotation>/g, '');
+	} catch {
+		// Unparseable: show the source rather than dropping what was written.
+		const fence = displayMode ? '$$' : '$';
+		return escapeHtml(fence + tex + fence);
+	}
+}
+
+function parkMath(text: string): { text: string; rendered: string[] } {
+	const rendered: string[] = [];
+	const park = (tex: string, displayMode: boolean) => {
+		rendered.push(renderMath(tex.trim(), displayMode));
+		return `${MATH_MARK_OPEN}${rendered.length - 1}${MATH_MARK_CLOSE}`;
+	};
+	// Blocks first, so `$$…$$` isn't mistaken for two empty inline spans.
+	return {
+		text: text
+			.replace(MATH_BLOCK_RE, (_m, tex: string) => park(tex, true))
+			.replace(MATH_INLINE_RE, (_m, tex: string) => park(tex, false)),
+		rendered,
+	};
+}
+
+function unparkMath(html: string, rendered: string[]): string {
+	if (rendered.length === 0) return html;
+	return html.replace(
+		new RegExp(`${MATH_MARK_OPEN}(\\d+)${MATH_MARK_CLOSE}`, 'g'),
+		(_m, i: string) => rendered[Number(i)] ?? '',
+	);
+}
 
 /**
  * Inline markdown → HTML. Input must already be HTML-escaped; the only live HTML
@@ -110,7 +171,8 @@ function itemHtml(line: Line, opts: CommentRenderOptions): string {
  * `<br>`-joined lines.
  */
 export function commentTextToDisplayHtml(text: string, opts: CommentRenderOptions = {}): string {
-	const lines = parseLines(text);
+	const math = parkMath(text);
+	const lines = parseLines(math.text);
 	let html = '';
 	let listKind: 'bullet' | 'task' | null = null;
 	let paragraph: string[] = [];
@@ -143,13 +205,17 @@ export function commentTextToDisplayHtml(text: string, opts: CommentRenderOption
 	}
 	flushParagraph();
 	closeList();
-	return html;
+	return unparkMath(html, math.rendered);
 }
 
 /**
  * HTML for a contenteditable editor: same formatting as the display shape, but as
  * real inline/list elements the browser's own editing commands operate on, and with
  * plain lines joined by `<br>` rather than wrapped in block divs.
+ *
+ * `tagClass` pills are emitted here too, so a comment looks the same being written
+ * as it does once saved. They need no special handling on the way back out — a
+ * `<span>` serializes to its text content, which is exactly `#tag`.
  */
 export function commentTextToEditableHtml(text: string, opts: CommentRenderOptions = {}): string {
 	const lines = parseLines(text);
@@ -165,7 +231,7 @@ export function commentTextToEditableHtml(text: string, opts: CommentRenderOptio
 		if (line.kind === 'text') {
 			closeList();
 			if (needsBreak) html += '<br>';
-			html += renderInlineCommentMarkdown(escapeHtml(line.text), { ...opts, tagClass: undefined });
+			html += renderInlineCommentMarkdown(escapeHtml(line.text), opts);
 			needsBreak = true;
 			continue;
 		}
@@ -174,7 +240,7 @@ export function commentTextToEditableHtml(text: string, opts: CommentRenderOptio
 			html += listOpenTag(line.kind, opts);
 			listKind = line.kind;
 		}
-		html += itemHtml(line, { ...opts, tagClass: undefined });
+		html += itemHtml(line, opts);
 	}
 	closeList();
 	return html;
@@ -469,6 +535,140 @@ export function toggleTaskInMarkdown(text: string, nth: number): string {
 	let seen = 0;
 	return text.replace(/^([ \t]*[-*][ \t]+\[)([ xX])(\])/gm, (match, prefix, state, suffix) =>
 		seen++ === nth ? `${prefix}${state.toLowerCase() === 'x' ? ' ' : 'x'}${suffix}` : match);
+}
+
+// --- Live `#tag` pills in an editor -------------------------------------------
+// The editable shape renders pills for tags that were already in the text; these
+// keep them in step with what's being typed, so a tag becomes a pill as soon as
+// it's finished rather than only after the comment is saved.
+//
+// Only text nodes are ever restructured — no character is added or removed — so
+// the caret can be saved and restored as a plain character offset into the
+// editor's flattened text.
+
+const TAG_TOKEN_ONLY = /#[A-Za-z0-9_-]+(?:\/[A-Za-z0-9_-]+)*/g;
+
+interface FlatRun { node: Text; start: number }
+
+function flattenTextRuns(root: HTMLElement): { runs: FlatRun[]; text: string } {
+	const runs: FlatRun[] = [];
+	let text = '';
+	const walker = document.createTreeWalker(root, NodeFilter.SHOW_TEXT);
+	for (let n = walker.nextNode(); n; n = walker.nextNode()) {
+		runs.push({ node: n as Text, start: text.length });
+		text += (n as Text).data;
+	}
+	return { runs, text };
+}
+
+function flatOffsetBefore(root: HTMLElement, node: Node): number {
+	const range = document.createRange();
+	range.selectNodeContents(root);
+	range.setEndBefore(node);
+	return range.toString().length;
+}
+
+function caretFlatOffset(root: HTMLElement): number | null {
+	const selection = window.getSelection();
+	if (!selection || selection.rangeCount === 0 || !selection.isCollapsed) return null;
+	const range = selection.getRangeAt(0);
+	if (!root.contains(range.startContainer)) return null;
+	const pre = document.createRange();
+	pre.selectNodeContents(root);
+	try { pre.setEnd(range.startContainer, range.startOffset); } catch { return null; }
+	return pre.toString().length;
+}
+
+function setCaretFlatOffset(root: HTMLElement, offset: number): void {
+	const selection = window.getSelection();
+	if (!selection) return;
+	const range = document.createRange();
+	const { runs } = flattenTextRuns(root);
+	const hit = runs.find(run => offset <= run.start + run.node.length);
+	if (hit) range.setStart(hit.node, Math.max(0, offset - hit.start));
+	else { range.selectNodeContents(root); range.collapse(false); }
+	range.collapse(true);
+	selection.removeAllRanges();
+	selection.addRange(range);
+}
+
+// Every `#tag` in `text` that should be a pill. A tag must start the text or follow
+// whitespace (same rule as TAG_RE), and the one the caret is inside is left alone:
+// it's still being typed, and pilling it mid-word would trap the following keystroke
+// (and any trailing space) inside the pill.
+function desiredTagRanges(text: string, caret: number | null): { s: number; e: number }[] {
+	const out: { s: number; e: number }[] = [];
+	TAG_TOKEN_ONLY.lastIndex = 0;
+	for (let m = TAG_TOKEN_ONLY.exec(text); m; m = TAG_TOKEN_ONLY.exec(text)) {
+		const s = m.index;
+		const e = s + m[0].length;
+		if (s > 0 && !/\s/.test(text[s - 1])) continue;
+		if (caret !== null && caret >= s && caret <= e) continue;
+		out.push({ s, e });
+	}
+	return out;
+}
+
+/**
+ * Re-wrap `#tag` tokens in a contenteditable as `tagClass` pills (and un-wrap pills
+ * that are no longer tags). Safe to call on every keystroke: it returns without
+ * touching the DOM when the pills already match the text.
+ */
+export function refreshTagPills(editor: HTMLElement, tagClass: string): void {
+	// Some callers can be handed a plain <textarea> (the fallback editor), which has
+	// no markup to pill and whose value must not be restructured.
+	if (editor.tagName === 'TEXTAREA' || editor.tagName === 'INPUT') return;
+
+	const flat = flattenTextRuns(editor);
+	const caret = caretFlatOffset(editor);
+	const desired = desiredTagRanges(flat.text, caret);
+
+	const pills = Array.from(editor.querySelectorAll<HTMLElement>(`span.${tagClass}`));
+	const actual = pills.map(pill => {
+		const s = flatOffsetBefore(editor, pill);
+		return { s, e: s + (pill.textContent || '').length };
+	}).sort((a, b) => a.s - b.s);
+
+	const same = actual.length === desired.length
+		&& actual.every((a, i) => a.s === desired[i].s && a.e === desired[i].e);
+	if (same) return;
+
+	// Flatten every pill back to text first, then rebuild from the scan. Rebuilding
+	// wholesale (rather than patching) keeps this correct for any edit — including
+	// one that splits or merges an existing tag.
+	for (const pill of pills) {
+		const parent = pill.parentNode;
+		pill.replaceWith(document.createTextNode(pill.textContent || ''));
+		parent?.normalize();
+	}
+
+	const rebuilt = flattenTextRuns(editor);
+	for (const run of rebuilt.runs) {
+		const from = run.start;
+		const to = from + run.node.length;
+		// Tokens that fit entirely inside this text node. One straddling an element
+		// boundary (`#ta<strong>g</strong>`) is left as plain text.
+		const local = desired
+			.filter(r => r.s >= from && r.e <= to)
+			.map(r => ({ s: r.s - from, e: r.e - from }));
+		if (local.length === 0) continue;
+
+		const data = run.node.data;
+		const pieces = document.createDocumentFragment();
+		let at = 0;
+		for (const { s, e } of local) {
+			if (s > at) pieces.appendChild(document.createTextNode(data.slice(at, s)));
+			const span = document.createElement('span');
+			span.className = tagClass;
+			span.textContent = data.slice(s, e);
+			pieces.appendChild(span);
+			at = e;
+		}
+		if (at < data.length) pieces.appendChild(document.createTextNode(data.slice(at)));
+		run.node.replaceWith(pieces);
+	}
+
+	if (caret !== null) setCaretFlatOffset(editor, caret);
 }
 
 /** Which formatting commands are active for the current selection. */

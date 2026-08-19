@@ -1,0 +1,286 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no">
+<title>Scholiast player</title>
+<style>
+  html, body {
+    margin: 0; padding: 0;
+    width: 100%; height: 100%;
+    background: #000;
+    overflow: hidden;
+  }
+  #player {
+    position: absolute; inset: 0;
+    width: 100%; height: 100%;
+  }
+  #loading {
+    position: absolute; inset: 0;
+    display: flex; align-items: center; justify-content: center;
+    color: #9AA0A6; font-family: sans-serif; font-size: 14px;
+    pointer-events: none;
+  }
+  #loading.hidden { display: none; }
+</style>
+</head>
+<body>
+<div id="player"></div>
+<div id="loading">Loading player…</div>
+
+<!-- YouTube IFrame Player API; onYouTubeIframeAPIReady is called by the API itself. -->
+<script src="https://www.youtube.com/iframe_api"></script>
+
+<script>
+"use strict";
+
+// ---------------------------------------------------------------------------
+// Scholiast player page (Task 05).
+//
+// Bridge contract with Kotlin (object exposed as `ScholiastBridge`):
+//   JS → Kotlin:
+//     ScholiastBridge.onPlayerReady()
+//     ScholiastBridge.onStateChange(String(state))            // YT codes -1..5
+//     ScholiastBridge.onError(String(code))                   // 2, 5, 100, 101, 150
+//     ScholiastBridge.onTimeUpdate(String(seconds))           // 250 ms while playing
+//     ScholiastBridge.onDuration(String(seconds))
+//     ScholiastBridge.onTitle(String(title))                  // player.getVideoData().title
+//     ScholiastBridge.onCaptionsAvailable("true"|"false")     // best-effort (getOption tracklist)
+//     ScholiastBridge.onCaptureResult(JSON.stringify({ dataUrl, w, h, error }))
+//   Kotlin → JS (called by the native side):
+//     commandLoadVideo(id) / commandSeekTo(s) / commandPlay() / commandPause()
+//     commandSetRate(r) / commandSetVolume(v) / commandCaptureFrame()
+//
+// Every @JavascriptInterface method takes a single String, so JS must stringify
+// everything (multi-arg JS→Java calls get comma-joined, which is fragile).
+// ---------------------------------------------------------------------------
+
+var player = null;
+var ready = false;
+var apiReady = false;
+var pendingVideoId = null;
+var timeTimer = null;
+var lastRate = 1;
+var lastVolume = 100;
+
+function origin() {
+  // The page ships as a file:// asset; YouTube rejects a null origin, so the
+  // accepted fix is 'file://'. When hosted on a real origin (e.g. the future
+  // WebViewAssetLoader https host) use the page's own origin.
+  if (window.location.protocol === 'file:') return 'file://';
+  return window.location.origin;
+}
+
+// ------------------------------ Kotlin → JS --------------------------------
+
+function commandLoadVideo(id) {
+  pendingVideoId = id;
+  if (ready && player) {
+    player.loadVideoById(id);
+    // A fresh video resets playback rate/volume — re-apply our remembered ones.
+    setTimeout(function () {
+      if (ready && player) {
+        try { player.setPlaybackRate(lastRate); } catch (e) {}
+        try { player.setVolume(lastVolume); } catch (e) {}
+        reportCaptions();
+      }
+    }, 1500);
+  }
+}
+
+function commandSeekTo(s) { if (ready && player) { try { player.seekTo(s, true); } catch (e) {} } }
+function commandPlay()    { if (ready && player) { try { player.playVideo(); } catch (e) {} } }
+function commandPause()   { if (ready && player) { try { player.pauseVideo(); } catch (e) {} } }
+
+function commandSetRate(r) {
+  lastRate = r;
+  if (ready && player) { try { player.setPlaybackRate(r); } catch (e) {} }
+}
+
+function commandSetVolume(v) {
+  lastVolume = v;
+  if (ready && player) { try { player.setVolume(v); } catch (e) {} }
+}
+
+function commandCaptureFrame() { captureFrame(); }
+
+// ------------------------------- IFrame API ---------------------------------
+
+function onYouTubeIframeAPIReady() {
+  apiReady = true;
+  document.getElementById('loading').classList.add('hidden');
+  player = new YT.Player('player', {
+    width: '100%',
+    height: '100%',
+    videoId: pendingVideoId || '',
+    playerVars: {
+      origin: origin(),
+      rel: 0,                 // don't show related videos
+      playsinline: 1,         // REQUIRED on Android WebView: no forced fullscreen
+      controls: 0,            // all chrome lives in Compose
+      fs: 0,                  // no YouTube fullscreen button
+      modestbranding: 1,
+      iv_load_policy: 3,
+      disablekb: 1
+    },
+    events: {
+      onReady: onReady,
+      onStateChange: onStateChange,
+      onError: onError
+    }
+  });
+}
+
+function onReady() {
+  ready = true;
+  if (pendingVideoId) {
+    try { player.loadVideoById(pendingVideoId); } catch (e) {}
+  }
+  try { player.setPlaybackRate(lastRate); } catch (e) {}
+  try { player.setVolume(lastVolume); } catch (e) {}
+  ScholiastBridge.onPlayerReady();
+  reportMetadata();
+  // Caption tracklist populates late; poll a few times after ready.
+  setTimeout(reportCaptions, 1000);
+  setTimeout(reportCaptions, 3000);
+  setTimeout(reportCaptions, 6000);
+}
+
+function onStateChange(e) {
+  ScholiastBridge.onStateChange(String(e.data));
+  if (e.data === YT.PlayerState.PLAYING) {
+    reportMetadata();
+    reportCaptions();
+    startTimeTimer();
+  } else if (e.data === YT.PlayerState.PAUSED) {
+    stopTimeTimer();
+  } else if (e.data === YT.PlayerState.ENDED) {
+    stopTimeTimer();
+    try { ScholiastBridge.onTimeUpdate(String(player.getDuration() || 0)); } catch (err) {}
+  }
+}
+
+function onError(e) {
+  stopTimeTimer();
+  ScholiastBridge.onError(String(e.data));
+}
+
+function reportMetadata() {
+  try {
+    var data = player.getVideoData();
+    if (data && data.title) ScholiastBridge.onTitle(String(data.title));
+  } catch (e) {}
+  try {
+    var d = player.getDuration();
+    if (d > 0) ScholiastBridge.onDuration(String(d));
+  } catch (e) {}
+}
+
+// Best-effort caption detection (not part of the public IFrame API surface).
+function reportCaptions() {
+  try {
+    var tracks = player.getOption('captions', 'tracklist') || [];
+    var has = Array.isArray(tracks) && tracks.length > 0;
+    ScholiastBridge.onCaptionsAvailable(has ? 'true' : 'false');
+  } catch (e) {
+    ScholiastBridge.onCaptionsAvailable('false');
+  }
+}
+
+function startTimeTimer() {
+  if (timeTimer) return;
+  timeTimer = setInterval(function () {
+    if (!ready || !player) return;
+    try { ScholiastBridge.onTimeUpdate(String(player.getCurrentTime())); } catch (e) {}
+  }, 250);
+}
+
+function stopTimeTimer() {
+  if (timeTimer) { clearInterval(timeTimer); timeTimer = null; }
+}
+
+// -------------------------------- Frame capture ------------------------------
+//
+// The <video> element lives inside the cross-origin YouTube iframe. The native
+// host enables WebView "universal access from file URLs", so contentWindow is
+// readable and the canvas stays un-tainted. Errors are reported through
+// onCaptureResult with a non-empty `error`:
+//   'capture-unavailable'  — player/video not ready (called too early)
+//   'black'                — rendered frame is >98% black (DRM/embed-blocked)
+//   'tainted'              — canvas SecurityError (drawImage/toDataURL threw)
+
+function captureFrame() {
+  if (!ready || !player) {
+    failCapture('capture-unavailable');
+    return;
+  }
+  var iframe = null;
+  try { iframe = player.getIframe(); } catch (e) {}
+  if (!iframe) { failCapture('capture-unavailable'); return; }
+
+  var video = null;
+  try {
+    var doc = iframe.contentDocument || iframe.contentWindow.document;
+    video = doc.querySelector('video');
+  } catch (e) {
+    failCapture('capture-unavailable');
+    return;
+  }
+  if (!video || !video.videoWidth || !video.videoHeight) {
+    failCapture('capture-unavailable');
+    return;
+  }
+
+  try { player.pauseVideo(); } catch (e) {}
+
+  // Let the paused frame settle before drawing it.
+  setTimeout(function () {
+    var w = video.videoWidth;
+    var h = video.videoHeight;
+    var cw = Math.min(w, 1280);                 // downscale to ≤1280px (plan §10)
+    var ch = Math.max(1, Math.round(cw * h / (w || 1)));
+    var canvas = document.createElement('canvas');
+    canvas.width = cw;
+    canvas.height = ch;
+    var ctx = canvas.getContext('2d');
+    if (!ctx) { failCapture('canvas-unavailable'); return; }
+    try {
+      ctx.drawImage(video, 0, 0, cw, ch);
+      if (isBlackFrame(ctx, cw, ch)) {
+        failCapture('black');
+        return;
+      }
+      var dataUrl = canvas.toDataURL('image/jpeg', 0.8);
+      ScholiastBridge.onCaptureResult(JSON.stringify({
+        dataUrl: dataUrl, w: cw, h: ch, error: ''
+      }));
+    } catch (e) {
+      failCapture('tainted');
+    }
+  }, 300);
+}
+
+function failCapture(reason) {
+  ScholiastBridge.onCaptureResult(JSON.stringify({
+    dataUrl: '', w: 0, h: 0, error: reason
+  }));
+}
+
+function isBlackFrame(ctx, w, h) {
+  if (w <= 0 || h <= 0) return true;
+  var step = 8;
+  var data = ctx.getImageData(0, 0, w, h);
+  var px = data.data;
+  var n = 0, black = 0;
+  for (var y = 0; y < h; y += step) {
+    for (var x = 0; x < w; x += step) {
+      var i = (y * w + x) * 4;
+      if (px[i] < 16 && px[i + 1] < 16 && px[i + 2] < 16) black++;
+      n++;
+    }
+  }
+  return n > 0 && (black / n) > 0.98;
+}
+</script>
+</body>
+</html>

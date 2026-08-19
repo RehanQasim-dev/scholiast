@@ -127,6 +127,51 @@ let hasHighlights = false;
 let isContextMenuCreating = false;
 let popupPorts: { [tabId: number]: browser.Runtime.Port } = {};
 
+// Fire-and-forget message to every tab. Tabs with no content script reject; that's
+// expected, so failures are swallowed individually rather than aborting the sweep.
+function broadcastToTabs(message: Record<string, unknown>): void {
+	void browser.tabs.query({}).then((tabs) => {
+		for (const tab of tabs) {
+			if (tab.id === undefined) continue;
+			void browser.tabs.sendMessage(tab.id, message).catch(() => { /* no listener */ });
+		}
+	});
+}
+
+// Hand a page image to the Excalidraw editor. Written to storage rather than passed
+// in the URL (a data URL is far too long) and read-then-deleted by the editor. Skipped
+// when a scene for this id already exists — that edit continues from where it was, and
+// re-seeding would drop the drawing on top of the original image again.
+const IMAGE_SEED_PREFIX = 'diagramSeed:';
+async function seedImageEditor(
+	diagramId: string,
+	src: string,
+	width?: number,
+	height?: number,
+): Promise<void> {
+	if (!src) return;
+	const existing = (await browser.storage.local.get('diagrams')) as { diagrams?: Record<string, unknown> };
+	if (existing.diagrams?.[diagramId]) return;
+
+	const response = await fetch(src);
+	if (!response.ok) throw new Error(`Could not load the image (${response.status})`);
+	const blob = await response.blob();
+	const dataUrl = await new Promise<string>((resolve, reject) => {
+		const reader = new FileReader();
+		reader.onloadend = () => resolve(reader.result as string);
+		reader.onerror = () => reject(reader.error);
+		reader.readAsDataURL(blob);
+	});
+	await browser.storage.local.set({
+		[`${IMAGE_SEED_PREFIX}${diagramId}`]: {
+			dataUrl,
+			mimeType: blob.type || 'image/png',
+			width: width || 0,
+			height: height || 0,
+		},
+	});
+}
+
 async function injectContentScript(tabId: number): Promise<void> {
 	if (browser.scripting) {
 		debugLog('Clipper', 'Using scripting API');
@@ -716,6 +761,47 @@ browser.runtime.onMessage.addListener((request: unknown, sender: browser.Runtime
 				}).then(() => sendResponse({success: true})).catch(e => sendResponse({success: false, error: e.message}));
 				return true;
 			}
+		}
+
+		// Open the Excalidraw editor on a highlighted page image. The picture's bytes
+		// are fetched here, not in the content script or the editor page: a
+		// cross-origin image is unreadable from the page, and only the background has
+		// the host permissions to fetch it. It's handed over through storage under a
+		// short-lived seed key, which the editor deletes once it has loaded it.
+		if (typedRequest.action === "openImageEditor") {
+			const req = typedRequest as any;
+			const { id: diagramId, highlightId, src, pageUrl } = req;
+			if (!diagramId || !highlightId) return;
+			seedImageEditor(diagramId, src, req.width, req.height)
+				.then(() => browser.windows.create({
+					url: browser.runtime.getURL(
+						`diagram.html?id=${diagramId}&highlight=${encodeURIComponent(highlightId)}`
+						+ `&page=${encodeURIComponent(pageUrl || '')}`,
+					),
+					type: "popup",
+					width: 1200,
+					height: 800,
+				}))
+				.then(() => sendResponse({ success: true }))
+				.catch((e: unknown) => sendResponse({
+					success: false, error: e instanceof Error ? e.message : String(e),
+				}));
+			return true;
+		}
+
+		// The editor saved. Relayed to every tab (with the rendered PNG in hand) so the
+		// page that owns the diagram/image updates immediately, without having to read
+		// the blob store back — see comment-overlays' applyDiagramUpdate.
+		if (typedRequest.action === "diagramSaved") {
+			const req = typedRequest as any;
+			broadcastToTabs({
+				action: 'diagramSaved',
+				id: req.id,
+				dataUrl: req.dataUrl,
+				highlightId: req.highlightId,
+			});
+			sendResponse({ success: true });
+			return true;
 		}
 
 		if (typedRequest.action === "toggleReaderMode" && typedRequest.tabId) {

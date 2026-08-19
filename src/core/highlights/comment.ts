@@ -3,7 +3,7 @@ import DOMPurify from 'dompurify';
 import { commentTextToDisplayHtml, toggleTaskInMarkdown } from '../../utils/comment-markdown';
 import { loadDiagramImage } from '../../utils/video/frame-store';
 import { VideoItem } from '../../utils/video/video-storage';
-import { button, el, icon, markMatches, menuButton, tip } from './ui';
+import { button, el, icon, markMatches, menuButton, tip, TAG_PILL_CLASS } from './ui';
 import { commentBody, commentTimes, formatStamp, fullStamp } from './format';
 import { state, renderStream } from './store';
 import { addComment, deleteComment, editComment } from './actions';
@@ -15,9 +15,6 @@ import { RenderUnit } from './types';
  * was edited) sits directly under its text rather than in a far-right column, so
  * the eye never has to cross the card to date what it just read.
  */
-
-// `#tag` pills, matching the live comment box's inline tag look.
-const TAG_PILL_CLASS = 'sc-tag-pill';
 
 /** A comment body: the shared markdown subset, plus pasted images from the blob store. */
 function renderBody(text: string): DocumentFragment {

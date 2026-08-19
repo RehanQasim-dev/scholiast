@@ -13,6 +13,7 @@ import {
 	repositionHighlights,
 } from './highlighter';
 import { clearCommentBoxes, startAddingComment, emphasizeCommentBox, hasUnsavedCommentText } from './comment-overlays';
+import { isImageHighlight, openImageEditor, restoreEditedImage } from './image-edit';
 import { throttle } from './throttle';
 import { getElementByXPath, isDarkColor, setElementHTML, isEditableContext } from './dom-utils';
 import { getMessage } from './i18n';
@@ -389,6 +390,25 @@ function ensureHighlightActionMenu(): HTMLDivElement {
 		}
 	});
 
+	// Redraw a highlighted image in Excalidraw. Same icon as the comment editor's
+	// diagram button — it opens the same editor. Only shown for image highlights
+	// (toggled in positionActionMenu).
+	const editImageBtn = document.createElement('button');
+	editImageBtn.type = 'button';
+	editImageBtn.className = 'obsidian-highlight-edit-image';
+	editImageBtn.setAttribute('aria-label', 'Edit image in Excalidraw');
+	editImageBtn.title = 'Edit image in Excalidraw';
+	setElementHTML(editImageBtn, `<svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><path d="M8.3 10a.7.7 0 0 1-.626-1.079L11.4 3a.7.7 0 0 1 1.198-.043L16.3 8.9a.7.7 0 0 1-.572 1.1Z"/><rect x="3" y="14" width="7" height="7" rx="1"/><circle cx="17.5" cy="17.5" r="3.5"/></svg>`);
+	editImageBtn.addEventListener('mousedown', e => e.stopPropagation());
+	editImageBtn.addEventListener('click', (e) => {
+		e.stopPropagation();
+		e.preventDefault();
+		if (currentActionTargetId) {
+			openImageEditor(currentActionTargetId);
+			hideHighlightActionMenu();
+		}
+	});
+
 	const deleteBtn = document.createElement('button');
 	deleteBtn.type = 'button';
 	deleteBtn.className = 'obsidian-highlight-delete';
@@ -405,6 +425,7 @@ function ensureHighlightActionMenu(): HTMLDivElement {
 
 	menu.appendChild(colorPicker);
 	menu.appendChild(commentBtn);
+	menu.appendChild(editImageBtn);
 	menu.appendChild(deleteBtn);
 	
 	// Menu hover keeps it alive
@@ -453,6 +474,14 @@ function positionActionMenu(id: string, centerX: number, top: number, bottom: nu
 	const menu = ensureHighlightActionMenu();
 	currentActionTargetId = id;
 	menu.style.display = 'flex';
+	// Set before measuring below: the Excalidraw button changes the bar's width.
+	// `!important` because the bar's own stylesheet forces `display: flex` on its
+	// buttons with `!important`, which a plain inline value would lose to.
+	const editImageBtn = menu.querySelector<HTMLElement>('.obsidian-highlight-edit-image');
+	if (editImageBtn) {
+		if (isImageHighlight(id)) editImageBtn.style.removeProperty('display');
+		else editImageBtn.style.setProperty('display', 'none', 'important');
+	}
 	// Measure the real rendered size so the bar never overlaps the text — a
 	// hardcoded offset breaks when CSS/zoom/font changes the menu's height.
 	const menuWidth = menu.offsetWidth || 80;
@@ -527,6 +556,10 @@ async function deleteHighlightById(id: string): Promise<void> {
 		? highlights.filter((h: AnyHighlightData) => h.groupId !== target.groupId)
 		: highlights.filter((h: AnyHighlightData) => h.id !== id);
 	if (next.length === highlights.length) return;
+	// Put the original picture back before the highlight that owned the edit is gone.
+	for (const h of target.groupId ? highlights.filter(x => x.groupId === target.groupId) : [target]) {
+		if (h.imageEdit) restoreEditedImage(h);
+	}
 	updateHighlights(next);
 	hideHighlightActionMenu();
 	sortHighlights();

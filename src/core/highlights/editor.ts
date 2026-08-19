@@ -1,9 +1,9 @@
 import DOMPurify from 'dompurify';
 import {
-	activeCommentFormats, applyCommentFormat, commentTextToEditableHtml, repairTaskList,
-	serializeCommentEditor, toggleTaskFromClick, type CommentFormatCommand,
+	activeCommentFormats, applyCommentFormat, commentTextToEditableHtml, refreshTagPills,
+	repairTaskList, serializeCommentEditor, toggleTaskFromClick, type CommentFormatCommand,
 } from '../../utils/comment-markdown';
-import { el, icon, tip } from './ui';
+import { el, icon, tip, TAG_PILL_CLASS } from './ui';
 
 /**
  * The comment editor — the same WYSIWYG contenteditable over the same markdown
@@ -41,7 +41,8 @@ export function createEditor(opts: EditorOpts): HTMLElement {
 	field.dataset.placeholder = opts.placeholder || '';
 	if (opts.value) {
 		field.replaceChildren(DOMPurify.sanitize(
-			commentTextToEditableHtml(opts.value), { RETURN_DOM_FRAGMENT: true }));
+			commentTextToEditableHtml(opts.value, { tagClass: TAG_PILL_CLASS }),
+			{ RETURN_DOM_FRAGMENT: true }));
 	}
 
 	const bar = el('div', 'sc-editor__bar');
@@ -101,8 +102,11 @@ export function createEditor(opts: EditorOpts): HTMLElement {
 		await opts.onSubmit(text);
 	};
 
-	field.addEventListener('input', () => { syncSend(); syncFormats(); });
-	field.addEventListener('keyup', syncFormats);
+	// Tags render as pills while writing, exactly as they do in the saved comment.
+	// The pass runs on caret moves too — leaving a half-typed tag is what finishes it.
+	const syncTags = () => refreshTagPills(field, TAG_PILL_CLASS);
+	field.addEventListener('input', () => { syncTags(); syncSend(); syncFormats(); });
+	field.addEventListener('keyup', () => { syncTags(); syncFormats(); });
 	field.addEventListener('mouseup', syncFormats);
 	field.addEventListener('click', (e) => {
 		if (toggleTaskFromClick(e.target as HTMLElement)) syncSend();

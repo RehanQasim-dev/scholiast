@@ -1183,6 +1183,21 @@ body {
 	font-weight: 500;
 }
 
+// LaTeX in a comment, rendered as MathML by KaTeX (see comment-markdown) — the
+// browser typesets it, so only layout is set here.
+.katex {
+	font-size: 1.05em;
+}
+
+.katex-display {
+	display: block;
+	margin: 0.35em 0;
+	text-align: center;
+	// A long formula scrolls inside the comment rather than widening the card.
+	overflow-x: auto;
+	overflow-y: hidden;
+}
+
 .sc-diagram {
 	max-width: 100%;
 	border: 1px solid var(--sc-line);

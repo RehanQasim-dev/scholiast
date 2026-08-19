@@ -1,0 +1,16 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">Scholiast</string>
+    <string name="home_title">Scholiast</string>
+    <string name="home_empty_hint">Paste a YouTube link, or share a video to Scholiast</string>
+    <string name="player_title">Player</string>
+    <string name="settings_title">Settings</string>
+    <string name="settings_subtitle">Speech, sync, playback, appearance, data</string>
+    <string name="voice_edit_title">Edit by voice</string>
+    <string name="frame_title">Frame draw</string>
+    <string name="placeholder_not_implemented">Not implemented yet</string>
+    <string name="back">Back</string>
+    <string name="open_video">Open a video</string>
+    <string name="voice_edit_action">Voice edit</string>
+    <string name="frame_action">Frame</string>
+</resources>

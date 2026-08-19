@@ -10,6 +10,10 @@ const REDUCED = () => window.matchMedia('(prefers-reduced-motion: reduce)').matc
 
 // --- DOM helpers -----------------------------------------------------------
 
+// `#tag` pill class. Lives here because both the rendered comment and the comment
+// editor need it, and neither should have to import the other.
+export const TAG_PILL_CLASS = 'sc-tag-pill';
+
 export function el<K extends keyof HTMLElementTagNameMap>(
 	tag: K, className = '', text?: string
 ): HTMLElementTagNameMap[K] {

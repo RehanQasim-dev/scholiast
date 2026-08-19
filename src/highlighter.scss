@@ -754,6 +754,20 @@ body[data-ob-comment-size="large"] .obsidian-comment-box { --ob-font: 17px; }
 		line-height: 1.2;
 	}
 
+	// LaTeX, rendered as MathML by KaTeX (no KaTeX stylesheet, no font files — see
+	// comment-markdown). Only layout is set here; the browser does the typesetting.
+	.katex {
+		font-size: 1.05em;
+	}
+	.katex-display {
+		display: block;
+		margin: 0.35em 0;
+		text-align: center;
+		// A long formula scrolls inside the comment rather than widening the box.
+		overflow-x: auto;
+		overflow-y: hidden;
+	}
+
 	// Tag autocomplete dropdown. Positioned in JS (see positionTagMenu): its left
 	// edge aligns to the `#` being typed, and it's clamped to the viewport. Width
 	// hugs the longest tag (max-content) within readable min/max bounds; at most

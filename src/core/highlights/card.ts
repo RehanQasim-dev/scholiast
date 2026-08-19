@@ -1,7 +1,7 @@
 import DOMPurify from 'dompurify';
 import { AnyHighlightData } from '../../utils/highlighter';
 import { formatVideoTime } from '../../utils/video/video-notes';
-import { loadFrameImage } from '../../utils/video/frame-store';
+import { loadDiagramImage, loadFrameImage } from '../../utils/video/frame-store';
 import { renderMarkupSvg } from '../../utils/video/video-markup';
 import { VideoItem } from '../../utils/video/video-storage';
 import { button, el, icon, markMatches, menuButton, MenuItem, tip } from './ui';
@@ -83,6 +83,30 @@ function renderQuoteContent(html: string, pageUrl: string): DocumentFragment {
 function quoteBlock(entry: { data: AnyHighlightData }, pageUrl: string): HTMLElement {
 	const block = el('blockquote', 'sc-quote__text');
 	block.appendChild(renderQuoteContent(entry.data.content || '', pageUrl));
+
+	// The picture was redrawn in Excalidraw (see image-edit.ts), so the edit — not
+	// the original — is what this highlight is now about. `content` holds the page's
+	// original markup, so the swap happens here rather than at capture time.
+	const editId = entry.data.imageEdit?.diagramId;
+	if (editId) {
+		void loadDiagramImage(editId).then((src) => {
+			if (!src) return;
+			const img = block.querySelector('img');
+			if (img) {
+				img.src = src;
+				img.removeAttribute('srcset');
+				return;
+			}
+			// The original image never rendered (unresolvable src → chip). Show the
+			// edited one in its place.
+			const replacement = el('img', 'sc-quote__image');
+			replacement.alt = 'Edited image';
+			replacement.loading = 'lazy';
+			replacement.src = src;
+			block.querySelector('.sc-quote__image-chip')?.replaceWith(replacement);
+		});
+	}
+
 	if (state.filters.query) markMatches(block, state.filters.query);
 	return block;
 }

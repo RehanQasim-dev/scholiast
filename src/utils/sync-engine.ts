@@ -58,7 +58,7 @@ interface PageMeta { fileId: string; headRevisionId?: string }
 
 // --- Local storage shapes (per-page; structurally compatible) ----------------
 
-interface StoredHighlights { url: string; title?: string; highlights: { id: string; notes?: string[]; updatedAt?: number; [k: string]: unknown }[] }
+interface StoredHighlights { url: string; title?: string; highlights: { id: string; notes?: string[]; updatedAt?: number; imageEdit?: { diagramId?: string }; [k: string]: unknown }[] }
 interface StoredDrawings { url: string; strokes: { id: string; updatedAt?: number; [k: string]: unknown }[] }
 interface VideoFrame { dataUrl?: string; driveId?: string; [k: string]: unknown }
 interface VideoItem { id: string; notes?: string[]; updatedAt?: number; frame?: VideoFrame; [k: string]: unknown }
@@ -109,6 +109,9 @@ function collectDiagramIds(highlights: StoredHighlights['highlights']): string[]
 		for (const note of h.notes || []) {
 			for (const m of note.matchAll(IMAGE_REF_RE)) ids.add(m[1]);
 		}
+		// An Excalidraw-edited page image is referenced by the highlight itself, not
+		// by a comment — it syncs like any other diagram.
+		if (h.imageEdit?.diagramId) ids.add(h.imageEdit.diagramId);
 	}
 	return [...ids];
 }

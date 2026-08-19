@@ -14,7 +14,19 @@
 			right: 10px;
 			z-index: 1000;
 			display: flex;
+			align-items: center;
 			gap: 10px;
+		}
+		/* A failed save keeps the window open and says why, rather than closing and
+		   quietly losing the drawing. */
+		.save-error {
+			max-width: 320px;
+			padding: 6px 10px;
+			background: #7F1D1D;
+			color: #FEE2E2;
+			border-radius: 4px;
+			font-size: 13px;
+			line-height: 1.3;
 		}
 		button {
 			padding: 8px 16px;

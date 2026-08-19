@@ -1,14 +1,18 @@
 import { AnyHighlightData, highlights, saveHighlights, updateHighlights, getPageUrl } from './highlighter';
 import { getElementByXPath } from './dom-utils';
 import { textHighlightRanges, setActiveHighlight } from './highlighter-overlays';
-import { loadDiagramImage, deleteDiagramImage, saveDiagramImage } from './video/frame-store';
+import { loadDiagramImage, deleteDiagramImage, saveDiagramImage, hasDiagramImage } from './video/frame-store';
 import { normalizeUrl } from './url-utils';
+import { onImageEditSaved } from './image-edit';
 import {
 	commentTextToDisplayHtml, commentTextToEditableHtml, serializeCommentEditor,
 	applyCommentFormat, activeCommentFormats, toggleTaskFromClick, toggleTaskInMarkdown,
-	repairTaskList, CHECK_CLASS, TASK_LIST_CLASS,
+	repairTaskList, refreshTagPills, CHECK_CLASS,
 	type CommentFormatCommand,
 } from './comment-markdown';
+
+// `#tag` pill class, used identically in the rendered comment and in the editor.
+const COMMENT_TAG_CLASS = 'obsidian-inline-tag';
 
 let pageSnap: any = null;
 let hasFetchedSnap = false;
@@ -48,7 +52,7 @@ function renderCommentBodyToEditableHtml(text: string): string {
 				});
 			}
 		} else {
-			html += commentTextToEditableHtml(part);
+			html += commentTextToEditableHtml(part, { tagClass: COMMENT_TAG_CLASS });
 		}
 	}
 	return html;
@@ -81,10 +85,33 @@ function fetchPageSnap() {
 const COMMENT_BOX_WIDTH = 384;
 const COMMENT_BOX_MARGIN = 20;
 const COMMENT_BOX_GAP = 12;
+// Narrowest a box may get, and the largest share of the viewport the column may
+// take. Browser zoom shrinks the viewport in CSS pixels while the box's 384px stays
+// put, so at 200%+ a fixed-width column ate most of the window and the page was
+// squeezed to a ribbon — or, once the column hit its left clamp, the boxes simply
+// sat on the text. Capping the column as a fraction of the viewport keeps the page
+// readable at any zoom level and guarantees the column always fits beside it.
+const COMMENT_BOX_MIN_WIDTH = 220;
+const COMMENT_COLUMN_MAX_SHARE = 0.45;
 
 // Layout width excluding the classic scrollbar — `innerWidth` includes it, which
 // made the gutter measurement optimistic by up to ~15px.
 const viewportWidth = () => document.documentElement.clientWidth || window.innerWidth;
+
+// How wide the boxes are right now. Constant until zoom (or a small window) makes
+// 384px too greedy a slice of the viewport.
+function commentBoxWidth(): number {
+	const room = viewportWidth() - COMMENT_BOX_MARGIN * 2;
+	const share = viewportWidth() * COMMENT_COLUMN_MAX_SHARE;
+	return Math.max(Math.min(COMMENT_BOX_MIN_WIDTH, room), Math.min(COMMENT_BOX_WIDTH, share, room));
+}
+
+// Left edge of the column in viewport coordinates. The content must stay left of
+// `columnLeft - COMMENT_BOX_GAP`; that single number is what the gutter below is
+// sized to produce, so the reservation and the column can't disagree.
+function commentColumnLeft(boxWidth: number): number {
+	return Math.max(0, viewportWidth() - boxWidth - COMMENT_BOX_MARGIN);
+}
 
 let activeCommentBoxes = new Map<string, HTMLElement>();
 let editingHighlightIds = new Set<string>();
@@ -117,25 +144,67 @@ browser.storage.onChanged.addListener((changes, area) => {
 			// that referenced it is already rendered from the local cache — skip the
 			// forced rebuild (which would wipe any editor open elsewhere on the page).
 			if ((data as any).pasted && localDiagramCache.has(id)) continue;
-			// The rendered PNG now lives in IndexedDB (not in this entry) — fetch it
-			// into the cache, then render. Loading first avoids a flash of empty <img>.
-			loadDiagramImage(id).then((dataUrl) => {
-				if (dataUrl) localDiagramCache.set(id, dataUrl);
-				activeCommentBoxes.forEach((box) => boxRenderCache.delete(box));
-				// A pending (just-drawn) diagram: now that Excalidraw has actually saved
-				// it, create its comment on the highlight that opened the editor. Nothing
-				// is written on open, so closing without saving leaves no orphan comment.
-				const pendingHid = pendingDiagrams.get(id);
-				if (pendingHid) {
-					pendingDiagrams.delete(id);
-					saveComment(pendingHid, `<!--diagram:${id}-->`);
-				} else {
-					renderCommentBoxes();
-				}
-			});
+			void applyDiagramUpdate(id, undefined, (data as any).imageForHighlight);
 		}
 	}
 });
+
+// The editor's own "I saved" signal, relayed by the background with the rendered PNG
+// attached. This is the primary path; the storage listener above is the fallback (it
+// also covers a diagram that arrived from a sync pull rather than the editor).
+//
+// Both funnel into applyDiagramUpdate, which is idempotent, because relying on the
+// storage event alone was unreliable: the page could be left showing the previous PNG
+// (or, for a brand-new diagram, no comment at all) until the diagram was saved twice.
+browser.runtime.onMessage.addListener((message: unknown) => {
+	const request = message as { action?: string; id?: string; dataUrl?: string; highlightId?: string };
+	if (request?.action === 'diagramSaved' && request.id) {
+		void applyDiagramUpdate(request.id, request.dataUrl, request.highlightId);
+	}
+	return undefined;
+});
+
+// Diagram ids currently being refreshed, so the message and the storage event don't
+// duplicate the work. A save that lands while one is in flight sets the re-run flag
+// rather than being dropped, so the newer PNG always wins.
+const diagramRefreshInFlight = new Map<string, boolean>();
+
+async function applyDiagramUpdate(id: string, dataUrlFromEditor?: string, highlightId?: string): Promise<void> {
+	if (diagramRefreshInFlight.has(id)) {
+		diagramRefreshInFlight.set(id, true);
+		return;
+	}
+	diagramRefreshInFlight.set(id, false);
+	let pushed = dataUrlFromEditor;
+	try {
+		do {
+			diagramRefreshInFlight.set(id, false);
+			// Prefer the bytes the editor handed over; only read the store when they
+			// weren't (a sync pull, or the storage-event fallback). A re-run always
+			// reads, since the store holds the newest bytes by then.
+			const dataUrl = pushed || await loadDiagramImage(id);
+			pushed = undefined;
+			if (dataUrl) localDiagramCache.set(id, dataUrl);
+			else localDiagramCache.delete(id);
+			activeCommentBoxes.forEach((box) => boxRenderCache.delete(box));
+
+			// An image edit: record it on its highlight and swap the picture on the page.
+			if (highlightId) {
+				onImageEditSaved(highlightId, id, dataUrl || undefined);
+				continue;
+			}
+
+			// A pending (just-drawn) diagram: now that Excalidraw has actually saved it,
+			// create its comment on the highlight that opened the editor. Nothing is
+			// written on open, so closing without saving leaves no orphan comment.
+			const pendingHid = await takePendingDiagram(id);
+			if (pendingHid) saveComment(pendingHid, `<!--diagram:${id}-->`);
+			else renderCommentBoxes();
+		} while (diagramRefreshInFlight.get(id));
+	} finally {
+		diagramRefreshInFlight.delete(id);
+	}
+}
 
 // Last innerHTML rendered into each box. renderCommentBoxes() runs on every
 // highlight mutation, storage sync, scroll-driven reapply, etc. Rebuilding
@@ -153,10 +222,67 @@ const boxItemCache = new WeakMap<HTMLElement, { items: string[]; editor: string 
 const localDiagramCache = new Map<string, string>();
 
 // Diagrams whose Excalidraw editor is open but not yet saved: diagramId →
-// highlightId. The comment is created only once the editor saves (see the
-// storage listener above), so an unsaved/closed editor never leaves a stray
-// comment.
+// highlightId. The comment is created only once the editor saves (see
+// applyDiagramUpdate), so an unsaved/closed editor never leaves a stray comment.
+//
+// Mirrored into storage because a drawing can take a while: if this frame is gone
+// by the time the editor saves (the tab was reloaded, or a SPA re-injected the
+// content script) the in-memory entry goes with it, and the drawing would be saved
+// with no comment to show it in. The storage copy is swept on load.
+const PENDING_DIAGRAMS_KEY = 'pendingDiagrams';
 const pendingDiagrams = new Map<string, string>();
+
+type PendingDiagramRecord = { highlightId: string; pageUrl: string };
+
+async function readPendingDiagrams(): Promise<Record<string, PendingDiagramRecord>> {
+	const res = await browser.storage.local.get(PENDING_DIAGRAMS_KEY);
+	return ((res as any)[PENDING_DIAGRAMS_KEY] || {}) as Record<string, PendingDiagramRecord>;
+}
+
+async function rememberPendingDiagram(diagramId: string, highlightId: string): Promise<void> {
+	pendingDiagrams.set(diagramId, highlightId);
+	const all = await readPendingDiagrams();
+	all[diagramId] = { highlightId, pageUrl: normalizeUrl(getPageUrl()) };
+	await browser.storage.local.set({ [PENDING_DIAGRAMS_KEY]: all });
+}
+
+// The highlight waiting on `diagramId`, consumed so the comment is created once.
+async function takePendingDiagram(diagramId: string): Promise<string | null> {
+	const inMemory = pendingDiagrams.get(diagramId);
+	if (inMemory) pendingDiagrams.delete(diagramId);
+
+	const all = await readPendingDiagrams();
+	const stored = all[diagramId];
+	if (stored) {
+		delete all[diagramId];
+		await browser.storage.local.set({ [PENDING_DIAGRAMS_KEY]: all });
+	}
+	if (inMemory) return inMemory;
+	// Only claim a stored entry that belongs to this page.
+	if (stored && stored.pageUrl === normalizeUrl(getPageUrl())) return stored.highlightId;
+	return null;
+}
+
+// Pick up drawings that were saved while this page wasn't listening: any pending
+// entry for this page whose image now exists gets its comment created.
+export async function resumePendingDiagrams(): Promise<void> {
+	const all = await readPendingDiagrams();
+	const here = normalizeUrl(getPageUrl());
+	for (const [id, record] of Object.entries(all)) {
+		if (record.pageUrl !== here) continue;
+		if (!(await hasDiagramImage(id))) continue;
+		if (!highlights.some(h => h.id === record.highlightId)) continue;
+		// Already recorded (an earlier sweep, or the comment survived) — don't double up.
+		const rep = repFor(record.highlightId);
+		const already = rep && groupNotes(rep).some(n => n.note.includes(`<!--diagram:${id}-->`));
+		if (already) {
+			delete all[id];
+			await browser.storage.local.set({ [PENDING_DIAGRAMS_KEY]: all });
+			continue;
+		}
+		void applyDiagramUpdate(id);
+	}
+}
 
 // --- Group handling ----------------------------------------------------------
 // A multi-block selection (e.g. several bullet points) produces one highlight
@@ -274,6 +400,64 @@ function applyCollapseState(box: HTMLElement, highlightId: string) {
 	});
 }
 
+// Push the page's content left until nothing reaches into the comment column.
+//
+// This can't be computed from a single pre-reflow measurement, which is what used to
+// go wrong under zoom: a body margin narrows the body, but how far the *content*
+// actually moves is up to the page. A centered `max-width` wrapper moves half as far
+// as the margin, and a body whose width doesn't come from its margins (flex,
+// `width: 100vw`, a positioned wrapper) doesn't move at all — so the reserved space
+// and the column's position disagreed, and the boxes landed on the text. Instead the
+// margin is applied and the result re-measured, up to a few times, and `<html>`
+// takes over when the body margin turns out to be inert.
+interface Gutter { bodyGutter: number; htmlGutter: number }
+
+function applyGutter({ bodyGutter, htmlGutter }: Gutter): void {
+	if (bodyGutter > 0) document.body.style.marginRight = `${bodyGutter}px`;
+	if (htmlGutter > 0) document.documentElement.style.paddingRight = `${htmlGutter}px`;
+}
+
+const MAX_GUTTER_PASSES = 2;
+function reserveCommentGutter(contentLimit: number, contentRightEdge: () => number): Gutter {
+	const gutter: Gutter = { bodyGutter: 0, htmlGutter: 0 };
+	if (contentLimit <= 0) return gutter;
+
+	for (let pass = 0; pass < MAX_GUTTER_PASSES; pass++) {
+		const before = contentRightEdge();
+		const overflow = before - contentLimit;
+		if (overflow <= 1) return gutter;
+
+		if (gutter.htmlGutter > 0) {
+			gutter.htmlGutter += overflow;
+			document.documentElement.style.paddingRight = `${gutter.htmlGutter}px`;
+			continue;
+		}
+
+		gutter.bodyGutter += overflow;
+		document.body.style.marginRight = `${gutter.bodyGutter}px`;
+		// Only probe for an inert margin on the first pass — if it moved content once,
+		// it will again, and the probe costs a full content measurement.
+		if (pass > 0 || Math.abs(contentRightEdge() - before) >= 1) continue;
+
+		// The body margin moved nothing (flex body, `width: 100vw`, a positioned
+		// wrapper). Reserve on <html> instead: its padding shrinks the body's
+		// containing block, which the page's own layout can't route around.
+		// (`clientWidth` includes that padding, so the column's position — measured
+		// from the viewport — is unaffected.)
+		document.body.style.marginRight = '';
+		gutter.bodyGutter = 0;
+		gutter.htmlGutter = overflow;
+		document.documentElement.style.paddingRight = `${gutter.htmlGutter}px`;
+	}
+	return gutter;
+}
+
+// Measuring the gutter walks the page's paragraphs (guessMainContentArea) and forces
+// a reflow per pass. renderCommentBoxes runs on every keystroke in an editor, where
+// none of that can have changed — so the result is cached and simply re-applied
+// unless the viewport or the set of commented highlights actually differs.
+let gutterCache: { key: string; gutter: Gutter } | null = null;
+
 export function renderCommentBoxes() {
 	fetchPageSnap();
 
@@ -282,6 +466,7 @@ export function renderCommentBoxes() {
 	document.body.style.paddingRight = '';
 	document.body.style.marginLeft = '';
 	document.body.style.marginRight = '';
+	document.documentElement.style.paddingRight = '';
 
 	// One box per annotation unit (a group → its representative; or an ungrouped
 	// highlight). A unit gets a box if any of its pieces carries a comment or its
@@ -313,10 +498,14 @@ export function renderCommentBoxes() {
 	// their highlights. A single fixed side (vs. per-box best-fit) means boxes
 	// never land over left-side page chrome (nav / table of contents) and the
 	// column reads top-to-bottom in the same order as the annotations.
-	const rightLayoutItems: { id: string, top: number, height: number, el: HTMLElement }[] = [];
+	const rightLayoutItems: {
+		highlight: AnyHighlightData, top: number, height: number, el: HTMLElement,
+	}[] = [];
 
-	let maxRightDeficit = 0;
-	const spaceNeeded = COMMENT_BOX_WIDTH + COMMENT_BOX_MARGIN * 2;
+	const boxWidth = commentBoxWidth();
+	// Content is only allowed up to here; the gutter below is whatever it takes to
+	// make that true.
+	const contentLimit = commentColumnLeft(boxWidth) - COMMENT_BOX_GAP;
 
 	for (const highlight of highlightsWithComments) {
 		let box = activeCommentBoxes.get(highlight.id);
@@ -329,6 +518,8 @@ export function renderCommentBoxes() {
 		newActiveBoxes.set(highlight.id, box);
 		applyCollapseState(box, highlight.id);
 
+		// Width is set every render, not once at creation: it tracks the viewport.
+		box.style.width = `${boxWidth}px`;
 		// Temporarily set position to get accurate offsetHeight
 		box.style.top = '0px';
 		const boxHeight = box.offsetHeight;
@@ -340,28 +531,31 @@ export function renderCommentBoxes() {
 		}
 		box.style.display = '';
 
-		const top = rect.top + window.scrollY;
-
-		const availableRight = viewportWidth() - rect.right;
-		const deficit = spaceNeeded - availableRight;
-		if (deficit > maxRightDeficit) maxRightDeficit = deficit;
-		rightLayoutItems.push({ id: highlight.id, top, height: boxHeight, el: box });
+		rightLayoutItems.push({
+			highlight, top: rect.top + window.scrollY, height: boxHeight, el: box,
+		});
 	}
 
-	preserveScrollPosition(() => {
-		const contentArea = guessMainContentArea(document.body);
-		let finalRightMargin = 0;
-
-		if (maxRightDeficit > 0) {
-			if (contentArea) {
-				const freeSpace = Math.max(0, viewportWidth() - contentArea.right);
-				finalRightMargin = Math.max(0, maxRightDeficit - freeSpace);
-			} else {
-				finalRightMargin = maxRightDeficit;
-			}
+	// Rightmost thing on the page that must stay clear of the column: the main
+	// content area plus the highlights themselves (a wide image or table can reach
+	// past the prose column). Re-measured on demand, because the gutter reflows it.
+	const contentRightEdge = () => {
+		let right = guessMainContentArea(document.body)?.right ?? 0;
+		for (const highlight of highlightsWithComments) {
+			const rect = getHighlightBoundingRect(highlight);
+			if (rect && rect.right > right) right = rect.right;
 		}
+		return right;
+	};
 
-		if (finalRightMargin > 0) document.body.style.marginRight = `${finalRightMargin}px`;
+	const gutterKey = `${viewportWidth()}|${contentLimit}|`
+		+ highlightsWithComments.map(h => h.id).join(',');
+	preserveScrollPosition(() => {
+		if (gutterCache?.key === gutterKey) {
+			applyGutter(gutterCache.gutter);
+			return;
+		}
+		gutterCache = { key: gutterKey, gutter: reserveCommentGutter(contentLimit, contentRightEdge) };
 	});
 
 	// Remove old boxes
@@ -372,6 +566,12 @@ export function renderCommentBoxes() {
 	}
 	activeCommentBoxes = newActiveBoxes;
 
+	// Box tops were measured before the gutter reflowed the page, so re-read them.
+	for (const item of rightLayoutItems) {
+		const rect = getHighlightBoundingRect(item.highlight);
+		if (rect) item.top = rect.top + window.scrollY;
+	}
+
 	// Stack the column: each box sits at its highlight's top, pushed down just
 	// enough to clear the box above it.
 	rightLayoutItems.sort((a, b) => a.top - b.top);
@@ -380,10 +580,7 @@ export function renderCommentBoxes() {
 	// body is positioned the reserved gutter (body margin-right) pushed the boxes
 	// left along with the content — straight back on top of the text. That showed
 	// up most on zoom, where the gutter is what makes the boxes fit at all.
-	const columnPageLeft = window.scrollX + Math.max(
-		COMMENT_BOX_MARGIN,
-		viewportWidth() - COMMENT_BOX_WIDTH - COMMENT_BOX_MARGIN
-	);
+	const columnPageLeft = window.scrollX + commentColumnLeft(boxWidth);
 	let currentYRight = 0;
 	for (const item of rightLayoutItems) {
 		const targetY = item.top;
@@ -438,6 +635,9 @@ function relayoutCommentBoxes() {
 }
 window.addEventListener('resize', relayoutCommentBoxes);
 window.visualViewport?.addEventListener('resize', relayoutCommentBoxes);
+// Images and fonts settling can move where the content ends, which the cached gutter
+// was measured against.
+window.addEventListener('load', () => { gutterCache = null; relayoutCommentBoxes(); });
 
 // --- Tag autocomplete ----------------------------------------------------------
 // Typing `#` in a comment editor pops a small dropdown of known tags (collected
@@ -682,11 +882,14 @@ function insertTagCompletion(ta: HTMLElement, tag: string) {
 				const preCaretText = text.slice(0, offset);
 				const m = preCaretText.match(TAG_TOKEN_RE);
 				if (m) {
+					// `start` is the `#` itself, so the completion has to carry it — writing
+					// the bare tag name dropped the hash and un-made the tag.
 					const start = offset - m[2].length - 1;
+					const inserted = `#${tag} `;
 					const postCaretText = text.slice(offset);
-					container.textContent = text.slice(0, start) + tag + ' ' + postCaretText;
-					
-					const newOffset = start + tag.length + 1;
+					container.textContent = text.slice(0, start) + inserted + postCaretText;
+
+					const newOffset = start + inserted.length;
 					range.setStart(container, newOffset);
 					range.setEnd(container, newOffset);
 					selection.removeAllRanges();
@@ -697,6 +900,7 @@ function insertTagCompletion(ta: HTMLElement, tag: string) {
 	}
 	hideTagMenu();
 	ta.focus();
+	refreshTagPills(ta, COMMENT_TAG_CLASS);
 	autosizeTextarea(ta);
 	renderCommentBoxes();
 }
@@ -853,7 +1057,9 @@ function createCommentBox(highlight: AnyHighlightData): HTMLElement {
 	box.dataset.highlightId = highlight.id;
 	// Drives the box's permanent color-matched border (see highlighter.scss).
 	box.dataset.color = highlight.color || 'yellow';
-	box.style.width = `${COMMENT_BOX_WIDTH}px`;
+	// Re-set on every render (renderCommentBoxes) — this is just the initial value,
+	// so a box never measures itself at the wrong width before its first layout.
+	box.style.width = `${commentBoxWidth()}px`;
 
 	updateCommentBox(box, highlight);
 	
@@ -917,8 +1123,9 @@ function createCommentBox(highlight: AnyHighlightData): HTMLElement {
 			// Open the editor for a brand-new diagram WITHOUT writing a comment yet.
 			// The comment is created when (and only when) the editor saves an image.
 			const diagramId = 'd' + Math.random().toString(36).substring(2, 9);
-			pendingDiagrams.set(diagramId, highlight.id);
-			browser.runtime.sendMessage({ action: 'openPopupWithDiagram', id: diagramId });
+			void rememberPendingDiagram(diagramId, highlight.id).then(() => {
+				browser.runtime.sendMessage({ action: 'openPopupWithDiagram', id: diagramId });
+			});
 		} else if (target.closest('.obsidian-comment-diagram-img')) {
 			const img = target.closest('.obsidian-comment-diagram-img') as HTMLImageElement;
 			const diagramId = img.dataset.diagramId;
@@ -1003,6 +1210,7 @@ function createCommentBox(highlight: AnyHighlightData): HTMLElement {
 		const ta = e.target as HTMLElement;
 		if (ta.classList.contains('edit-comment-textarea') || ta.classList.contains('new-comment-textarea')) {
 			repairTaskList(ta);
+			refreshTagPills(ta, COMMENT_TAG_CLASS);
 			updateTagAutocomplete(ta);
 			autosizeTextarea(ta);
 
@@ -1024,6 +1232,9 @@ function createCommentBox(highlight: AnyHighlightData): HTMLElement {
 		const ta = e.target as HTMLElement;
 		if (ta.classList?.contains('edit-comment-textarea') || ta.classList?.contains('new-comment-textarea')) {
 			repairTaskList(ta);
+			// Moving out of a half-typed tag is what finishes it, so the pill pass
+			// belongs here as well as on input.
+			refreshTagPills(ta, COMMENT_TAG_CLASS);
 			syncFormatButtons(ta);
 		}
 	};
@@ -1194,73 +1405,35 @@ function createCommentBox(highlight: AnyHighlightData): HTMLElement {
 			return;
 		}
 
-		// Prevent caret moving before checkbox on Home key inside a task item
-		if (e.key === 'Home' && !e.shiftKey) {
-			const sel = window.getSelection();
-			if (sel && sel.rangeCount > 0) {
-				const range = sel.getRangeAt(0);
-				let liNode: Node | null = range.startContainer;
-				while (liNode && liNode !== ta && liNode.nodeName !== 'LI') {
-					liNode = liNode.parentNode;
-				}
-				if (liNode && liNode.nodeName === 'LI') {
-					const checkSpan = (liNode as HTMLElement).querySelector(`:scope > .${CHECK_CLASS}`);
-					if (checkSpan) {
-						e.preventDefault();
-						const targetNode = checkSpan.nextSibling || checkSpan;
-						const newRange = document.createRange();
-						if (targetNode.nodeType === Node.TEXT_NODE) {
-							newRange.setStart(targetNode, 0);
-							newRange.setEnd(targetNode, 0);
-						} else {
-							newRange.setStartAfter(checkSpan);
-							newRange.setEndAfter(checkSpan);
-						}
-						sel.removeAllRanges();
-						sel.addRange(newRange);
-						return;
-					}
+		// The checkbox glyph is a real (CSS-drawn) span inside the <li>, so the caret
+		// can otherwise be walked to the left of it — which reads as "the checkbox is
+		// part of the text" and lets Backspace chew into the glyph. Home, ArrowLeft
+		// and Backspace all clamp at the first character AFTER the checkbox.
+		if ((e.key === 'Home' || e.key === 'ArrowLeft') && !e.shiftKey) {
+			const at = taskItemTextStart(ta);
+			if (at) {
+				// Home always snaps back to the text start; ArrowLeft only blocks the
+				// move when the caret is already sitting there.
+				if (e.key === 'Home' || at.atStart) {
+					e.preventDefault();
+					placeCaretAtTaskTextStart(at.li, at.checkSpan);
+					return;
 				}
 			}
 		}
 
-		// Handle Backspace at start of task item text: turn task item back into bullet item or plain item
+		// Backspace at the start of a task item's text clears the checkbox AND lifts
+		// the line out of the list, so it lands as a plain text line. Leaving the <li>
+		// behind (turning the task into a bullet) meant clearing a checkbox silently
+		// changed it into a different kind of list item.
 		if (e.key === 'Backspace' && !e.ctrlKey && !e.metaKey && !e.altKey) {
-			const sel = window.getSelection();
-			if (sel && sel.rangeCount > 0 && sel.isCollapsed) {
-				const range = sel.getRangeAt(0);
-				let liNode: Node | null = range.startContainer;
-				while (liNode && liNode !== ta && liNode.nodeName !== 'LI') {
-					liNode = liNode.parentNode;
-				}
-				if (liNode && liNode.nodeName === 'LI') {
-					const li = liNode as HTMLLIElement;
-					const checkSpan = li.querySelector(`:scope > .${CHECK_CLASS}`);
-					if (checkSpan) {
-						let isAtStart = false;
-						if (range.startContainer === checkSpan.nextSibling && range.startOffset === 0) {
-							isAtStart = true;
-						} else if (range.startContainer === li) {
-							const checkIndex = Array.from(li.childNodes).indexOf(checkSpan);
-							if (range.startOffset <= checkIndex + 1) {
-								isAtStart = true;
-							}
-						}
-
-						if (isAtStart) {
-							e.preventDefault();
-							delete li.dataset.checked;
-							checkSpan.remove();
-							const ul = li.closest('ul');
-							if (ul && !ul.querySelector(`.${CHECK_CLASS}`)) {
-								ul.classList.remove(TASK_LIST_CLASS);
-							}
-							repairTaskList(ta);
-							syncFormatButtons(ta);
-							return;
-						}
-					}
-				}
+			const at = taskItemTextStart(ta);
+			if (at && at.atStart) {
+				e.preventDefault();
+				unwrapTaskItemToPlainLine(ta, at.li, at.checkSpan);
+				syncFormatButtons(ta);
+				ta.dispatchEvent(new Event('input', { bubbles: true }));
+				return;
 			}
 		}
 
@@ -1275,6 +1448,99 @@ function createCommentBox(highlight: AnyHighlightData): HTMLElement {
 }
 
 
+
+// --- Task item caret handling -------------------------------------------------
+// A task <li> is `<span class=CHECK_CLASS></span>` followed by the item's text.
+// The span has no text of its own (the box is drawn in CSS), but it is still a
+// real node, so the caret can be placed before it. These helpers describe "the
+// start of the item's text" so Home / ArrowLeft / Backspace all agree on it.
+
+// The task item the caret is in, plus whether the caret already sits at the very
+// start of its text. Null when the caret isn't inside a task item.
+function taskItemTextStart(ta: HTMLElement): { li: HTMLLIElement; checkSpan: Element; atStart: boolean } | null {
+	const sel = window.getSelection();
+	if (!sel || sel.rangeCount === 0 || !sel.isCollapsed) return null;
+	const range = sel.getRangeAt(0);
+	let node: Node | null = range.startContainer;
+	while (node && node !== ta && node.nodeName !== 'LI') node = node.parentNode;
+	if (!node || node.nodeName !== 'LI') return null;
+	const li = node as HTMLLIElement;
+	const checkSpan = li.querySelector(`:scope > .${CHECK_CLASS}`);
+	if (!checkSpan) return null;
+
+	let atStart = false;
+	if (range.startContainer === checkSpan.nextSibling && range.startOffset === 0) {
+		atStart = true;
+	} else if (range.startContainer === li) {
+		atStart = range.startOffset <= Array.from(li.childNodes).indexOf(checkSpan) + 1;
+	} else if (range.startOffset === 0) {
+		// Caret at offset 0 of the first thing after the checkbox, however deeply
+		// nested (e.g. inside a leading <strong>).
+		let first: Node = range.startContainer;
+		while (first.parentNode && first.parentNode !== li) first = first.parentNode;
+		atStart = first === checkSpan.nextSibling;
+	}
+	return { li, checkSpan, atStart };
+}
+
+function placeCaretAtTaskTextStart(li: HTMLLIElement, checkSpan: Element): void {
+	const sel = window.getSelection();
+	if (!sel) return;
+	const range = document.createRange();
+	const next = checkSpan.nextSibling;
+	if (next && next.nodeType === Node.TEXT_NODE) {
+		range.setStart(next, 0);
+	} else {
+		range.setStartAfter(checkSpan);
+	}
+	range.collapse(true);
+	sel.removeAllRanges();
+	sel.addRange(range);
+}
+
+// Drop the checkbox and lift the item out of its list, leaving its content as a
+// plain text line. Items above stay in the original list; items below move into a
+// fresh list of the same kind, so only this one line leaves the list.
+function unwrapTaskItemToPlainLine(ta: HTMLElement, li: HTMLLIElement, checkSpan: Element): void {
+	const list = li.parentElement;
+	checkSpan.remove();
+	delete li.dataset.checked;
+
+	const content = document.createDocumentFragment();
+	while (li.firstChild) content.appendChild(li.firstChild);
+	if (!content.firstChild) content.appendChild(document.createTextNode(''));
+	const firstMoved = content.firstChild!;
+
+	if (!list || list.tagName !== 'UL') {
+		li.replaceWith(content);
+	} else {
+		// Everything after this item continues in a sibling list of the same kind.
+		const trailing: Element[] = [];
+		for (let sib = li.nextElementSibling; sib; sib = sib.nextElementSibling) trailing.push(sib);
+		const after = document.createDocumentFragment();
+		after.appendChild(content);
+		if (trailing.length) {
+			const rest = document.createElement('ul');
+			rest.className = list.className;
+			for (const item of trailing) rest.appendChild(item);
+			after.appendChild(rest);
+		}
+		li.remove();
+		list.after(after);
+		if (!list.firstElementChild) list.remove();
+	}
+
+	repairTaskList(ta);
+
+	const sel = window.getSelection();
+	if (sel && firstMoved.isConnected) {
+		const range = document.createRange();
+		range.setStart(firstMoved, 0);
+		range.collapse(true);
+		sel.removeAllRanges();
+		sel.addRange(range);
+	}
+}
 
 function renderCommentBody(text: string, box: HTMLElement): string {
 	const parts = text.split(/(<!--image:[A-Za-z0-9_-]+-->)/g);
@@ -1861,11 +2127,13 @@ function deleteCommentThread(highlightId: string) {
 export function clearCommentBoxes() {
 	activeCommentBoxes.forEach(box => box.remove());
 	activeCommentBoxes.clear();
+	gutterCache = null;
 	preserveScrollPosition(() => {
 		document.body.style.paddingRight = '';
 		document.body.style.paddingLeft = '';
 		document.body.style.marginRight = '';
 		document.body.style.marginLeft = '';
+		document.documentElement.style.paddingRight = '';
 	});
 	setActiveHighlight(null);
 }

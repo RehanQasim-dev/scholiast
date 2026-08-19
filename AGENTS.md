@@ -27,6 +27,8 @@ This branch adds **live-webpage annotation** (highlights, comments, freehand dra
 | `src/utils/highlighter-overlays.ts` | Text/element rendering (CSS Custom Highlight API), color swatch menu, active-highlight emphasis. |
 | `src/utils/comment-overlays.ts` | Comment card layout (right column), threads, truncation, edit/save/delete, WYSIWYG editor. |
 | `src/utils/comment-markdown.ts` | The comment markdown subset: markdown ↔ display HTML ↔ editable HTML, formatting commands. Shared by the comment box and the dashboard. |
+| `src/utils/image-edit.ts` | Redrawing a highlighted page image in Excalidraw: opening the editor, swapping the edited PNG onto the page, restoring the original. |
+| `src/diagram.tsx` / `src/diagram.html` | The Excalidraw editor window (comment diagrams and image edits both). Verified save path + explicit `diagramSaved` relay. |
 | `src/utils/pencil-overlays.ts` | Freehand SVG drawing, stroke storage, color switching, marquee select/delete. |
 | `src/core/highlights/` | Annotation-manager (dashboard). One module per concern: `index` (bootstrap, render dispatch, keyboard), `store` (state + prefs), `data` (load/merge `hl`+`va`+`dr`, filter, sort), `nav`, `rail`, `header`, `stream`, `card`, `comment`, `editor`, `actions`, `home`, `format`, `ui` (menus/tooltips/toasts/dialogs), `shortcuts`. Webpack entry is `highlights/index.ts`. |
 | `src/highlights.html` | Dashboard shell markup (static chrome only; every list is rendered by `core/highlights/`). |
@@ -82,6 +84,10 @@ exists** — the sharded keys are the only format. The shapes below are the per-
   highlight. Gated by quality thresholds so a bad guess never displaces an honest "unplaced".
 - `groupId` links multi-block highlights (one selection spanning blocks → one highlight per block).
 - `color` ∈ {yellow, red, green}. `updatedAt` drives sync conflict resolution.
+- `imageEdit?` = `{ diagramId, updatedAt }` on an **element highlight over an image** whose picture has
+  been redrawn in Excalidraw (§3.2). The edit's scene + PNG live in the shared `diagrams` stores under
+  `diagramId`, so it re-opens for further editing; the edited PNG then stands in for the original on the
+  live page, in the dashboard, and in anything clipped from the page.
 
 ### Drawings — key `dr:<normalizedUrl>`: `{ url, strokes: PencilStroke[] }`
 - `PencilStroke` = `{ id, color, width, points:[x,y,x,y,...], updatedAt? }` (flattened document coords).
@@ -106,7 +112,8 @@ exists** — the sharded keys are the only format. The shapes below are the per-
   it lives in the IndexedDB blob store keyed by `diagramId` (see frame-store below), exactly like video
   frames, and is rehydrated on demand for display. No synced JSON ever carries diagram image bytes — only
   the id. (`sceneData.files` may still carry base64 if a raster is pasted into the diagram — minor.)
-- Pasted comment images share this map (`pasted: true`, no scene) so they sync on the same path.
+- Pasted comment images share this map (`pasted: true`, no scene) so they sync on the same path, as do
+  **Excalidraw-edited page images** (`imageForHighlight: <highlightId>`, id derived from the highlight).
 - `pageUrl` records which page's comment references the image, so a change routes straight to its page
   instead of scanning every annotation record. Still **one key for all diagrams**, so it is re-serialised
   on every scene save — the remaining known scale limit; shard it if scenes get numerous.
@@ -204,12 +211,21 @@ exists** — the sharded keys are the only format. The shapes below are the per-
 
 ### 3.2 Commenting & annotation system
 - Comments render as floating **cards in a single right-side column**, stacked top-to-bottom in
-  document order of their highlights without overlap; if the viewport lacks room, a body margin
-  nudges content leftward. (Always-right avoids cards landing over left-side page chrome like a TOC.)
-  The column is anchored by an explicit `left` in page coordinates (not `right`), so the reserved
-  gutter can't drag the cards back over the text on pages with a positioned body, and the layout is
-  recomputed on window `resize` / `visualViewport` resize — which is what keeps it correct across
-  **browser zoom**.
+  document order of their highlights without overlap; if the viewport lacks room, a gutter is reserved
+  and the page's content is pushed leftward. (Always-right avoids cards landing over left-side page
+  chrome like a TOC.) The column is anchored by an explicit `left` in page coordinates (not `right`), so
+  the reserved gutter can't drag the cards back over the text on pages with a positioned body, and the
+  layout is recomputed on window `resize` / `visualViewport` resize.
+- **The gutter is derived from the column, then measured** (`reserveCommentGutter`). The column's left
+  edge is the single source of truth: content must end a gap short of it. A body `margin-right` is
+  applied and the result **re-measured** (up to 3 passes) rather than computed from one pre-reflow
+  reading, because how far content actually moves is up to the page — a centred `max-width` wrapper
+  moves half as far as the margin, and a body whose width doesn't come from its margins (flex,
+  `width: 100vw`, a positioned wrapper) doesn't move at all. When the body margin turns out to be inert,
+  padding on `<html>` takes over (its `clientWidth` includes that padding, so the column's position is
+  unaffected). Card width is also capped at a **share of the viewport** (`COMMENT_COLUMN_MAX_SHARE`),
+  since a fixed 384px column swallows most of the window once **browser zoom** shrinks the viewport in
+  CSS pixels. Together these are what stop cards from overlapping text at high zoom.
 - **Empty comment editors are discarded on click-away**: the box disappears (the highlight stays)
   instead of lingering as an empty field.
 - **`Ctrl`+click** an existing highlight opens its comment bar for typing.
@@ -224,7 +240,23 @@ exists** — the sharded keys are the only format. The shapes below are the per-
   - **Auto-linking pasted URLs**: Pasting or typing a URL (or opening an existing link) displays a blue clickable `<a>` link inline in the editor, opening in a new tab when clicked.
   - **Formatting bar**: the editor's bottom row holds **bullet list / checklist / bold / italic** on the left, with the diagram + send buttons on the right. That row is always its own line (the buttons never float into the text), so the space beside them is used rather than left blank. Buttons light up for whatever applies to the caret, `Ctrl+B`/`Ctrl+I` do the same thing, and formatting is applied through the browser's own editing commands so undo and caret behaviour stay native.
   - **Real formatting while editing**: bold, italic, bullets and checkboxes render as themselves in the editor — never as raw `**` markers. Checklist items can be ticked in a *saved* comment too, which rewrites and saves the comment's markdown (so the state syncs).
-  - **Checklist Caret Enforcement**: `enforceCheckboxCaret` guarantees the text cursor (caret) can never land before or inside a task item's `<span class="ob-md-check">` checkbox element during typing, clicks, `Home` keypresses, or selection changes. Pressing `Backspace` at the start of a task line gracefully removes the checkbox and converts it to a standard list/text item.
+  - **`#tag` pills while writing**: tags render as pills in the editor as well as in the saved comment
+    (`refreshTagPills`, shared by the comment box and the dashboard editor). The token the caret is
+    inside is left as plain text — pilling it mid-word would trap the next keystroke inside the pill — so
+    a tag becomes a pill once it's finished (a space, or the caret moving away). Pills need no special
+    serialization: a `<span>` serializes to its own text, which is exactly `#tag`.
+  - **LaTeX**: `$inline$` and `$$block$$` render in the comment (both surfaces) via **KaTeX in MathML
+    mode** — the browser typesets it, so there are no font files to ship, no KaTeX stylesheet for a host
+    page's CSS to fight, and nothing for the extension CSP to block. Math is pulled out of the text
+    *before* escaping and the inline-markdown passes (TeX is full of `*`, `_`, `\`, `<`) and substituted
+    back afterwards. Edit mode keeps the raw `$…$` source, and the stored markdown is unchanged, so the
+    same comment renders in Obsidian. Prose about money is safe: an opening `$` must not be followed by
+    whitespace and the content must not end in it.
+  - **Checklist caret enforcement**: the caret can never land before or inside a task item's
+    `<span class="ob-md-check">` checkbox — typing, clicks, selection changes, `Home` **and `ArrowLeft`**
+    all clamp at the first character after the box. Pressing `Backspace` there clears the checkbox and
+    **lifts the line out of the list entirely**, as a plain text line (it used to leave the `<li>` behind,
+    so clearing a checkbox silently turned the item into a bullet).
   - **Serialization**: `utils/comment-markdown.ts` is the single definition of the comment markdown subset — `**bold**`, `*italic*`, `[text](url)`, bare urls, `#tag`, `- item`, `- [ ] task`, `<!--image:ID-->`, `<!--diagram:ID-->` — with three conversions: markdown → display HTML, markdown → editable HTML, and editor DOM → markdown. Every surface (comment box, its editor, the dashboard) goes through it, so a comment reads the same everywhere and stays valid Obsidian markdown. Covered by `comment-markdown.test.ts` (round-trip + escaping). Checklist editing keeps the caret
     *after* the (uneditable) checkbox: applying the format resolves the new list without relying on
     the browser's reported selection, and `repairTaskList` re-adds the box the browser drops when
@@ -233,10 +265,39 @@ exists** — the sharded keys are the only format. The shapes below are the per-
   - **Keybinds**: `Enter` inserts a new line inside the editor; `Ctrl+Enter` saves/commits the comment.
 - **Google Sync Status Icon**: Each reply displays a cloud sync indicator icon in its top-right corner. It is styled with a light/dull gray color when pending sync, turning into a bright purple-bordered icon once successfully merged and synced to Google Drive.
 - **Diagrams**: An "Add Diagram" button in the comment editor opens a dedicated, isolated Excalidraw window. The comment is created **only when the editor saves** (the diagram-id→highlight mapping is held pending until the save lands), so closing the editor without saving leaves no orphan comment. The editable **scene JSON** is stored in `browser.storage.local` under the `diagrams` key (`{ sceneData, updatedAt }`); the **rendered PNG is stored as a binary blob in IndexedDB** (frame-store `diagrams` store, keyed by diagram id) and rehydrated on demand — never inline in any JSON. Editing reuses the same diagram id (overwrites in place, no orphan); deleting the comment drops both the `diagrams` entry and the IndexedDB blob.
+- **The diagram save path is explicit, not inferred.** The editor commits any in-progress text element
+  (it lives in an overlay textarea until it loses focus, so saving straight from the button left the last
+  thing written out of the PNG), writes the blob, **reads it back to confirm** it landed, then publishes
+  the metadata, then messages the page **with the PNG attached** — relayed by the background to every
+  tab. The page never has to read the blob store back, and `storage.onChanged` is now only the fallback
+  (it still covers a diagram that arrived from a sync pull). Both paths funnel into the idempotent
+  `applyDiagramUpdate`. A failed save keeps the window open and says why rather than closing on a lost
+  drawing. The pending diagram-id→highlight mapping is also **mirrored into storage** and swept on page
+  load, so a drawing that takes a while and is saved after the tab reloaded still gets its comment.
 - **Grouped highlights are one annotation on the live page**: a multi-block selection (e.g. several
   bullet points sharing a `groupId`) shows a **single comment box / thread** anchored to the group's
   first piece — comments save to that representative, and edit/delete map the flattened thread index
   back to the piece that owns each note. Hover-emphasis lights up **all** pieces of the group at once.
+
+### 3.2a Editing a page image in Excalidraw (`utils/image-edit.ts`)
+- Highlight an image (the `IMG`/`FIGURE`/`PICTURE` block highlight) and its action bar grows an
+  **Excalidraw button** — the same icon as the comment editor's diagram button, since it opens the same
+  editor. Shown only when the highlight is (or wraps) an `<img>`.
+- The picture is seeded onto the canvas as an image element, and the export **replaces that `<img>` on
+  the page**. Clicking the button again re-opens the *same scene*, so a previous edit can be changed and
+  re-saved as many times as wanted — the diagram id is derived from the highlight id, so it's stable even
+  if the editor was closed without saving.
+- The bytes are fetched **in the background** (a cross-origin image is unreadable from the page, and only
+  the background has the host permissions) and handed over through a short-lived `diagramSeed:<id>`
+  storage key that the editor deletes once loaded. Re-seeding is skipped when a scene already exists,
+  which is what makes the edit cumulative rather than starting over on top of the original.
+- The edited PNG becomes the **canonical** image for that highlight: the live DOM swap means anything
+  clipped from the page carries it (`srcset`/`sizes` are removed, since the browser would otherwise prefer
+  them over `src`; the original is stashed in a data attribute), the dashboard card swaps its quote image
+  to the edit, and `collectDiagramIds` picks the id up off the highlight so it syncs like any other
+  diagram. Deleting the highlight restores the original image and drops the scene + blob.
+- Re-applied from `applyHighlights`, so a synced edit, an undo, or a page re-render all land through one
+  path.
 
 ### 3.3 Pencil tool (freehand drawing)
 - **`P`** activates pencil. Strokes drawn on a full-document SVG overlay.

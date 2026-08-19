@@ -16,7 +16,8 @@ import {
 import { addBrowserClassToHtml } from './browser-detection';
 import dayjs from 'dayjs';
 import { generalSettings, loadSettings } from './storage-utils';
-import { renderCommentBoxes, clearCommentBoxes } from './comment-overlays';
+import { applyImageEdits } from './image-edit';
+import { renderCommentBoxes, clearCommentBoxes, resumePendingDiagrams } from './comment-overlays';
 import { pushUndo, undoLast, redoLast } from './undo-manager';
 
 export type AnyHighlightData = TextHighlightData | ElementHighlightData;
@@ -148,6 +149,13 @@ export interface HighlightData {
 	// at creation (surface:'web') and backfilled for pre-existing data. Optional:
 	// the extension still paints from `xpath`, so a missing anchor is harmless.
 	anchor?: AnnotationAnchor;
+	// An element highlight on an image can be redrawn in Excalidraw (see
+	// image-edit.ts). The edited PNG lives in the `diagrams` blob store under
+	// `diagramId`, and the Excalidraw scene under the same id in the `diagrams` map —
+	// so re-opening the editor continues from the last edit. When present, the edited
+	// image stands in for the original everywhere: the live page, the dashboard, and
+	// anything clipped from the page.
+	imageEdit?: { diagramId: string; updatedAt: number };
 }
 
 export interface TextHighlightData extends HighlightData {
@@ -906,6 +914,9 @@ export function applyHighlights() {
 	lastAppliedVersion = highlightsVersion;
 	isApplyingHighlights = false;
 	syncHoverListener();
+	// Excalidraw-edited images are re-applied here, not once at startup: a synced
+	// edit, an undo, or a re-render of the page all land through this path.
+	applyImageEdits();
 	renderCommentBoxes();
 }
 
@@ -1047,6 +1058,9 @@ export async function loadHighlights() {
 		bumpHighlightsVersion();
 	}
 	lastAppliedVersion = highlightsVersion;
+	// A drawing saved while this page wasn't listening (the tab was reloaded while
+	// Excalidraw was open) still gets its comment.
+	void resumePendingDiagrams();
 }
 
 // One-time migration for highlights saved before the Highlighter 2.0 refactor.
