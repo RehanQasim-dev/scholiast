@@ -54,3 +54,18 @@ Log entries appended while working on this task (see README.md, "Agent logging p
   (DataStore/Keystore); Task 16's `ApiKeyProvider` Keystore impl. FutoTranscriber.kt (Task 11) was
   restored byte-identical (may still not compile — not mine).
 
+
+## 2026-08-20 — End-to-end wiring (orchestrator)
+- `SpeechDependencies.registry(context)` (cached, `invalidate()` on settings change) now provides the
+  `TranscriberRegistry` to the UI; `settings(context)` exposes the shared `AppSettings` instance
+  (the same one SettingsViewModel writes, so a Settings change is immediately visible to transcribers).
+- New `ui/voice/VoiceEditorSlot.kt` (`rememberVoiceEditorSlot`): owns the `VoiceRecorderViewModel`
+  per hosting screen, routes `onSamplesReady` floats through `registry.forAddComment()` with the
+  settings speech language, inserts `TranscriptionResult.Success` text into the open comment editor
+  via `CommentEditorSheet.onEditorViewModel` → `EditorViewModel.insertText`, then
+  `recorderVm.onTranscriptionDone()`. Permission/error events launch the system prompts.
+- Both hosts wired: `NotesTab.kt` and `TranscriptPanel.kt` pass `voice = voice.slot` +
+  `onEditorViewModel` to the sheet.
+- `SettingsViewModel` invalidates the registry on key/model changes so Groq/Gemini keys and the
+  active STT model apply without restart.
+- 403 tests green; commit `9391146`; APK re-uploaded to release `v0.1.0-android`.

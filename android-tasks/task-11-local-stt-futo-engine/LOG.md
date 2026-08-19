@@ -52,3 +52,13 @@ Log entries appended while working on this task (see README.md, "Agent logging p
 - **Progress (verified):**
   - `JAVA_HOME=/usr/lib/jvm/java-17-openjdk-amd64 ./gradlew :app:testDevDebugUnitTest --no-daemon` → **BUILD SUCCESSFUL**.
   - Full suite: **305 tests, 0 failures, 0 errors** (all 16 test classes, incl. `FutoTranscriberTest` with all 17 tests passing: wav round-trip/stereo/rejects, checksum+paths, NOT_CONFIGURED/UNKNOWN/INVALID_REQUEST mapping, partial filtering, cooperative cancellation via BlockingEngine latch).
+
+## 2026-08-20 — Active-model wiring (orchestrator)
+- `SpeechDependencies.activeLocalModel(settings, modelsDir)` resolves the transcriber's model:
+  the DataStore `active_stt_model` file → first installed catalogue model → `DEFAULT_MODEL`.
+- `FutoTranscriber(modelsDir, resolvedModel)` is now constructed by the shared cached registry in
+  `SpeechDependencies.registry(context)`; Settings imports/activations invalidate the cache so the
+  chosen .bin takes effect on the next recording.
+- Voice recordings now flow: `VoiceRecorderViewModel.onSamplesReady` → registry → FutoTranscriber
+  (active model) → `EditorViewModel.insertText` in Notes/Transcript sheets.
+- 403 tests green; commit `9391146`; APK re-uploaded to release `v0.1.0-android`.
