@@ -36,3 +36,6 @@ excalidraw.log
 
 # Local OAuth client config (never commit: contains a client secret)
 oauth.local.json
+
+# FUTO Keyboard upstream clone (task 11 extraction source; vendored code lives in android/app)
+android-keyboard/
