@@ -64,6 +64,16 @@ class SettingsViewModelTest {
         settings.setGemmaKey("gemma-key")
         assertEquals("gemma-key", settings.apiKey(Service.GEMMA))
     }
+
+    @Test
+    fun `active stt model round-trip`() = runBlocking {
+        val settings = FakeAppSettings()
+        assertNull(settings.activeSttModel())
+        settings.setActiveSttModel("voice-input-english-74.bin")
+        assertEquals("voice-input-english-74.bin", settings.activeSttModel())
+        settings.setActiveSttModel(null)
+        assertNull(settings.activeSttModel())
+    }
 }
 
 /** In-memory [AppSettings] for JVM tests (DataStore needs an Android Context). */
@@ -83,6 +93,7 @@ class FakeAppSettings : AppSettings {
     private var seekStep = 15
     private var speed = 1.0f
     private var dynamic = true
+    private var activeSttModel: String? = null
 
     override suspend fun apiKey(service: Service): String? = keys[service]
 
@@ -111,4 +122,6 @@ class FakeAppSettings : AppSettings {
     override suspend fun setSeekStepSeconds(seconds: Int) { seekStep = seconds }
     override suspend fun setDefaultPlaybackSpeed(speed: Float) { this.speed = speed }
     override suspend fun setDynamicTheme(dynamic: Boolean) { this.dynamic = dynamic }
+    override fun activeSttModel(): String? = activeSttModel
+    override suspend fun setActiveSttModel(fileName: String?) { activeSttModel = fileName }
 }

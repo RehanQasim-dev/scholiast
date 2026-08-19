@@ -40,6 +40,7 @@ class SettingsPrefs(private val context: Context) : AppSettings {
     private var seekStepSeconds: Int = DEFAULT_SEEK_STEP_SECONDS
     private var defaultSpeed: Float = DEFAULT_SPEED
     private var dynamicTheme: Boolean = true
+    private var activeSttModel: String? = null
     private var loaded = false
 
     /** Read the persisted values once. Idempotent; safe to call on every start. */
@@ -58,6 +59,7 @@ class SettingsPrefs(private val context: Context) : AppSettings {
         seekStepSeconds = prefs[K_SEEK_STEP] ?: DEFAULT_SEEK_STEP_SECONDS
         defaultSpeed = prefs[K_DEFAULT_SPEED] ?: DEFAULT_SPEED
         dynamicTheme = prefs[K_DYNAMIC_THEME] ?: true
+        activeSttModel = prefs[K_ACTIVE_STT_MODEL]
         loaded = true
     }
 
@@ -103,6 +105,10 @@ class SettingsPrefs(private val context: Context) : AppSettings {
     override suspend fun setDefaultPlaybackSpeed(speed: Float) = write(K_DEFAULT_SPEED, speed) { defaultSpeed = it }
     override suspend fun setDynamicTheme(dynamic: Boolean) = write(K_DYNAMIC_THEME, dynamic) { dynamicTheme = it }
 
+    override fun activeSttModel(): String? = activeSttModel
+    override suspend fun setActiveSttModel(fileName: String?) =
+        writeNullable(K_ACTIVE_STT_MODEL, fileName) { activeSttModel = it }
+
     private suspend fun write(key: androidx.datastore.preferences.core.Preferences.Key<String>, value: String, cache: (String) -> Unit) {
         context.settingsDataStore.edit { it[key] = value }
         cache(value)
@@ -143,6 +149,7 @@ class SettingsPrefs(private val context: Context) : AppSettings {
         private val K_SEEK_STEP = intPreferencesKey("seek_step_seconds")
         private val K_DEFAULT_SPEED = floatPreferencesKey("default_speed")
         private val K_DYNAMIC_THEME = booleanPreferencesKey("dynamic_theme")
+        private val K_ACTIVE_STT_MODEL = stringPreferencesKey("active_stt_model")
     }
 }
 
@@ -173,4 +180,8 @@ interface AppSettings : SpeechSettings {
     suspend fun setDefaultPlaybackSpeed(speed: Float)
     fun dynamicTheme(): Boolean
     suspend fun setDynamicTheme(dynamic: Boolean)
+
+    /** The file name of the local STT model currently active (null = default). */
+    fun activeSttModel(): String?
+    suspend fun setActiveSttModel(fileName: String?)
 }

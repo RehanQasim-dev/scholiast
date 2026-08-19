@@ -50,6 +50,7 @@ data class SettingsUiState(
     val seekStepSeconds: Int = 15,
     val defaultPlaybackSpeed: Float = 1f,
     val dynamicTheme: Boolean = true,
+    val activeSttModel: String? = null,
     val driveConnected: Boolean = false,
     val driveConfigured: Boolean = false,
     val syncing: Boolean = false,
@@ -131,6 +132,7 @@ class SettingsViewModel(
                     seekStepSeconds = settings.seekStepSeconds(),
                     defaultPlaybackSpeed = settings.defaultPlaybackSpeed(),
                     dynamicTheme = settings.dynamicTheme(),
+                    activeSttModel = settings.activeSttModel(),
                 )
             }
         }
@@ -257,15 +259,67 @@ class SettingsViewModel(
             _uiState.update { it.copy(busy = true, message = null) }
             try {
                 val target = modelStore.modelFile(model.fileName())
-                withContext(Dispatchers.IO) {
-                    app.contentResolver.openInputStream(uri)?.use { input ->
-                        target.outputStream().use { output -> input.copyTo(output) }
-                    } ?: error("Cannot read the picked file")
-                }
-                _uiState.update { it.copy(busy = false, message = "${model.name} imported") }
+                copyInto(uri, target)
+                settings.setActiveSttModel(model.fileName())
+                _uiState.update { it.copy(busy = false, message = "${model.name} imported and active") }
             } catch (e: Exception) {
                 _uiState.update { it.copy(busy = false, message = "Import failed: ${e.message}") }
             }
+            refreshSettings()
+        }
+    }
+
+    /**
+     * Free-form import: any .bin file, whatever its name — kept under its own
+     * file name and activated. This is the path for the FUTO page's current
+     * files (`voice-input-english-{39,74,244}.bin`), which don't match the
+     * pinned catalogue names.
+     */
+    fun importAnyModel(uri: Uri) {
+        viewModelScope.launch {
+            _uiState.update { it.copy(busy = true, message = null) }
+            try {
+                val fileName = withContext(Dispatchers.IO) {
+                    app.contentResolver.query(
+                        uri, arrayOf(android.provider.OpenableColumns.DISPLAY_NAME), null, null, null,
+                    )?.use { cursor ->
+                        if (cursor.moveToFirst()) {
+                            val idx = cursor.getColumnIndex(android.provider.OpenableColumns.DISPLAY_NAME)
+                            if (idx >= 0) cursor.getString(idx) else null
+                        } else null
+                    }
+                }?.takeIf { it.isNotBlank() }
+                    ?: "imported-model.bin"
+
+                val safeName = fileName.substringAfterLast('/').let {
+                    if (it.endsWith(".bin", ignoreCase = true)) it else "$it.bin"
+                }
+                val target = modelStore.modelFile(safeName)
+                copyInto(uri, target)
+                settings.setActiveSttModel(safeName)
+                _uiState.update { it.copy(busy = false, message = "$safeName imported and active") }
+            } catch (e: Exception) {
+                _uiState.update { it.copy(busy = false, message = "Import failed: ${e.message}") }
+            }
+            refreshSettings()
+        }
+    }
+
+    /** Activate an already-installed model file (radio in the model list). */
+    fun setActiveSttModel(fileName: String) {
+        viewModelScope.launch {
+            settings.setActiveSttModel(fileName)
+            _uiState.update { it.copy(message = "$fileName active") }
+            refreshSettings()
+        }
+    }
+
+    private suspend fun copyInto(uri: Uri, target: java.io.File) {
+        withContext(Dispatchers.IO) {
+            target.parentFile?.mkdirs()
+            app.contentResolver.openInputStream(uri)?.use { input ->
+                target.outputStream().use { output -> input.copyTo(output) }
+            } ?: error("Cannot read the picked file")
         }
     }
 

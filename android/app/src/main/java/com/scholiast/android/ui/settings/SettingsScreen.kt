@@ -129,9 +129,12 @@ fun SettingsScreen(
                 ModelSection(
                     title = "Local STT model (offline; FUTO Whisper)",
                     models = ENGLISH_MODELS,
-                    installed = remember(state.message) { viewModel.installedModels() },
+                    installed = remember(state.message, state.activeSttModel) { viewModel.installedModels() },
+                    activeModel = state.activeSttModel,
                     onOpenModelsPage = viewModel::openModelsPage,
-                    onImport = viewModel::importModel,
+                    onImportPinned = viewModel::importModel,
+                    onImportAny = viewModel::importAnyModel,
+                    onActivate = viewModel::setActiveSttModel,
                     deleteModel = viewModel::deleteModel,
                 )
             }
@@ -260,8 +263,11 @@ private fun ModelSection(
     title: String,
     models: List<ModelLoader>,
     installed: List<String>,
+    activeModel: String?,
     onOpenModelsPage: () -> Unit,
-    onImport: (ModelLoader, Uri) -> Unit,
+    onImportPinned: (ModelLoader, Uri) -> Unit,
+    onImportAny: (Uri) -> Unit,
+    onActivate: (String) -> Unit,
     deleteModel: (String) -> Unit,
 ) {
     var pendingImport by remember { mutableStateOf<ModelLoader?>(null) }
@@ -270,14 +276,21 @@ private fun ModelSection(
     ) { uri ->
         val model = pendingImport
         pendingImport = null
-        if (uri != null && model != null) onImport(model, uri)
+        if (uri != null) {
+            if (model != null) onImportPinned(model, uri) else onImportAny(uri)
+        }
+    }
+    fun launchPicker(model: ModelLoader?) {
+        pendingImport = model
+        importLauncher.launch(arrayOf("application/octet-stream", "*/*"))
     }
 
     Card(modifier = Modifier.fillMaxWidth()) {
         Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
             Text(title, style = MaterialTheme.typography.bodyMedium)
             Text(
-                "Download the .bin file from the FUTO page, then pick it with Import.",
+                "Download a .bin from the FUTO page, then pick it with Import. " +
+                    "An imported model keeps its own file name and becomes active.",
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
@@ -294,17 +307,19 @@ private fun ModelSection(
                         modifier = Modifier.weight(1f),
                     )
                     if (isInstalled) {
-                        Icon(Icons.Default.Check, contentDescription = "Installed", tint = MaterialTheme.colorScheme.primary)
+                        if (fileName == activeModel) {
+                            Text(
+                                "Active",
+                                style = MaterialTheme.typography.labelSmall,
+                                color = MaterialTheme.colorScheme.primary,
+                            )
+                        }
+                        TextButton(onClick = { onActivate(fileName) }) { Text("Use") }
                         TextButton(onClick = { deleteModel(fileName) }) {
                             Icon(Icons.Default.Delete, contentDescription = "Delete")
                         }
                     } else {
-                        OutlinedButton(
-                            onClick = {
-                                pendingImport = model
-                                importLauncher.launch(arrayOf("application/octet-stream", "*/*"))
-                            },
-                        ) {
+                        OutlinedButton(onClick = { launchPicker(model) }) {
                             Icon(Icons.Default.UploadFile, contentDescription = null)
                             Spacer(Modifier.width(4.dp))
                             Text("Import")
@@ -317,6 +332,45 @@ private fun ModelSection(
                     }
                 }
             }
+
+            HorizontalDivider()
+
+            Text("Any .bin (free-form)", style = MaterialTheme.typography.bodyMedium)
+            Button(
+                onClick = { launchPicker(null) },
+                modifier = Modifier.fillMaxWidth(),
+            ) {
+                Icon(Icons.Default.UploadFile, contentDescription = null)
+                Spacer(Modifier.width(4.dp))
+                Text("Import any model file")
+            }
+
+            installed.filterNot { name -> models.any { it.fileName() == name } }
+                .forEach { fileName ->
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        modifier = Modifier.fillMaxWidth(),
+                    ) {
+                        Text(
+                            fileName,
+                            style = MaterialTheme.typography.bodySmall,
+                            fontFamily = FontFamily.Monospace,
+                            modifier = Modifier.weight(1f),
+                        )
+                        if (fileName == activeModel) {
+                            Text(
+                                "Active",
+                                style = MaterialTheme.typography.labelSmall,
+                                color = MaterialTheme.colorScheme.primary,
+                            )
+                        } else {
+                            TextButton(onClick = { onActivate(fileName) }) { Text("Use") }
+                        }
+                        TextButton(onClick = { deleteModel(fileName) }) {
+                            Icon(Icons.Default.Delete, contentDescription = "Delete")
+                        }
+                    }
+                }
         }
     }
 }
