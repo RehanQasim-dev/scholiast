@@ -44,6 +44,7 @@ import com.scholiast.android.data.db.AppDatabase
 import com.scholiast.android.data.model.VideoItem
 import com.scholiast.android.data.notes.RoomVideoItemRepository
 import com.scholiast.android.ui.notes.editor.CommentEditorSheet
+import com.scholiast.android.ui.voice.rememberVoiceEditorSlot
 import kotlinx.coroutines.launch
 
 /**
@@ -144,6 +145,7 @@ fun NotesTab(
     }
 
     draft?.let { d ->
+        val voice = rememberVoiceEditorSlot()
         CommentEditorSheet(
             draft = d,
             timestampSeconds = d.videoTime,
@@ -161,6 +163,8 @@ fun NotesTab(
             },
             onCancel = { draft = null },
             seekListener = { seconds -> viewModel.seekTo(seconds) },
+            voice = voice.slot,
+            onEditorViewModel = { voice.editorViewModel = it },
         )
     }
 

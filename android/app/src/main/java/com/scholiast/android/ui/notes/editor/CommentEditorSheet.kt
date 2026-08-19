@@ -103,6 +103,7 @@ fun CommentEditorSheet(
     modifier: Modifier = Modifier,
     voice: EditorVoiceSlot? = null,
     title: String? = null,
+    onEditorViewModel: ((EditorViewModel) -> Unit)? = null,
 ) {
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
@@ -114,6 +115,11 @@ fun CommentEditorSheet(
     // a keyed VM with stale text.
     val viewModel = remember { EditorViewModel(tagIndex, initialText = draft.text) }
     val state by viewModel.state.collectAsStateWithLifecycle()
+
+    // Hand the editor VM to the host (voice pipeline inserts the transcription
+    // through the same VM the sheet drives — the host owns the recorder and
+    // the transcriber registry, so the text must flow host → sheet).
+    LaunchedEffect(viewModel) { onEditorViewModel?.invoke(viewModel) }
 
     val focusRequester = remember { FocusRequester() }
     val keyboardController = LocalSoftwareKeyboardController.current

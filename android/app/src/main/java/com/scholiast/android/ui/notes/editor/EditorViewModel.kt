@@ -117,6 +117,27 @@ class EditorViewModel(
     }
 
     /**
+     * Insert [text] at the caret (replacing any selection). Used by the voice
+     * pipeline: a finished transcription lands in the open draft exactly where
+     * the caret is, then the caret moves after the inserted text.
+     */
+    fun insertText(text: String) {
+        if (text.isEmpty()) return
+        val field = _state.value.field
+        val start = field.selection.start
+        val end = field.selection.end
+        val newText = field.text.replaceRange(start, end, text)
+        val caret = start + text.length
+        _state.update {
+            it.copy(
+                field = it.field.copy(text = newText, selection = TextRange(caret)),
+                activeTagToken = null,
+                tagSuggestions = emptyList(),
+            )
+        }
+    }
+
+    /**
      * The stored markdown for this draft: any pasted `<!--timestamp:N-->` /
      * `<!--edited:M-->` markers stripped (the save path stamps its own), the
      * text trimmed. This is what the sheet hands to `onSave`.

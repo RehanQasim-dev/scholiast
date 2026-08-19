@@ -62,6 +62,7 @@ import com.scholiast.android.ui.notes.EditorDraft
 import com.scholiast.android.ui.notes.SeekRequestListener
 import com.scholiast.android.ui.notes.VideoTimeProvider
 import com.scholiast.android.ui.notes.editor.CommentEditorSheet
+import com.scholiast.android.ui.voice.rememberVoiceEditorSlot
 import com.scholiast.android.ui.theme.TextSecondary
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.isActive
@@ -415,6 +416,7 @@ fun TranscriptPanel(
     }
 
     draft?.let { d ->
+        val voice = rememberVoiceEditorSlot()
         CommentEditorSheet(
             draft = d,
             timestampSeconds = d.videoTime,
@@ -428,6 +430,8 @@ fun TranscriptPanel(
             },
             onCancel = { draft = null },
             seekListener = { seconds -> viewModel.seekTo(seconds) },
+            voice = voice.slot,
+            onEditorViewModel = { voice.editorViewModel = it },
         )
     }
 }

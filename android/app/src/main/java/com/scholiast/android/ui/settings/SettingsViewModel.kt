@@ -21,6 +21,7 @@ import com.scholiast.android.domain.sync.drive.OAuthConfig
 import com.scholiast.android.domain.sync.drive.OkHttpDriveApi
 import com.scholiast.android.domain.sync.drive.SharedPrefsPendingAuthStore
 import com.scholiast.android.domain.transcribe.Service
+import com.scholiast.android.domain.transcribe.SpeechDependencies
 import com.scholiast.android.domain.transcribe.TranscriberSource
 import com.scholiast.android.domain.voice.local.ModelLoader
 import com.scholiast.android.domain.voice.local.Models
@@ -155,8 +156,9 @@ class SettingsViewModel(
     private fun saveKey(service: Service, key: String?) {
         viewModelScope.launch {
             settings.setKey(service, key)
-            refreshSettings()
         }
+        SpeechDependencies.invalidate()
+        refreshSettings()
     }
 
     fun setGroqModel(model: String) = save { settings.setGroqModel(model) }
@@ -172,6 +174,7 @@ class SettingsViewModel(
 
     private fun save(block: suspend () -> Unit) {
         viewModelScope.launch { block() }
+        SpeechDependencies.invalidate()
         refreshSettings()
     }
 
@@ -265,6 +268,7 @@ class SettingsViewModel(
             } catch (e: Exception) {
                 _uiState.update { it.copy(busy = false, message = "Import failed: ${e.message}") }
             }
+            SpeechDependencies.invalidate()
             refreshSettings()
         }
     }
@@ -301,6 +305,7 @@ class SettingsViewModel(
             } catch (e: Exception) {
                 _uiState.update { it.copy(busy = false, message = "Import failed: ${e.message}") }
             }
+            SpeechDependencies.invalidate()
             refreshSettings()
         }
     }
@@ -310,6 +315,7 @@ class SettingsViewModel(
         viewModelScope.launch {
             settings.setActiveSttModel(fileName)
             _uiState.update { it.copy(message = "$fileName active") }
+            SpeechDependencies.invalidate()
             refreshSettings()
         }
     }
@@ -338,7 +344,9 @@ class SettingsViewModel(
         fun factory(app: Context): ViewModelProvider.Factory = object : ViewModelProvider.Factory {
             @Suppress("UNCHECKED_CAST")
             override fun <T : ViewModel> create(modelClass: Class<T>): T {
-                val settings = SettingsPrefs(app)
+                // The SAME instance SpeechDependencies caches, so a Settings
+                // write is immediately visible to the transcribers.
+                val settings = SpeechDependencies.settings(app)
                 return SettingsViewModel(
                     app = app,
                     settings = settings,
