@@ -1,6 +1,8 @@
 package com.scholiast.android.ui.settings
 
 import android.content.Context
+import android.content.Intent
+import android.net.Uri
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.viewModelScope
@@ -20,8 +22,8 @@ import com.scholiast.android.domain.sync.drive.OkHttpDriveApi
 import com.scholiast.android.domain.sync.drive.SharedPrefsPendingAuthStore
 import com.scholiast.android.domain.transcribe.Service
 import com.scholiast.android.domain.transcribe.TranscriberSource
-import com.scholiast.android.domain.voice.local.ModelDownloader
 import com.scholiast.android.domain.voice.local.ModelLoader
+import com.scholiast.android.domain.voice.local.Models
 import com.scholiast.android.domain.voice.local.ModelStore
 import com.scholiast.android.ui.frame.FrameStore
 import kotlinx.coroutines.Dispatchers
@@ -88,7 +90,6 @@ class SettingsViewModel(
     private val frameStore = FrameStore.inFilesDir(app.filesDir)
     private val modelStoreDir: java.io.File = app.filesDir.resolve("stt_models")
     private val modelStore = ModelStore(modelStoreDir)
-    private val downloader = ModelDownloader(OkHttpClientProvider.client)
 
     init {
         viewModelScope.launch {
@@ -240,28 +241,30 @@ class SettingsViewModel(
 
     fun installedModels(): List<String> = modelStore.installedFileNames()
 
-    /** The directory the local STT models live in (filesDir/stt_models). */
-    fun modelsDir(): java.io.File = modelStoreDir
+    /** Open the FUTO voice-input-models page in the browser (Download button). */
+    fun openModelsPage() {
+        val intent = Intent(Intent.ACTION_VIEW, Uri.parse(Models.MODELS_PAGE_URL))
+            .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+        runCatching { app.startActivity(intent) }
+    }
 
-    fun downloadModel(model: ModelLoader) {
+    /**
+     * Import a model file the user picked from the FUTO page (SAF picker):
+     * copies the chosen .bin into stt_models under the model's file name.
+     */
+    fun importModel(model: ModelLoader, uri: Uri) {
         viewModelScope.launch {
             _uiState.update { it.copy(busy = true, message = null) }
-            val result = downloader.download(model, modelStoreDir) { done, total ->
-                _uiState.update { it.copy(message = "Downloading ${model.name}… $done/${total ?: "?"}") }
-            }
-            _uiState.update {
-                when (result) {
-                    is ModelDownloader.ModelDownloadResult.Success ->
-                        it.copy(busy = false, message = "${model.name} installed")
-                    is ModelDownloader.ModelDownloadResult.Failure.NotFound ->
-                        it.copy(busy = false, message = "${model.name} is not available for download (FUTO page gap); install it manually")
-                    is ModelDownloader.ModelDownloadResult.Failure.ChecksumMismatch ->
-                        it.copy(busy = false, message = "${model.name} failed checksum verification")
-                    is ModelDownloader.ModelDownloadResult.Failure.Cancelled ->
-                        it.copy(busy = false, message = "Download cancelled")
-                    is ModelDownloader.ModelDownloadResult.Failure.Network ->
-                        it.copy(busy = false, message = "Download failed: ${result.message}")
+            try {
+                val target = modelStore.modelFile(model.fileName())
+                withContext(Dispatchers.IO) {
+                    app.contentResolver.openInputStream(uri)?.use { input ->
+                        target.outputStream().use { output -> input.copyTo(output) }
+                    } ?: error("Cannot read the picked file")
                 }
+                _uiState.update { it.copy(busy = false, message = "${model.name} imported") }
+            } catch (e: Exception) {
+                _uiState.update { it.copy(busy = false, message = "Import failed: ${e.message}") }
             }
         }
     }

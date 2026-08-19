@@ -1,5 +1,8 @@
 package com.scholiast.android.ui.settings
 
+import android.net.Uri
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -37,6 +40,7 @@ import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Download
 import androidx.compose.material.icons.filled.Edit
+import androidx.compose.material.icons.filled.UploadFile
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -126,7 +130,8 @@ fun SettingsScreen(
                     title = "Local STT model (offline; FUTO Whisper)",
                     models = ENGLISH_MODELS,
                     installed = remember(state.message) { viewModel.installedModels() },
-                    downloadModel = viewModel::downloadModel,
+                    onOpenModelsPage = viewModel::openModelsPage,
+                    onImport = viewModel::importModel,
                     deleteModel = viewModel::deleteModel,
                 )
             }
@@ -255,14 +260,24 @@ private fun ModelSection(
     title: String,
     models: List<ModelLoader>,
     installed: List<String>,
-    downloadModel: (ModelLoader) -> Unit,
+    onOpenModelsPage: () -> Unit,
+    onImport: (ModelLoader, Uri) -> Unit,
     deleteModel: (String) -> Unit,
 ) {
+    var pendingImport by remember { mutableStateOf<ModelLoader?>(null) }
+    val importLauncher = rememberLauncherForActivityResult(
+        ActivityResultContracts.OpenDocument(),
+    ) { uri ->
+        val model = pendingImport
+        pendingImport = null
+        if (uri != null && model != null) onImport(model, uri)
+    }
+
     Card(modifier = Modifier.fillMaxWidth()) {
         Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
             Text(title, style = MaterialTheme.typography.bodyMedium)
             Text(
-                "Models come from ${Models.MODELS_PAGE_URL}. If a file 404s, copy the .bin into the app's stt_models folder manually.",
+                "Download the .bin file from the FUTO page, then pick it with Import.",
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
@@ -284,7 +299,17 @@ private fun ModelSection(
                             Icon(Icons.Default.Delete, contentDescription = "Delete")
                         }
                     } else {
-                        Button(onClick = { downloadModel(model) }) {
+                        OutlinedButton(
+                            onClick = {
+                                pendingImport = model
+                                importLauncher.launch(arrayOf("application/octet-stream", "*/*"))
+                            },
+                        ) {
+                            Icon(Icons.Default.UploadFile, contentDescription = null)
+                            Spacer(Modifier.width(4.dp))
+                            Text("Import")
+                        }
+                        Button(onClick = onOpenModelsPage) {
                             Icon(Icons.Default.Download, contentDescription = null)
                             Spacer(Modifier.width(4.dp))
                             Text("Download")
