@@ -89,6 +89,9 @@ interface PlayerBridge {
     /** Volume 0–100. */
     fun setVolume(percent: Int)
 
+    /** Toggle Closed Captions / subtitles on/off in the player. */
+    fun setCaptions(enabled: Boolean)
+
     /**
      * Pause + draw the current frame to a canvas (JPEG 0.8, ≤1280px) and report
      * via [PlayerEvents.onCaptureResult]. Errors: `black` (DRM/tainted frame),

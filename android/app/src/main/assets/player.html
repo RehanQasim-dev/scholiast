@@ -2,18 +2,33 @@
 <html lang="en">
 <head>
 <meta charset="utf-8">
-<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no">
+<meta name="viewport" content="width=device-width, height=device-height, initial-scale=1, maximum-scale=1, user-scalable=no">
 <title>Scholiast player</title>
 <style>
   html, body {
-    margin: 0; padding: 0;
-    width: 100%; height: 100%;
+    margin: 0;
+    padding: 0;
+    width: 100vw;
+    height: 100vh;
+    min-width: 100%;
+    min-height: 100%;
     background: #000;
     overflow: hidden;
+    position: relative;
   }
-  #player {
-    position: absolute; inset: 0;
-    width: 100%; height: 100%;
+  #player, iframe, #player iframe {
+    position: absolute !important;
+    top: 0 !important;
+    left: 0 !important;
+    right: 0 !important;
+    bottom: 0 !important;
+    width: 100% !important;
+    height: 100% !important;
+    min-width: 100% !important;
+    min-height: 100% !important;
+    border: none !important;
+    display: block !important;
+    pointer-events: none !important;
   }
   #loading {
     position: absolute; inset: 0;
@@ -22,15 +37,30 @@
     pointer-events: none;
   }
   #loading.hidden { display: none; }
+  ::cue {
+    color: #ffffff !important;
+    background-color: rgba(0, 0, 0, 0.88) !important;
+    text-shadow: 0 1px 3px rgba(0, 0, 0, 0.95) !important;
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif !important;
+    font-size: 16px !important;
+    font-weight: 600 !important;
+    line-height: 1.35 !important;
+  }
+  .caption-window, .ytp-caption-window-bottom, .ytp-caption-segment {
+    color: #ffffff !important;
+    background: rgba(8, 8, 12, 0.88) !important;
+    text-shadow: 0 1px 4px rgba(0, 0, 0, 0.95) !important;
+    border-radius: 4px !important;
+    font-size: 16px !important;
+    font-weight: 600 !important;
+  }
 </style>
 </head>
 <body>
 <div id="player"></div>
 <div id="loading">Loading player…</div>
 
-<!-- YouTube IFrame Player API; onYouTubeIframeAPIReady is called by the API itself. -->
-<script src="https://www.youtube.com/iframe_api"></script>
-
+<!-- YouTube IFrame Player API is loaded asynchronously below after callback definition -->
 <script>
 "use strict";
 
@@ -59,25 +89,155 @@ var player = null;
 var ready = false;
 var apiReady = false;
 var pendingVideoId = null;
+var currentLoadedVideoId = null;
 var timeTimer = null;
 var lastRate = 1;
 var lastVolume = 100;
+var lastCaptionsEnabled = true;
 
 function origin() {
-  // The page ships as a file:// asset; YouTube rejects a null origin, so the
-  // accepted fix is 'file://'. When hosted on a real origin (e.g. the future
-  // WebViewAssetLoader https host) use the page's own origin.
-  if (window.location.protocol === 'file:') return 'file://';
-  return window.location.origin;
+  return 'https://scholiast.app';
+}
+
+function injectIframeStyles() {
+  try {
+    var iframe = (player && player.getIframe) ? player.getIframe() : document.querySelector('iframe');
+    if (!iframe) return;
+    var doc = iframe.contentDocument || (iframe.contentWindow ? iframe.contentWindow.document : null);
+    if (!doc) return;
+
+    if (!doc.getElementById('scholiast-yt-cleaner')) {
+      var style = doc.createElement('style');
+      style.id = 'scholiast-yt-cleaner';
+      style.textContent = `
+        .ytp-chrome-top,
+        .ytp-chrome-bottom,
+        .ytp-watermark,
+        .ytp-pause-overlay,
+        .ytp-pause-overlay-container,
+        .ytp-gradient-top,
+        .ytp-gradient-bottom,
+        .ytp-show-cards-title,
+        .ytp-title,
+        .ytp-title-channel,
+        .ytp-ce-element,
+        .ytp-cards-teaser,
+        .ytp-endscreen-content,
+        .html5-endscreen,
+        .ytp-contextmenu,
+        .ytp-impression-link,
+        .ytp-paid-content-overlay,
+        .ytp-cairo-refresh-signature-moments,
+        .ytp-button.ytp-share-button,
+        .ytp-overflow-button,
+        .ytp-more-videos-view,
+        .ytp-upnext,
+        .ytp-tooltip,
+        .ytp-videowall,
+        .ytp-autonav-endscreen-upnext-container,
+        .ytp-bezel,
+        .ytp-bezel-text-wrapper,
+        .ytp-fullscreen-grid,
+        .ytp-fullscreen-grid-percentage,
+        .ytp-featured-product,
+        .ytp-merch-shelf,
+        .ytp-popup,
+        .ytp-menu-container,
+        .ytp-skip-intro-button,
+        .ytp-cards-button,
+        .ytp-multicam-button,
+        .ytp-remote-button,
+        .ytp-size-button,
+        .ytp-subtitles-button,
+        .ytp-player-content,
+        .ytp-flyout-cta,
+        .ytp-suggested-action-badge,
+        .ytp-youtube-button {
+          display: none !important;
+          opacity: 0 !important;
+          visibility: hidden !important;
+          pointer-events: none !important;
+        }
+        /* Raise captions above our bottom control row; transform composes with
+           YouTube's inline positioning, so it wins without fighting it. */
+        .ytp-caption-window-container { transform: translateY(-56px) !important; }
+        ::cue {
+          color: #ffffff !important;
+          background-color: rgba(8, 8, 12, 0.88) !important;
+          text-shadow: 0 1px 3px rgba(0, 0, 0, 0.95) !important;
+          font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif !important;
+          font-size: 16px !important;
+          font-weight: 600 !important;
+          line-height: 1.35 !important;
+        }
+        .caption-window, .ytp-caption-window-bottom, .ytp-caption-segment {
+          color: #ffffff !important;
+          background: rgba(8, 8, 12, 0.88) !important;
+          text-shadow: 0 1px 4px rgba(0, 0, 0, 0.95) !important;
+          border-radius: 4px !important;
+          font-size: 16px !important;
+          font-weight: 600 !important;
+        }
+      `;
+      (doc.head || doc.documentElement).appendChild(style);
+    }
+  } catch (e) {}
+}
+
+setInterval(injectIframeStyles, 300);
+
+function createPlayer(videoId) {
+  if (player || !apiReady || !videoId) return;
+  currentLoadedVideoId = videoId;
+  var loadingEl = document.getElementById('loading');
+  if (loadingEl) loadingEl.classList.add('hidden');
+  player = new YT.Player('player', {
+    width: '100%',
+    height: '100%',
+    videoId: videoId,
+    playerVars: {
+      origin: origin(),
+      rel: 0,                 // don't show related videos
+      playsinline: 1,         // REQUIRED on Android WebView: no forced fullscreen
+      controls: 0,            // all chrome lives in Compose
+      fs: 0,                  // no YouTube fullscreen button
+      modestbranding: 1,
+      iv_load_policy: 3,
+      disablekb: 1,
+      enablejsapi: 1,
+      autoplay: 1
+    },
+    events: {
+      onReady: onReady,
+      onStateChange: onStateChange,
+      onError: onError
+    }
+  });
 }
 
 // ------------------------------ Kotlin → JS --------------------------------
 
 function commandLoadVideo(id) {
+  console.log('[ScholiastJS] commandLoadVideo:', id, 'ready:', ready, 'apiReady:', apiReady);
+  if (!id) return;
   pendingVideoId = id;
+  if (!player && apiReady) {
+    createPlayer(id);
+    return;
+  }
   if (ready && player) {
-    player.loadVideoById(id);
-    // A fresh video resets playback rate/volume — re-apply our remembered ones.
+    if (currentLoadedVideoId === id) {
+      console.log('[ScholiastJS] Video already loaded, commanding play');
+      commandPlay();
+      return;
+    }
+    currentLoadedVideoId = id;
+    try {
+      console.log('[ScholiastJS] player.loadVideoById:', id);
+      player.loadVideoById(id);
+    } catch (e) {
+      console.error('[ScholiastJS] loadVideoById error:', e);
+    }
     setTimeout(function () {
       if (ready && player) {
         try { player.setPlaybackRate(lastRate); } catch (e) {}
@@ -88,9 +248,71 @@ function commandLoadVideo(id) {
   }
 }
 
-function commandSeekTo(s) { if (ready && player) { try { player.seekTo(s, true); } catch (e) {} } }
-function commandPlay()    { if (ready && player) { try { player.playVideo(); } catch (e) {} } }
-function commandPause()   { if (ready && player) { try { player.pauseVideo(); } catch (e) {} } }
+function commandSeekTo(s) {
+  console.log('[ScholiastJS] commandSeekTo:', s);
+  if (ready && player) {
+    var state = -1;
+    try { state = player.getPlayerState(); } catch (e) {}
+    var wasPlaying = (state === YT.PlayerState.PLAYING || state === YT.PlayerState.BUFFERING);
+    try {
+      player.seekTo(s, true);
+      if (wasPlaying) {
+        player.playVideo();
+      }
+    } catch (e) {}
+  }
+}
+
+function commandPlay() {
+  console.log('[ScholiastJS] commandPlay called, ready:', ready);
+  if (ready && player) {
+    try {
+      player.playVideo();
+      console.log('[ScholiastJS] player.playVideo() executed');
+    } catch (e) {
+      console.error('[ScholiastJS] player.playVideo() threw:', e);
+    }
+    try {
+      var iframe = player.getIframe();
+      if (iframe) {
+        var doc = iframe.contentDocument || iframe.contentWindow.document;
+        var video = doc ? doc.querySelector('video') : null;
+        if (video) {
+          console.log('[ScholiastJS] HTML5 video found. Paused:', video.paused);
+          if (video.paused) {
+            var p = video.play();
+            if (p && p.catch) {
+              p.catch(function(err) {
+                console.error('[ScholiastJS] video.play() promise rejected:', err);
+              });
+            }
+          }
+        }
+      }
+    } catch (e) {
+      console.error('[ScholiastJS] HTML5 video fallback error:', e);
+    }
+  }
+}
+
+function commandPause() {
+  console.log('[ScholiastJS] commandPause called');
+  if (ready && player) {
+    try {
+      player.pauseVideo();
+    } catch (e) {}
+    try {
+      var iframe = player.getIframe();
+      if (iframe) {
+        var doc = iframe.contentDocument || iframe.contentWindow.document;
+        var video = doc ? doc.querySelector('video') : null;
+        if (video && !video.paused) {
+          video.pause();
+        }
+      }
+    } catch (e) {}
+  }
+}
 
 function commandSetRate(r) {
   lastRate = r;
@@ -102,77 +324,123 @@ function commandSetVolume(v) {
   if (ready && player) { try { player.setVolume(v); } catch (e) {} }
 }
 
+function commandSetCaptions(enabled) {
+  console.log('[ScholiastJS] commandSetCaptions:', enabled);
+  lastCaptionsEnabled = (enabled === true || enabled === 'true' || enabled === 1);
+  if (ready && player) {
+    applyCaptions(lastCaptionsEnabled);
+  }
+}
+
+function applyCaptions(enabled) {
+  if (!player) return;
+  try {
+    if (enabled) {
+      player.loadModule("captions");
+      try { player.setOption('captions', 'fontSize', 1); } catch (e) {}
+      var tracks = player.getOption('captions', 'tracklist') || [];
+      if (tracks.length > 0) {
+        player.setOption('captions', 'track', tracks[0] || { languageCode: 'en' });
+      } else {
+        player.setOption('captions', 'track', { languageCode: 'en' });
+      }
+    } else {
+      player.unloadModule("captions");
+      player.setOption('captions', 'track', {});
+    }
+  } catch (e) {
+    console.error('[ScholiastJS] applyCaptions error:', e);
+  }
+  try {
+    var iframe = player.getIframe();
+    if (iframe) {
+      var doc = iframe.contentDocument || iframe.contentWindow.document;
+      var video = doc ? doc.querySelector('video') : null;
+      if (video && video.textTracks) {
+        for (var i = 0; i < video.textTracks.length; i++) {
+          video.textTracks[i].mode = enabled ? 'showing' : 'hidden';
+        }
+      }
+    }
+  } catch (e) {}
+}
+
 function commandCaptureFrame() { captureFrame(); }
 
 // ------------------------------- IFrame API ---------------------------------
 
 function onYouTubeIframeAPIReady() {
+  console.log('[ScholiastJS] onYouTubeIframeAPIReady called! pendingVideoId:', pendingVideoId);
   apiReady = true;
-  document.getElementById('loading').classList.add('hidden');
-  player = new YT.Player('player', {
-    width: '100%',
-    height: '100%',
-    videoId: pendingVideoId || '',
-    playerVars: {
-      origin: origin(),
-      rel: 0,                 // don't show related videos
-      playsinline: 1,         // REQUIRED on Android WebView: no forced fullscreen
-      controls: 0,            // all chrome lives in Compose
-      fs: 0,                  // no YouTube fullscreen button
-      modestbranding: 1,
-      iv_load_policy: 3,
-      disablekb: 1
-    },
-    events: {
-      onReady: onReady,
-      onStateChange: onStateChange,
-      onError: onError
-    }
-  });
+  if (pendingVideoId) {
+    createPlayer(pendingVideoId);
+  }
 }
 
-function onReady() {
+function onReady(e) {
+  console.log('[ScholiastJS] onReady fired! currentLoadedVideoId:', currentLoadedVideoId);
   ready = true;
-  if (pendingVideoId) {
-    try { player.loadVideoById(pendingVideoId); } catch (e) {}
-  }
   try { player.setPlaybackRate(lastRate); } catch (e) {}
   try { player.setVolume(lastVolume); } catch (e) {}
-  ScholiastBridge.onPlayerReady();
+  applyCaptions(lastCaptionsEnabled);
+  injectIframeStyles();
+  if (window.ScholiastBridge && window.ScholiastBridge.onPlayerReady) {
+    ScholiastBridge.onPlayerReady();
+  }
   reportMetadata();
-  // Caption tracklist populates late; poll a few times after ready.
-  setTimeout(reportCaptions, 1000);
-  setTimeout(reportCaptions, 3000);
-  setTimeout(reportCaptions, 6000);
+  setTimeout(function() {
+    reportCaptions();
+    applyCaptions(lastCaptionsEnabled);
+    injectIframeStyles();
+  }, 1000);
+  setTimeout(function() { reportCaptions(); injectIframeStyles(); }, 3000);
+  setTimeout(function() { reportCaptions(); injectIframeStyles(); }, 6000);
 }
 
 function onStateChange(e) {
-  ScholiastBridge.onStateChange(String(e.data));
+  console.log('[ScholiastJS] onStateChange: ' + e.data + ' (ready=' + ready + ')');
+  injectIframeStyles();
+  if (window.ScholiastBridge && window.ScholiastBridge.onStateChange) {
+    ScholiastBridge.onStateChange(String(e.data));
+  }
   if (e.data === YT.PlayerState.PLAYING) {
     reportMetadata();
     reportCaptions();
     startTimeTimer();
   } else if (e.data === YT.PlayerState.PAUSED) {
     stopTimeTimer();
+    injectIframeStyles();
   } else if (e.data === YT.PlayerState.ENDED) {
     stopTimeTimer();
-    try { ScholiastBridge.onTimeUpdate(String(player.getDuration() || 0)); } catch (err) {}
+    injectIframeStyles();
+    try {
+      if (window.ScholiastBridge && window.ScholiastBridge.onTimeUpdate) {
+        ScholiastBridge.onTimeUpdate(String(player.getDuration() || 0));
+      }
+    } catch (err) {}
   }
 }
 
 function onError(e) {
+  console.error('[ScholiastJS] onError: ' + e.data);
   stopTimeTimer();
-  ScholiastBridge.onError(String(e.data));
+  if (window.ScholiastBridge && window.ScholiastBridge.onError) {
+    ScholiastBridge.onError(String(e.data));
+  }
 }
 
 function reportMetadata() {
   try {
     var data = player.getVideoData();
-    if (data && data.title) ScholiastBridge.onTitle(String(data.title));
+    if (data && data.title && window.ScholiastBridge && window.ScholiastBridge.onTitle) {
+      ScholiastBridge.onTitle(String(data.title));
+    }
   } catch (e) {}
   try {
     var d = player.getDuration();
-    if (d > 0) ScholiastBridge.onDuration(String(d));
+    if (d > 0 && window.ScholiastBridge && window.ScholiastBridge.onDuration) {
+      ScholiastBridge.onDuration(String(d));
+    }
   } catch (e) {}
 }
 
@@ -181,9 +449,13 @@ function reportCaptions() {
   try {
     var tracks = player.getOption('captions', 'tracklist') || [];
     var has = Array.isArray(tracks) && tracks.length > 0;
-    ScholiastBridge.onCaptionsAvailable(has ? 'true' : 'false');
+    if (window.ScholiastBridge && window.ScholiastBridge.onCaptionsAvailable) {
+      ScholiastBridge.onCaptionsAvailable(has ? 'true' : 'false');
+    }
   } catch (e) {
-    ScholiastBridge.onCaptionsAvailable('false');
+    if (window.ScholiastBridge && window.ScholiastBridge.onCaptionsAvailable) {
+      ScholiastBridge.onCaptionsAvailable('false');
+    }
   }
 }
 
@@ -191,7 +463,11 @@ function startTimeTimer() {
   if (timeTimer) return;
   timeTimer = setInterval(function () {
     if (!ready || !player) return;
-    try { ScholiastBridge.onTimeUpdate(String(player.getCurrentTime())); } catch (e) {}
+    try {
+      if (window.ScholiastBridge && window.ScholiastBridge.onTimeUpdate) {
+        ScholiastBridge.onTimeUpdate(String(player.getCurrentTime()));
+      }
+    } catch (e) {}
   }, 250);
 }
 
@@ -251,9 +527,11 @@ function captureFrame() {
         return;
       }
       var dataUrl = canvas.toDataURL('image/jpeg', 0.8);
-      ScholiastBridge.onCaptureResult(JSON.stringify({
-        dataUrl: dataUrl, w: cw, h: ch, error: ''
-      }));
+      if (window.ScholiastBridge && window.ScholiastBridge.onCaptureResult) {
+        ScholiastBridge.onCaptureResult(JSON.stringify({
+          dataUrl: dataUrl, w: cw, h: ch, error: ''
+        }));
+      }
     } catch (e) {
       failCapture('tainted');
     }
@@ -261,9 +539,11 @@ function captureFrame() {
 }
 
 function failCapture(reason) {
-  ScholiastBridge.onCaptureResult(JSON.stringify({
-    dataUrl: '', w: 0, h: 0, error: reason
-  }));
+  if (window.ScholiastBridge && window.ScholiastBridge.onCaptureResult) {
+    ScholiastBridge.onCaptureResult(JSON.stringify({
+      dataUrl: '', w: 0, h: 0, error: reason
+    }));
+  }
 }
 
 function isBlackFrame(ctx, w, h) {
@@ -281,6 +561,12 @@ function isBlackFrame(ctx, w, h) {
   }
   return n > 0 && (black / n) > 0.98;
 }
+
+// Asynchronously load the YouTube IFrame Player API
+var tag = document.createElement('script');
+tag.src = "https://www.youtube.com/iframe_api";
+var firstScriptTag = document.getElementsByTagName('script')[0];
+firstScriptTag.parentNode.insertBefore(tag, firstScriptTag);
 </script>
 </body>
 </html>

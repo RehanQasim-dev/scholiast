@@ -67,6 +67,35 @@ Rules:
 | 19 | Settings window | speech, sync, playback, appearance, data | 10, 11, 16, 02 |
 | 20 | Chat + flashcards (v1.1) | RAG chat, flashcard gen, export | 02, 15, 13 |
 
+### Webpage annotation (Reader) — tasks 23–32
+
+Plan: `../scholiast_web_annot_app_plan.md`. Orchestrated in waves for maximum parallelism:
+
+```
+Wave 0:            T23 foundation (contract)
+                     │
+Wave 1:   T24 anchors · T25 extraction · T26 linearizer · T27 sync spine
+                     \         |          |          /
+Wave 2:        T28 reader shell+UI      T29 selection+highlights
+                        \                    /
+Wave 3:           T30 voice flow       T31 thread sheet (standalone)
+                          \              /
+Wave 4:                    T32 integration + verification
+```
+
+| # | Task | Summary | Depends on | Wave |
+|---|------|---------|------------|------|
+| 23 | Foundation contract | readability4j dep, Room migration, LinearArticle model, repository interface, ReaderPrefs | — | 0 |
+| 24 | Anchor port (`AnchorKt`) | create/resolve quote anchors, golden tests vs TS fixtures | 23 | 1 |
+| 25 | Extraction pipeline | fetch + Readability4J(+RY grabber) → article Element, shell detection | 23 | 1 |
+| 26 | Linearizer | article Element → `LinearArticle` blocks, truncation valve | 23 | 1 |
+| 27 | Sync spine | repository impl, `assembleLocalPage` real highlights, round-trip tests | 23 | 1 |
+| 28 | Reader shell UI | routing, Home Pages tab, NativeRenderer, top bar, typography, error card | 25, 26 (+23) | 2 |
+| 29 | Selection + highlights | SwatchPill, painter, badges, grouping, anchor creation | 24 (+23) | 2 |
+| 30 | Voice comment flow | VoiceBubble, transcribe chain, preview sheet, keep-draft | 28, 29 | 3 |
+| 31 | Thread sheet + actions | adaptive sheet/side panel, replies, recolor/delete-undo (standalone) | 28 | 3 |
+| 32 | Integration + polish | mounting, deep links, motion/a11y audit, WebView read-only fallback, final install | 30, 31 | 4 |
+
 "Dependencies" are informational — they identify modules whose interfaces you
 should respect. Agents still work in parallel; where a dependency isn't built
 yet, code against the DTOs/interfaces defined in the plan and Task 02, and note

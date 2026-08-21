@@ -10,6 +10,7 @@ import androidx.compose.foundation.layout.ExperimentalLayoutApi
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.WindowInsets
+import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.defaultMinSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
@@ -20,6 +21,7 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Mic
 import androidx.compose.material.icons.outlined.Keyboard
 import androidx.compose.material3.AlertDialog
@@ -29,7 +31,6 @@ import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
@@ -53,18 +54,18 @@ import com.scholiast.android.data.db.AppDatabase
 import com.scholiast.android.data.notes.RoomTagIndex
 import com.scholiast.android.ui.notes.EditorDraft
 import com.scholiast.android.ui.notes.TimestampChip
-import com.scholiast.android.ui.theme.AccentPurple
 import com.scholiast.android.ui.theme.Hairline
-import com.scholiast.android.ui.theme.OnAccent
 import com.scholiast.android.ui.theme.TextDisabled
 import kotlinx.coroutines.launch
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 
 /**
- * The bottom-sheet comment editor (plan §5.4, task 07): the draft field with
- * its formatting toolbar, the `#tag` autocomplete, the timestamp chip (tap to
- * seek), and the **mic + keyboard icon pair** — the keyboard is strictly opt-in
- * and only opens via the keyboard icon, never on focus (§2 / §6.4).
+ * The docked comment composer (plan §5.4, task 07 — layout revised by user
+ * request): a card the host docks at the bottom of its panel, NOT a modal —
+ * the video stays visible while writing. The draft field with its formatting
+ * toolbar, the `#tag` autocomplete, the timestamp chip (tap to seek), and the
+ * **mic + keyboard icon pair** — the keyboard is strictly opt-in and only
+ * opens via the keyboard icon, never on focus (§2 / §6.4).
  *
  * Consumed by Task 06's `NotesTab` (new note + reply) and Tasks 13/14 (transcript
  * / frame comments). The signature is the agreed contract:
@@ -79,17 +80,17 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
  * [timestampSeconds] is the seekable chip value; [onSave] receives the stored
  * comment-markdown text (the consumer stamps its own `<!--timestamp:N-->`).
  *
- * **Click-away / back rule:** an EMPTY draft is discarded silently (`onCancel`);
- * a non-empty draft is KEPT — the sheet does not dismiss, so nothing the user
- * typed is ever lost to an accidental outside tap. Save/Cancel are the only
- * exits for a non-empty draft (Save is disabled while the draft is empty).
+ * **Dismiss rule:** the × header button is an explicit cancel, so it always
+ * calls [onCancel] — an empty draft is discarded silently, and a non-empty one
+ * too (the tap is deliberate; there is no click-away dismissal to guard
+ * against any more).
  *
  * **Voice slot ([voice]):** Task 09's recorder lives in the hosting screen's
- * `VoiceRecorderViewModel` (so it survives rotation); the sheet only renders
+ * `VoiceRecorderViewModel` (so it survives rotation); the composer only renders
  * Task 09's [MicButton] from the injected [EditorVoiceSlot] state and forwards
  * its gestures. When null, a disabled mic glyph holds the layout position.
  * Task 10's transcriber inserts transcribed text through the same [EditorViewModel]
- * the sheet drives (a `onFieldChanged(TextFieldValue)` call) — no sheet edit
+ * the composer drives (a `onFieldChanged(TextFieldValue)` call) — no host edit
  * needed.
  */
 @OptIn(ExperimentalMaterial3Api::class, ExperimentalLayoutApi::class)
@@ -110,15 +111,15 @@ fun CommentEditorSheet(
     val tagIndex = remember(context) {
         RoomTagIndex(AppDatabase.getInstance(context.applicationContext).syncMetaDao())
     }
-    // Fresh instance per sheet opening: `remember { }` (no key) — a data-class
+    // Fresh instance per opening: `remember { }` (no key) — a data-class
     // EditorDraft would be `equals` across identical drafts and wrongly reuse
     // a keyed VM with stale text.
     val viewModel = remember { EditorViewModel(tagIndex, initialText = draft.text) }
     val state by viewModel.state.collectAsStateWithLifecycle()
 
     // Hand the editor VM to the host (voice pipeline inserts the transcription
-    // through the same VM the sheet drives — the host owns the recorder and
-    // the transcriber registry, so the text must flow host → sheet).
+    // through the same VM the composer drives — the host owns the recorder and
+    // the transcriber registry, so the text must flow host → composer).
     LaunchedEffect(viewModel) { onEditorViewModel?.invoke(viewModel) }
 
     val focusRequester = remember { FocusRequester() }
@@ -128,44 +129,50 @@ fun CommentEditorSheet(
     // Reset the opt-in flag the moment the IME actually closes (covers the
     // system-back-closes-IME case, where the field keeps focus).
     LaunchedEffect(imeVisible) { if (!imeVisible) keyboardAllowed = false }
-    // Position the caret without ever opening the IME (keyboard-less first).
-    LaunchedEffect(Unit) { focusRequester.requestFocus() }
 
     var linkDialogOpen by remember { mutableStateOf(false) }
     var linkUrl by remember { mutableStateOf("") }
 
-    ModalBottomSheet(
-        onDismissRequest = {
-            // Click-away discards only empty drafts; a non-empty draft keeps the
-            // sheet open so the user's words are never lost to an outside tap.
-            if (shouldDiscardOnDismiss(state.text)) onCancel()
-        },
-        containerColor = MaterialTheme.colorScheme.surfaceContainerHigh,
-        modifier = modifier,
+    Surface(
+        modifier = modifier.fillMaxWidth(),
+        shape = RoundedCornerShape(16.dp),
+        color = MaterialTheme.colorScheme.surfaceContainerHigh,
+        border = BorderStroke(1.dp, Hairline),
     ) {
         Column(
             modifier = Modifier
                 .fillMaxWidth()
-                .padding(horizontal = 16.dp)
-                .padding(bottom = 20.dp),
+                .padding(horizontal = 12.dp)
+                .padding(top = 10.dp, bottom = 10.dp),
         ) {
-            // Header: title + seekable timestamp chip.
+            // Header: title · seekable timestamp chip · close.
             Row(
                 modifier = Modifier.fillMaxWidth(),
                 verticalAlignment = Alignment.CenterVertically,
             ) {
                 Text(
                     text = title ?: if (draft.itemId == null) "New note" else "Reply",
-                    style = MaterialTheme.typography.titleMedium,
+                    style = MaterialTheme.typography.titleSmall,
+                    modifier = Modifier.weight(1f),
                 )
-                Spacer(Modifier.weight(1f))
                 TimestampChip(
                     seconds = timestampSeconds,
                     onClick = { seekListener(timestampSeconds) },
                 )
+                IconButton(
+                    onClick = onCancel,
+                    modifier = Modifier.size(32.dp),
+                ) {
+                    Icon(
+                        imageVector = Icons.Filled.Close,
+                        contentDescription = "Discard",
+                        tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                        modifier = Modifier.size(18.dp),
+                    )
+                }
             }
 
-            Spacer(Modifier.height(12.dp))
+            Spacer(Modifier.height(6.dp))
 
             // Draft area with the #tag autocomplete above the field.
             Column {
@@ -185,16 +192,16 @@ fun CommentEditorSheet(
                     keyboardAllowed = keyboardAllowed,
                     modifier = Modifier
                         .fillMaxWidth()
-                        .defaultMinSize(minHeight = 96.dp)
+                        .defaultMinSize(minHeight = 64.dp)
                         .clip(RoundedCornerShape(12.dp))
                         .background(MaterialTheme.colorScheme.surfaceContainerHighest)
                         .padding(horizontal = 12.dp, vertical = 8.dp),
                 )
             }
 
-            Spacer(Modifier.height(8.dp))
+            Spacer(Modifier.height(6.dp))
 
-            // Bottom row: formatting buttons left; mic + small keyboard icon right.
+            // One dense row: formatting left; mic · keyboard · Save right.
             Row(
                 modifier = Modifier.fillMaxWidth(),
                 verticalAlignment = Alignment.CenterVertically,
@@ -205,7 +212,6 @@ fun CommentEditorSheet(
                 )
                 Spacer(Modifier.weight(1f))
                 MicSlot(voice = voice)
-                Spacer(Modifier.width(8.dp))
                 KeyboardIconButton(
                     onClick = {
                         keyboardAllowed = true
@@ -213,21 +219,7 @@ fun CommentEditorSheet(
                         keyboardController?.show()
                     },
                 )
-            }
-
-            Spacer(Modifier.height(16.dp))
-
-            // Save / Cancel (≥48dp; Save purple-accented, disabled while empty).
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.End,
-                verticalAlignment = Alignment.CenterVertically,
-            ) {
-                TextButton(
-                    onClick = onCancel,
-                    modifier = Modifier.height(48.dp).defaultMinSize(minWidth = 72.dp),
-                ) { Text("Cancel") }
-                Spacer(Modifier.width(8.dp))
+                Spacer(Modifier.width(6.dp))
                 Button(
                     onClick = {
                         scope.launch {
@@ -236,10 +228,11 @@ fun CommentEditorSheet(
                         }
                     },
                     enabled = !state.isEmpty,
-                    modifier = Modifier.height(48.dp).defaultMinSize(minWidth = 96.dp),
+                    contentPadding = PaddingValues(horizontal = 16.dp),
+                    modifier = Modifier.height(44.dp),
                     colors = ButtonDefaults.buttonColors(
-                        containerColor = AccentPurple,
-                        contentColor = OnAccent,
+                        disabledContainerColor = MaterialTheme.colorScheme.surfaceContainerHighest,
+                        disabledContentColor = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.38f),
                     ),
                 ) { Text("Save") }
             }
@@ -263,6 +256,7 @@ fun CommentEditorSheet(
                     placeholder = { Text("https://…") },
                     label = { Text("URL") },
                     singleLine = true,
+                    modifier = Modifier.fillMaxWidth(),
                 )
             },
             confirmButton = {
@@ -366,7 +360,7 @@ private fun TagSuggestions(
                     Text(
                         text = "#$tag",
                         style = MaterialTheme.typography.bodyMedium,
-                        color = AccentPurple,
+                        color = MaterialTheme.colorScheme.primary,
                     )
                 }
             }

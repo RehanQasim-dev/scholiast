@@ -5,6 +5,7 @@ import android.graphics.BitmapFactory
 import android.util.Base64
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -17,6 +18,7 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Backspace
@@ -56,7 +58,6 @@ import androidx.compose.ui.viewinterop.AndroidView
 import com.scholiast.android.data.model.VideoMarkup
 import com.scholiast.android.player.CaptureStatus
 import com.scholiast.android.player.PlayerViewModel
-import com.scholiast.android.ui.theme.AccentPurple
 import com.scholiast.android.ui.theme.Background
 import com.scholiast.android.ui.theme.Hairline
 import com.scholiast.android.ui.theme.Surface
@@ -228,19 +229,23 @@ private fun DrawSurface(
 
             Spacer(Modifier.width(8.dp))
             FrameColor.entries.forEach { c ->
-                Surface(
-                    onClick = { view?.color = c },
-                    shape = RoundedCornerShape(50),
-                    color = Color(c.argb),
+                Box(
                     modifier = Modifier
-                        .size(if (view?.color == c) 26.dp else 22.dp)
-                        .padding(2.dp),
-                    border = if (view?.color == c) {
-                        BorderStroke(2.dp, Color.White)
-                    } else {
-                        null
-                    },
-                ) {}
+                        .size(40.dp)
+                        .clickable { view?.color = c },
+                    contentAlignment = Alignment.Center,
+                ) {
+                    Surface(
+                        shape = CircleShape,
+                        color = Color(c.argb),
+                        modifier = Modifier.size(if (view?.color == c) 26.dp else 22.dp),
+                        border = if (view?.color == c) {
+                            BorderStroke(2.dp, Color.White)
+                        } else {
+                            null
+                        },
+                    ) {}
+                }
             }
 
             Spacer(Modifier.weight(1f))
@@ -296,7 +301,7 @@ private fun DrawSurface(
                     maxLines = 3,
                     modifier = Modifier.fillMaxWidth(),
                     colors = OutlinedTextFieldDefaults.colors(
-                        focusedBorderColor = AccentPurple,
+                        focusedBorderColor = MaterialTheme.colorScheme.primary,
                         unfocusedBorderColor = Hairline,
                         focusedTextColor = MaterialTheme.colorScheme.onSurface,
                         unfocusedTextColor = MaterialTheme.colorScheme.onSurface,
@@ -340,7 +345,7 @@ private fun ToolIconButton(
     label: String,
     onClick: () -> Unit,
 ) {
-    val tint = if (selected) AccentPurple else TextSecondary
+    val tint = if (selected) MaterialTheme.colorScheme.primary else TextSecondary
     IconButton(onClick = onClick) {
         Icon(icon(), label, tint = tint, modifier = Modifier.size(22.dp))
     }

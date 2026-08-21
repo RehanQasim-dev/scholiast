@@ -19,12 +19,15 @@ import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
+import androidx.navigation.NavType
 import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
 import androidx.navigation.compose.rememberNavController
+import androidx.navigation.navArgument
 import com.scholiast.android.ui.home.HomeScreen
 import com.scholiast.android.ui.player.PlayerPanelPlaceholder
 import com.scholiast.android.ui.player.PlayerScreen
+import com.scholiast.android.ui.reader.ReaderScreen
 import com.scholiast.android.ui.settings.SettingsScreen
 
 @Composable
@@ -37,20 +40,22 @@ fun ScholiastApp() {
         composable(Routes.HOME) {
             HomeScreen(
                 onOpenVideo = { videoId -> navController.navigate(Routes.player(videoId)) },
+                onOpenReader = { url -> navController.navigate(Routes.reader(url)) },
                 onOpenSettings = { navController.navigate(Routes.SETTINGS) },
             )
+        }
+        composable(
+            route = Routes.READER,
+            arguments = listOf(navArgument("url") { type = NavType.StringType }),
+        ) { backStackEntry ->
+            val url = backStackEntry.arguments?.getString("url").orEmpty()
+            ReaderScreen(url = url, onBack = { navController.popBackStack() })
         }
         composable(Routes.PLAYER) { backStackEntry ->
             val videoId = backStackEntry.arguments?.getString("videoId").orEmpty()
             PlayerScreen(
                 videoId = videoId,
                 onBack = { navController.popBackStack() },
-                panelSlot = {
-                    PlayerPanelPlaceholder(
-                        onOpenVoiceEdit = { navController.navigate(Routes.VOICE_EDIT) },
-                        onOpenFrame = { navController.navigate(Routes.FRAME) },
-                    )
-                },
             )
         }
         composable(Routes.SETTINGS) {

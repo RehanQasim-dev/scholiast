@@ -45,6 +45,10 @@ class PlayerViewModelTest {
             calls += "setVolume:$percent"
         }
 
+        override fun setCaptions(enabled: Boolean) {
+            calls += "setCaptions:$enabled"
+        }
+
         override fun captureFrame() {
             calls += "captureFrame"
         }
@@ -80,6 +84,17 @@ class PlayerViewModelTest {
         assertNull(s.error)
         assertEquals(listOf("loadVideo:abc123"), bridge.calls)
         assertEquals(CaptureStatus.IDLE, vm.capture.value.status)
+    }
+
+    @Test
+    fun `loadVideo called before bind forwards to bridge when bound`() {
+        val viewModel = PlayerViewModel()
+        viewModel.loadVideo("delayed123")
+        val bridge = FakeBridge()
+        assertEquals(emptyList<String>(), bridge.calls)
+
+        viewModel.bind(bridge)
+        assertEquals(listOf("loadVideo:delayed123"), bridge.calls)
     }
 
     // ---- JS events in -------------------------------------------------------
@@ -301,5 +316,18 @@ class PlayerViewModelTest {
         vm.clearCapture()
         assertEquals(CaptureStatus.IDLE, vm.capture.value.status)
         assertNull(vm.capture.value.dataUrl)
+    }
+
+    @Test
+    fun `toggleCaptions switches caption state and commands bridge`() {
+        val (vm, bridge) = vm()
+        assertTrue(vm.state.value.captionsEnabled)
+        vm.toggleCaptions()
+        assertFalse(vm.state.value.captionsEnabled)
+        assertTrue(bridge.calls.contains("setCaptions:false"))
+
+        vm.toggleCaptions()
+        assertTrue(vm.state.value.captionsEnabled)
+        assertTrue(bridge.calls.contains("setCaptions:true"))
     }
 }

@@ -3,6 +3,9 @@ package com.scholiast.android.data.db
 import androidx.room.ColumnInfo
 import androidx.room.Entity
 import androidx.room.PrimaryKey
+import com.scholiast.android.data.model.LinearArticle
+import com.scholiast.android.data.model.PageHighlight
+import com.scholiast.android.data.model.ScholiastJson
 import com.scholiast.android.data.model.VideoItem
 import com.scholiast.android.data.model.VideoPage
 
@@ -17,6 +20,9 @@ import com.scholiast.android.data.model.VideoPage
  * - [fileId] / [headRevisionId] — Drive file metadata for CAS + change detection
  *   (desktop `pagemeta:<url>`).
  * - [updatedAt] — last item mutation (creation counts); drives Home's recent list.
+ * - [highlightsJson] / [readerJson] — webpage-annotation data (Task 23): the
+ *   page's `PageHighlight[]` and its extracted `LinearArticle` reader content,
+ *   each as a JSON blob (schema v2, added by [AppDatabase.MIGRATION_1_2]).
  *
  * `urlHash` is the SHA-256-prefix of the NORMALIZED url (`Normalize.urlHash`),
  * identical to the hash in the Drive file name `pages/page-<urlhash>.json`.
@@ -32,7 +38,18 @@ data class VideoPageEntity(
     val snapJson: String?,
     val fileId: String?,
     val headRevisionId: String?,
-)
+    @ColumnInfo(name = "highlightsJson", defaultValue = "[]")
+    val highlightsJson: String = "[]",
+    val readerJson: String? = null,
+) {
+    /** The page's highlights, parsed from [highlightsJson]. */
+    val highlights: List<PageHighlight>
+        get() = ScholiastJson.decode(highlightsJson)
+
+    /** The page's reader article, parsed from [readerJson] (null when never extracted). */
+    val reader: LinearArticle?
+        get() = readerJson?.let { ScholiastJson.decode(it) }
+}
 
 /**
  * A page row with its JSON columns already parsed into DTOs — the result of the
@@ -48,4 +65,6 @@ data class LoadedVideoPage(
     @ColumnInfo(name = "snapJson") val snap: VideoPage?,
     val fileId: String?,
     val headRevisionId: String?,
+    @ColumnInfo(name = "highlightsJson") val highlights: List<PageHighlight> = emptyList(),
+    @ColumnInfo(name = "readerJson") val reader: LinearArticle? = null,
 )

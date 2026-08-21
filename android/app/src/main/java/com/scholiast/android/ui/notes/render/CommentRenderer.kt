@@ -42,7 +42,6 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextDecoration
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import com.scholiast.android.ui.theme.AccentPurple
 import com.scholiast.android.ui.theme.Hairline
 import com.scholiast.android.ui.theme.TextDisabled
 import com.scholiast.android.ui.theme.TextSecondary
@@ -307,12 +306,16 @@ fun toggleTaskInMarkdown(markdown: String, nth: Int): String {
     }
 }
 
-/** Visual style knobs for the annotated-string layer; defaults are the app theme. */
+/**
+ * Visual style knobs for the annotated-string layer. Defaults are
+ * [Color.Unspecified] — the composable layer ([CommentText]) fills them from
+ * the theme's primary color, so the accent follows dynamic color.
+ */
 data class CommentTextStyles(
-    val linkColor: Color = AccentPurple,
+    val linkColor: Color = Color.Unspecified,
     val linkUnderline: Boolean = true,
-    val tagBackground: Color = AccentPurple.copy(alpha = 0.15f),
-    val tagTextColor: Color = AccentPurple,
+    val tagBackground: Color = Color.Unspecified,
+    val tagTextColor: Color = Color.Unspecified,
 )
 
 /**
@@ -466,7 +469,7 @@ fun CommentText(
                         Icon(
                             imageVector = if (line.checked) Icons.Filled.CheckBox else Icons.Filled.CheckBoxOutlineBlank,
                             contentDescription = if (line.checked) "Mark task not done" else "Mark task done",
-                            tint = if (line.checked) AccentPurple else TextDisabled,
+                            tint = if (line.checked) MaterialTheme.colorScheme.primary else TextDisabled,
                             modifier = Modifier
                                 .size(18.dp)
                                 .clickable { onToggleTask(toggleTaskInMarkdown(markdown, nth)) },
@@ -524,8 +527,17 @@ private fun InlineText(
     onOpenImage: ((String, ImageKind) -> Unit)?,
     modifier: Modifier = Modifier,
 ) {
-    val annotated = remember(content, onOpenLink, onTapTag) {
-        content.toAnnotatedString(CommentTextStyles(), onOpenLink, onTapTag ?: {})
+    val accent = MaterialTheme.colorScheme.primary
+    val annotated = remember(content, onOpenLink, onTapTag, accent) {
+        content.toAnnotatedString(
+            CommentTextStyles(
+                linkColor = accent,
+                tagBackground = accent.copy(alpha = 0.15f),
+                tagTextColor = accent,
+            ),
+            onOpenLink,
+            onTapTag ?: {},
+        )
     }
     val inlineContent = remember(content, imageResolver, onOpenImage) {
         val images = mutableListOf<CommentInline.InlineImage>()

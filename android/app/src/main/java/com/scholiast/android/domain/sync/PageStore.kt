@@ -1,5 +1,6 @@
 package com.scholiast.android.domain.sync
 
+import com.scholiast.android.data.model.PageHighlight
 import com.scholiast.android.data.model.VideoItem
 import com.scholiast.android.data.model.VideoPage
 
@@ -7,6 +8,10 @@ import com.scholiast.android.data.model.VideoPage
  * The sync engine's view of one page's local state, folded into a single row:
  *
  * - [items] — the page's `VideoItem[]` (the desktop `va:<url>` shard).
+ * - [highlights] — the page's REAL local `PageHighlight[]` (the desktop
+ *   `hl:<url>` shard, Task 27): locally owned, not seeded from the snapshot.
+ *   Kept in lockstep with the last reconcile by [PageStore.saveReconciled],
+ *   which persists the merged highlight list back into the row.
  * - [snap] — the last-reconciled `PageRecord`, the 3-way merge base (desktop
  *   `snap:<url>`).
  * - [fileId] / [headRevisionId] — Drive file metadata for CAS + change
@@ -20,6 +25,7 @@ data class PageSnapshot(
     val snap: VideoPage?,
     val fileId: String?,
     val headRevisionId: String?,
+    val highlights: List<PageHighlight> = emptyList(),
 )
 
 /**

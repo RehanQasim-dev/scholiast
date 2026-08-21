@@ -244,11 +244,18 @@ class SyncSchedulerTest {
         val engine = FakeEngine(clock = clock)
 
         assertFalse(SyncGraph.runLock.isLocked)
+        val acquired = kotlinx.coroutines.CompletableDeferred<Unit>()
+        val release = kotlinx.coroutines.CompletableDeferred<Unit>()
         val run = async(Dispatchers.IO) {
-            SyncGraph.runLock.withLock { SyncWorker.runSync(engine, repository) }
+            SyncGraph.runLock.withLock {
+                acquired.complete(Unit)
+                release.await()
+                SyncWorker.runSync(engine, repository)
+            }
         }
-        while (!SyncGraph.runLock.isLocked) yield() // wait for the first run to acquire
+        acquired.await()
         assertTrue(SyncGraph.runLock.isLocked) // doWork would dedupe here
+        release.complete(Unit)
         run.await()
         assertFalse(SyncGraph.runLock.isLocked)
         assertEquals(1, engine.reconcileCalls)

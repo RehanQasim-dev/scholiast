@@ -77,16 +77,27 @@ fun rememberVoiceEditorSlot(): VoiceEditorSlotUi {
     // Samples out → transcribe → insert into the open editor.
     LaunchedEffect(recorderVm) {
         recorderVm.onSamplesReady = { samples ->
-            scope.launch {
-                val registry = SpeechDependencies.registry(appContext)
-                val transcriber = registry.forAddComment()
-                val text = transcriber?.let { t ->
-                    val language = SpeechDependencies.settings(appContext).speechLanguage()
-                    val result = t.transcribe(AudioSource.FloatSamples(samples), language)
-                    (result as? TranscriptionResult.Success)?.text
+            scope.launch(kotlinx.coroutines.Dispatchers.Default) {
+                try {
+                    val registry = SpeechDependencies.registry(appContext)
+                    val transcriber = registry.forAddComment()
+                    val text = transcriber?.let { t ->
+                        val language = SpeechDependencies.settings(appContext).speechLanguage()
+                        val result = t.transcribe(AudioSource.FloatSamples(samples), language)
+                        (result as? TranscriptionResult.Success)?.text
+                    }
+                    if (!text.isNullOrBlank()) {
+                        kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.Main) {
+                            editorViewModel?.insertText(text)
+                        }
+                    }
+                } catch (e: Throwable) {
+                    android.util.Log.e("VoiceEditorSlot", "Voice transcription failed", e)
+                } finally {
+                    kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.Main) {
+                        recorderVm.onTranscriptionDone()
+                    }
                 }
-                if (!text.isNullOrBlank()) editorViewModel?.insertText(text)
-                recorderVm.onTranscriptionDone()
             }
         }
         recorderVm.onPauseRequested = { /* video pause is the host's job */ }

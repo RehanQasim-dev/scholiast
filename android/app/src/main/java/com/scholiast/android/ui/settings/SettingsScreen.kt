@@ -3,19 +3,27 @@ package com.scholiast.android.ui.settings
 import android.net.Uri
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.widthIn
+import androidx.compose.foundation.layout.wrapContentWidth
 import androidx.compose.foundation.lazy.LazyColumn
-import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardOptions
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
+import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Card
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.DropdownMenuItem
@@ -29,8 +37,7 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
-import androidx.compose.material3.Slider
-import androidx.compose.material3.Switch
+import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
@@ -39,8 +46,10 @@ import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Download
-import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material.icons.filled.UploadFile
+import androidx.compose.material.icons.filled.Visibility
+import androidx.compose.material.icons.filled.VisibilityOff
+import androidx.compose.material.icons.filled.Warning
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -50,6 +59,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontFamily
+import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.text.input.VisualTransformation
@@ -58,11 +68,8 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.scholiast.android.domain.sync.SyncState
 import com.scholiast.android.domain.transcribe.TranscriberSource
-import com.scholiast.android.domain.voice.local.ENGLISH_MODELS
-import com.scholiast.android.domain.voice.local.Models
-import com.scholiast.android.domain.voice.local.ModelLoader
 
-/** The Settings window (Task 19). Sections: speech, local STT, Drive, data. */
+/** The Settings window. Sections: speech, local STT, Drive, data. */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun SettingsScreen(
@@ -85,88 +92,96 @@ fun SettingsScreen(
             )
         },
     ) { padding ->
-        LazyColumn(
+        Box(
             modifier = Modifier
                 .fillMaxSize()
                 .padding(padding),
-            contentPadding = androidx.compose.foundation.layout.PaddingValues(16.dp),
-            verticalArrangement = Arrangement.spacedBy(12.dp),
+            contentAlignment = Alignment.TopCenter,
         ) {
-            item { SettingsSectionTitle("Speech") }
-            item {
-                KeyField(
-                    label = "Groq API key (cloud Whisper)",
-                    hasKey = state.groqKeySet,
-                    onSave = viewModel::setGroqKey,
-                )
-            }
-            item {
-                KeyField(
-                    label = "Google AI key (Gemini speech + Gemma OCR)",
-                    hasKey = state.geminiKeySet || state.gemmaKeySet,
-                    onSave = viewModel::setGeminiKey,
-                )
-            }
-            item { SettingsSectionTitle("Transcriber") }
-            item {
-                Text("Preferred transcriber", style = MaterialTheme.typography.bodyMedium)
-                TranscriberPicker(
-                    selected = state.preferredTranscriber,
-                    onChange = viewModel::setPreferredTranscriber,
-                )
-            }
-            item {
-                Text("Speech language (blank = English)", style = MaterialTheme.typography.bodyMedium)
-                OutlinedTextField(
-                    value = state.speechLanguage ?: "",
-                    onValueChange = { viewModel.setSpeechLanguage(it.ifBlank { null }) },
-                    singleLine = true,
-                    placeholder = { Text("en") },
-                    modifier = Modifier.fillMaxWidth(),
-                )
-            }
-            item {
-                ModelSection(
-                    title = "Local STT model (offline; FUTO Whisper)",
-                    models = ENGLISH_MODELS,
-                    installed = remember(state.message, state.activeSttModel) { viewModel.installedModels() },
-                    activeModel = state.activeSttModel,
-                    onOpenModelsPage = viewModel::openModelsPage,
-                    onImportPinned = viewModel::importModel,
-                    onImportAny = viewModel::importAnyModel,
-                    onActivate = viewModel::setActiveSttModel,
-                    deleteModel = viewModel::deleteModel,
-                )
-            }
-            item { SettingsSectionTitle("Drive sync") }
-            item {
-                DriveSection(
-                    connected = state.driveConnected,
-                    configured = state.driveConfigured,
-                    syncing = state.syncing,
-                    syncState = state.syncState,
-                    syncDetail = state.syncDetail,
-                    lastError = state.lastSyncError,
-                    onConnect = viewModel::connectDrive,
-                    onDisconnect = viewModel::disconnectDrive,
-                    onSyncNow = viewModel::syncNow,
-                )
-            }
-            item { SettingsSectionTitle("Data") }
-            item {
-                DataSection(
-                    busy = state.busy,
-                    onWipeLocal = viewModel::wipeLocalData,
-                    onWipeDrive = viewModel::wipeDriveData,
-                )
-            }
-            item { Spacer(Modifier.height(8.dp)) }
-            item {
-                Text(
-                    "Scholiast v${viewModel.versionName()}",
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                )
+            LazyColumn(
+                modifier = Modifier
+                    .fillMaxHeight()
+                    .widthIn(max = 600.dp)
+                    .fillMaxWidth()
+                    .wrapContentWidth(Alignment.CenterHorizontally),
+                contentPadding = androidx.compose.foundation.layout.PaddingValues(16.dp),
+                verticalArrangement = Arrangement.spacedBy(14.dp),
+            ) {
+                item { SettingsSectionTitle("Speech API Keys") }
+                item {
+                    KeyField(
+                        label = "Groq API key (Cloud Whisper)",
+                        hasKey = state.groqKeySet,
+                        onSave = viewModel::setGroqKey,
+                    )
+                }
+                item {
+                    KeyField(
+                        label = "Google AI key (Gemini speech + Gemma OCR)",
+                        hasKey = state.geminiKeySet || state.gemmaKeySet,
+                        onSave = viewModel::setGeminiKey,
+                    )
+                }
+                item { SettingsSectionTitle("Transcription Engine") }
+                item {
+                    Text("Preferred Transcriber", style = MaterialTheme.typography.bodyMedium)
+                    Spacer(Modifier.height(6.dp))
+                    TranscriberPicker(
+                        selected = state.preferredTranscriber,
+                        groqKeySet = state.groqKeySet,
+                        geminiKeySet = state.geminiKeySet || state.gemmaKeySet,
+                        onChange = viewModel::setPreferredTranscriber,
+                    )
+                }
+                item {
+                    Text("Speech Language", style = MaterialTheme.typography.bodyMedium)
+                    Spacer(Modifier.height(6.dp))
+                    SpeechLanguagePicker(
+                        selectedCode = state.speechLanguage,
+                        onChange = { viewModel.setSpeechLanguage(it) },
+                    )
+                }
+                item {
+                    ModelSection(
+                        title = "Local Whisper Model (Offline GGML)",
+                        installed = remember(state.message, state.activeSttModel) { viewModel.installedModels() },
+                        activeModel = state.activeSttModel,
+                        onOpenModelsPage = viewModel::openModelsPage,
+                        onImportAny = viewModel::importAnyModel,
+                        onActivate = viewModel::setActiveSttModel,
+                        deleteModel = viewModel::deleteModel,
+                    )
+                }
+                item { SettingsSectionTitle("Cloud Sync") }
+                item {
+                    DriveSection(
+                        connected = state.driveConnected,
+                        configured = state.driveConfigured,
+                        syncing = state.syncing,
+                        syncState = state.syncState,
+                        syncDetail = state.syncDetail,
+                        lastError = state.lastSyncError,
+                        onConnect = viewModel::connectDrive,
+                        onDisconnect = viewModel::disconnectDrive,
+                        onSyncNow = viewModel::syncNow,
+                    )
+                }
+                item { SettingsSectionTitle("Data Management") }
+                item {
+                    DataSection(
+                        busy = state.busy,
+                        onWipeLocal = viewModel::wipeLocalData,
+                        onWipeDrive = viewModel::wipeDriveData,
+                    )
+                }
+                item { Spacer(Modifier.height(12.dp)) }
+                item {
+                    Text(
+                        "Scholiast v${viewModel.versionName()}",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                }
             }
         }
     }
@@ -176,9 +191,9 @@ fun SettingsScreen(
 private fun SettingsSectionTitle(text: String) {
     Text(
         text,
-        style = MaterialTheme.typography.titleMedium,
-        color = MaterialTheme.colorScheme.primary,
-        modifier = Modifier.padding(top = 8.dp),
+        style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.SemiBold),
+        color = MaterialTheme.colorScheme.onSurface,
+        modifier = Modifier.padding(top = 12.dp),
     )
 }
 
@@ -192,7 +207,7 @@ private fun KeyField(
     var editing by remember { mutableStateOf(!hasKey) }
     var visible by remember { mutableStateOf(false) }
 
-    Card(modifier = Modifier.fillMaxWidth()) {
+    Card(modifier = Modifier.fillMaxWidth().widthIn(max = 600.dp)) {
         Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Text(label, style = MaterialTheme.typography.bodyMedium, modifier = Modifier.weight(1f))
@@ -201,26 +216,33 @@ private fun KeyField(
                 }
             }
             if (editing) {
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    OutlinedTextField(
-                        value = value,
-                        onValueChange = { value = it },
-                        singleLine = true,
-                        label = { Text("Paste key") },
-                        visualTransformation = if (visible) VisualTransformation.None else PasswordVisualTransformation(),
-                        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Password),
-                        modifier = Modifier.weight(1f),
-                    )
-                    IconButton(onClick = { visible = !visible }) {
-                        Icon(Icons.Default.Edit, contentDescription = if (visible) "Hide" else "Show")
-                    }
-                }
+                OutlinedTextField(
+                    value = value,
+                    onValueChange = { value = it },
+                    singleLine = true,
+                    label = { Text("Paste key") },
+                    visualTransformation = if (visible) VisualTransformation.None else PasswordVisualTransformation(),
+                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Password),
+                    trailingIcon = {
+                        IconButton(onClick = { visible = !visible }) {
+                            Icon(
+                                imageVector = if (visible) Icons.Filled.VisibilityOff else Icons.Filled.Visibility,
+                                contentDescription = if (visible) "Hide" else "Show",
+                            )
+                        }
+                    },
+                    modifier = Modifier.fillMaxWidth(),
+                )
                 Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    Button(onClick = { onSave(value.ifBlank { null }); editing = false; value = "" }) {
-                        Text("Save")
+                    Button(
+                        onClick = { onSave(value.ifBlank { null }); editing = false; value = "" },
+                        enabled = value.isNotBlank(),
+                    ) {
+                        Text("Save key")
                     }
                     if (hasKey) {
                         TextButton(onClick = { onSave(null); editing = false }) { Text("Remove") }
+                        TextButton(onClick = { editing = false }) { Text("Cancel") }
                     }
                 }
             } else {
@@ -230,16 +252,29 @@ private fun KeyField(
     }
 }
 
+/** Friendly display name for a backend; the raw enum names never reach the UI. */
+private fun transcriberLabel(source: TranscriberSource): String = when (source) {
+    TranscriberSource.LOCAL -> "Local (on-device)"
+    TranscriberSource.GROQ -> "Groq Whisper (cloud)"
+    TranscriberSource.GEMINI -> "Gemini (cloud)"
+}
+
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 private fun TranscriberPicker(
     selected: TranscriberSource,
+    groqKeySet: Boolean,
+    geminiKeySet: Boolean,
     onChange: (TranscriberSource) -> Unit,
 ) {
     var expanded by remember { mutableStateOf(false) }
-    ExposedDropdownMenuBox(expanded = expanded, onExpandedChange = { expanded = it }) {
+    ExposedDropdownMenuBox(
+        expanded = expanded,
+        onExpandedChange = { expanded = it },
+        modifier = Modifier.fillMaxWidth().widthIn(max = 600.dp),
+    ) {
         OutlinedTextField(
-            value = selected.name,
+            value = transcriberLabel(selected),
             onValueChange = {},
             readOnly = true,
             trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(expanded) },
@@ -250,8 +285,88 @@ private fun TranscriberPicker(
         ExposedDropdownMenu(expanded = expanded, onDismissRequest = { expanded = false }) {
             TranscriberSource.entries.forEach { source ->
                 DropdownMenuItem(
-                    text = { Text(source.name) },
+                    text = { Text(transcriberLabel(source)) },
                     onClick = { onChange(source); expanded = false },
+                )
+            }
+        }
+    }
+    // Cloud backends stay selectable without a key, but say so.
+    val keyMissing = when (selected) {
+        TranscriberSource.GROQ -> !groqKeySet
+        TranscriberSource.GEMINI -> !geminiKeySet
+        TranscriberSource.LOCAL -> false
+    }
+    if (keyMissing) {
+        Spacer(Modifier.height(6.dp))
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Icon(
+                Icons.Filled.Warning,
+                contentDescription = null,
+                modifier = Modifier.size(14.dp),
+                tint = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+            Spacer(Modifier.width(6.dp))
+            Text(
+                if (selected == TranscriberSource.GROQ) "Requires the Groq API key above."
+                else "Requires the Google AI key above.",
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+        }
+    }
+}
+
+private data class LanguageOption(val code: String?, val label: String)
+
+private val SPEECH_LANGUAGES = listOf(
+    LanguageOption(null, "English"),
+    LanguageOption("es", "Spanish (Español)"),
+    LanguageOption("fr", "French (Français)"),
+    LanguageOption("de", "German (Deutsch)"),
+    LanguageOption("it", "Italian (Italiano)"),
+    LanguageOption("pt", "Portuguese (Português)"),
+    LanguageOption("zh", "Chinese (中文)"),
+    LanguageOption("ja", "Japanese (日本語)"),
+    LanguageOption("ko", "Korean (한국어)"),
+    LanguageOption("ru", "Russian (Русский)"),
+    LanguageOption("ar", "Arabic (العربية)"),
+    LanguageOption("hi", "Hindi (हिन्दी)"),
+    LanguageOption("auto", "Auto-detect"),
+)
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun SpeechLanguagePicker(
+    selectedCode: String?,
+    onChange: (String?) -> Unit,
+) {
+    var expanded by remember { mutableStateOf(false) }
+    val currentLabel = SPEECH_LANGUAGES.firstOrNull { it.code == selectedCode }?.label
+        ?: if (selectedCode.isNullOrBlank()) "English" else selectedCode
+
+    ExposedDropdownMenuBox(
+        expanded = expanded,
+        onExpandedChange = { expanded = it },
+        modifier = Modifier.fillMaxWidth().widthIn(max = 600.dp),
+    ) {
+        OutlinedTextField(
+            value = currentLabel,
+            onValueChange = {},
+            readOnly = true,
+            trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(expanded) },
+            modifier = Modifier
+                .fillMaxWidth()
+                .menuAnchor(),
+        )
+        ExposedDropdownMenu(expanded = expanded, onDismissRequest = { expanded = false }) {
+            SPEECH_LANGUAGES.forEach { opt ->
+                DropdownMenuItem(
+                    text = { Text(opt.label) },
+                    onClick = {
+                        onChange(opt.code)
+                        expanded = false
+                    },
                 )
             }
         }
@@ -261,92 +376,94 @@ private fun TranscriberPicker(
 @Composable
 private fun ModelSection(
     title: String,
-    models: List<ModelLoader>,
     installed: List<String>,
     activeModel: String?,
     onOpenModelsPage: () -> Unit,
-    onImportPinned: (ModelLoader, Uri) -> Unit,
     onImportAny: (Uri) -> Unit,
     onActivate: (String) -> Unit,
     deleteModel: (String) -> Unit,
 ) {
-    var pendingImport by remember { mutableStateOf<ModelLoader?>(null) }
     val importLauncher = rememberLauncherForActivityResult(
         ActivityResultContracts.OpenDocument(),
     ) { uri ->
-        val model = pendingImport
-        pendingImport = null
-        if (uri != null) {
-            if (model != null) onImportPinned(model, uri) else onImportAny(uri)
-        }
-    }
-    fun launchPicker(model: ModelLoader?) {
-        pendingImport = model
-        importLauncher.launch(arrayOf("application/octet-stream", "*/*"))
+        if (uri != null) onImportAny(uri)
     }
 
-    Card(modifier = Modifier.fillMaxWidth()) {
-        Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-            Text(title, style = MaterialTheme.typography.bodyMedium)
+    Card(modifier = Modifier.fillMaxWidth().widthIn(max = 600.dp)) {
+        Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+            Text(title, style = MaterialTheme.typography.titleSmall)
             Text(
-                "Download a .bin from the FUTO page, then pick it with Import. " +
-                    "An imported model keeps its own file name and becomes active.",
+                "Fast local Whisper engine running fully on-device. Download official GGML .bin models from FUTO and load them into Scholiast.",
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
-            models.forEach { model ->
-                val fileName = model.fileName()
-                val isInstalled = fileName in installed
+
+            // Current Model Status Banner
+            Surface(
+                shape = RoundedCornerShape(8.dp),
+                color = MaterialTheme.colorScheme.surfaceContainerHighest,
+                modifier = Modifier.fillMaxWidth(),
+            ) {
                 Row(
+                    modifier = Modifier.padding(horizontal = 12.dp, vertical = 10.dp),
                     verticalAlignment = Alignment.CenterVertically,
-                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
                 ) {
-                    Text(
-                        model.name,
-                        style = MaterialTheme.typography.bodyMedium,
-                        modifier = Modifier.weight(1f),
-                    )
-                    if (isInstalled) {
-                        if (fileName == activeModel) {
+                    Column(modifier = Modifier.weight(1f, fill = false)) {
+                        Text(
+                            text = "Active Engine Model",
+                            style = MaterialTheme.typography.labelSmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
+                        Text(
+                            text = activeModel ?: "Default Tiny English (built-in)",
+                            style = MaterialTheme.typography.bodyMedium.copy(fontWeight = FontWeight.SemiBold),
+                            color = if (activeModel != null) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurface,
+                        )
+                    }
+                    if (activeModel != null) {
+                        Surface(
+                            shape = RoundedCornerShape(4.dp),
+                            color = MaterialTheme.colorScheme.primary.copy(alpha = 0.2f),
+                        ) {
                             Text(
-                                "Active",
-                                style = MaterialTheme.typography.labelSmall,
+                                text = "ACTIVE",
+                                style = MaterialTheme.typography.labelSmall.copy(fontWeight = FontWeight.Bold),
                                 color = MaterialTheme.colorScheme.primary,
+                                modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp),
                             )
-                        }
-                        TextButton(onClick = { onActivate(fileName) }) { Text("Use") }
-                        TextButton(onClick = { deleteModel(fileName) }) {
-                            Icon(Icons.Default.Delete, contentDescription = "Delete")
-                        }
-                    } else {
-                        OutlinedButton(onClick = { launchPicker(model) }) {
-                            Icon(Icons.Default.UploadFile, contentDescription = null)
-                            Spacer(Modifier.width(4.dp))
-                            Text("Import")
-                        }
-                        Button(onClick = onOpenModelsPage) {
-                            Icon(Icons.Default.Download, contentDescription = null)
-                            Spacer(Modifier.width(4.dp))
-                            Text("Download")
                         }
                     }
                 }
             }
 
-            HorizontalDivider()
-
-            Text("Any .bin (free-form)", style = MaterialTheme.typography.bodyMedium)
-            Button(
-                onClick = { launchPicker(null) },
+            // Standard paired action buttons
+            Row(
                 modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
             ) {
-                Icon(Icons.Default.UploadFile, contentDescription = null)
-                Spacer(Modifier.width(4.dp))
-                Text("Import any model file")
+                Button(
+                    onClick = onOpenModelsPage,
+                    modifier = Modifier.height(44.dp),
+                ) {
+                    Icon(Icons.Default.Download, contentDescription = null, modifier = Modifier.size(18.dp))
+                    Spacer(Modifier.width(6.dp))
+                    Text("Explore Models")
+                }
+                OutlinedButton(
+                    onClick = { importLauncher.launch(arrayOf("application/octet-stream", "*/*")) },
+                    modifier = Modifier.height(44.dp),
+                ) {
+                    Icon(Icons.Default.UploadFile, contentDescription = null, modifier = Modifier.size(18.dp))
+                    Spacer(Modifier.width(6.dp))
+                    Text("Load .bin File")
+                }
             }
 
-            installed.filterNot { name -> models.any { it.fileName() == name } }
-                .forEach { fileName ->
+            if (installed.isNotEmpty()) {
+                HorizontalDivider(Modifier.padding(vertical = 4.dp))
+                Text("Installed Models", style = MaterialTheme.typography.labelMedium)
+                installed.forEach { fileName ->
                     Row(
                         verticalAlignment = Alignment.CenterVertically,
                         modifier = Modifier.fillMaxWidth(),
@@ -360,17 +477,19 @@ private fun ModelSection(
                         if (fileName == activeModel) {
                             Text(
                                 "Active",
-                                style = MaterialTheme.typography.labelSmall,
+                                style = MaterialTheme.typography.labelSmall.copy(fontWeight = FontWeight.Bold),
                                 color = MaterialTheme.colorScheme.primary,
+                                modifier = Modifier.padding(end = 8.dp),
                             )
                         } else {
                             TextButton(onClick = { onActivate(fileName) }) { Text("Use") }
                         }
-                        TextButton(onClick = { deleteModel(fileName) }) {
-                            Icon(Icons.Default.Delete, contentDescription = "Delete")
+                        IconButton(onClick = { deleteModel(fileName) }) {
+                            Icon(Icons.Default.Delete, contentDescription = "Delete", tint = MaterialTheme.colorScheme.error)
                         }
                     }
                 }
+            }
         }
     }
 }
@@ -387,7 +506,7 @@ private fun DriveSection(
     onDisconnect: () -> Unit,
     onSyncNow: () -> Unit,
 ) {
-    Card(modifier = Modifier.fillMaxWidth()) {
+    Card(modifier = Modifier.fillMaxWidth().widthIn(max = 600.dp)) {
         Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
             Text(
                 if (connected) "Connected to Google Drive (appdata)" else "Not connected",
@@ -397,7 +516,7 @@ private fun DriveSection(
                 Text(
                     "This build has no OAuth client values (oauth.local.json was empty at build time). Connect is unavailable.",
                     style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.error,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
             }
             when (syncState) {
@@ -433,31 +552,45 @@ private fun DataSection(
     onWipeLocal: () -> Unit,
     onWipeDrive: () -> Unit,
 ) {
-    Card(modifier = Modifier.fillMaxWidth()) {
-        Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+    var showLocalDialog by remember { mutableStateOf(false) }
+    var showDriveDialog by remember { mutableStateOf(false) }
+
+    Card(modifier = Modifier.fillMaxWidth().widthIn(max = 600.dp)) {
+        Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
             Text(
-                "Wipes are destructive. Local wipes keep settings and the Drive connection; Drive wipes keep local annotations.",
+                "Data management actions are irreversible. Local wipes delete local notes/frames; Drive wipes delete remote sync records.",
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
-            var confirmLocal by remember { mutableStateOf(false) }
-            var confirmDrive by remember { mutableStateOf(false) }
-            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                if (confirmLocal) {
-                    Button(onClick = { onWipeLocal(); confirmLocal = false }, enabled = !busy) { Text("Delete ALL local data") }
-                    TextButton(onClick = { confirmLocal = false }) { Text("Cancel") }
-                } else {
-                    OutlinedButton(onClick = { confirmLocal = true }) { Text("Delete local data…") }
-                }
+
+            OutlinedButton(
+                onClick = { showLocalDialog = true },
+                enabled = !busy,
+                colors = ButtonDefaults.outlinedButtonColors(
+                    contentColor = MaterialTheme.colorScheme.error,
+                ),
+                border = BorderStroke(1.dp, MaterialTheme.colorScheme.error.copy(alpha = 0.7f)),
+                modifier = Modifier.height(44.dp),
+            ) {
+                Icon(Icons.Default.Delete, contentDescription = null, modifier = Modifier.size(18.dp))
+                Spacer(Modifier.width(6.dp))
+                Text("Delete local data…")
             }
-            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                if (confirmDrive) {
-                    Button(onClick = { onWipeDrive(); confirmDrive = false }, enabled = !busy) { Text("Delete ALL Drive data") }
-                    TextButton(onClick = { confirmDrive = false }) { Text("Cancel") }
-                } else {
-                    OutlinedButton(onClick = { confirmDrive = true }) { Text("Delete Drive data…") }
-                }
+
+            OutlinedButton(
+                onClick = { showDriveDialog = true },
+                enabled = !busy,
+                colors = ButtonDefaults.outlinedButtonColors(
+                    contentColor = MaterialTheme.colorScheme.error,
+                ),
+                border = BorderStroke(1.dp, MaterialTheme.colorScheme.error.copy(alpha = 0.7f)),
+                modifier = Modifier.height(44.dp),
+            ) {
+                Icon(Icons.Default.Delete, contentDescription = null, modifier = Modifier.size(18.dp))
+                Spacer(Modifier.width(6.dp))
+                Text("Delete Drive data…")
             }
+
             if (busy) {
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     CircularProgressIndicator(modifier = Modifier.width(18.dp).height(18.dp), strokeWidth = 2.dp)
@@ -466,5 +599,62 @@ private fun DataSection(
                 }
             }
         }
+    }
+
+    if (showLocalDialog) {
+        AlertDialog(
+            onDismissRequest = { showLocalDialog = false },
+            title = { Text("Delete local data?") },
+            text = {
+                Text(
+                    "This permanently deletes all notes, highlights, drawings, video items and frame " +
+                        "images stored on this device. Your settings and the Drive connection are kept, " +
+                        "and nothing is removed from Google Drive.",
+                )
+            },
+            confirmButton = {
+                TextButton(onClick = { showLocalDialog = false; onWipeLocal() }) {
+                    Text("Delete", color = MaterialTheme.colorScheme.error)
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { showLocalDialog = false }) { Text("Cancel") }
+            },
+        )
+    }
+
+    if (showDriveDialog) {
+        var confirmText by remember { mutableStateOf("") }
+        AlertDialog(
+            onDismissRequest = { showDriveDialog = false },
+            title = { Text("Delete Drive data?") },
+            text = {
+                Column {
+                    Text(
+                        "This permanently deletes every synced page record, frame image and diagram " +
+                            "blob from the app's Google Drive appdata folder. Annotations on this " +
+                            "device are untouched.",
+                    )
+                    Spacer(Modifier.height(12.dp))
+                    OutlinedTextField(
+                        value = confirmText,
+                        onValueChange = { confirmText = it },
+                        singleLine = true,
+                        label = { Text("Type DELETE to confirm") },
+                    )
+                }
+            },
+            confirmButton = {
+                TextButton(
+                    onClick = { showDriveDialog = false; onWipeDrive() },
+                    enabled = confirmText == "DELETE",
+                ) {
+                    Text("Delete", color = MaterialTheme.colorScheme.error)
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { showDriveDialog = false }) { Text("Cancel") }
+            },
+        )
     }
 }

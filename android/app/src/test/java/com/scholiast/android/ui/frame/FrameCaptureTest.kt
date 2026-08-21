@@ -605,6 +605,10 @@ class FrameCaptureTest {
             calls += "setVolume:$percent"
         }
 
+        override fun setCaptions(enabled: Boolean) {
+            calls += "setCaptions:$enabled"
+        }
+
         override fun captureFrame() {
             calls += "captureFrame"
         }

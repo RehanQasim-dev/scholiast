@@ -14,6 +14,9 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Mic
+import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -156,7 +159,12 @@ fun MicButton(
             horizontalAlignment = Alignment.CenterHorizontally,
             verticalArrangement = androidx.compose.foundation.layout.Arrangement.Center,
         ) {
-            MicGlyph(tint = micTint, modifier = Modifier.size(26.dp))
+            Icon(
+                imageVector = Icons.Filled.Mic,
+                contentDescription = null,
+                tint = micTint,
+                modifier = Modifier.size(28.dp),
+            )
             if (state is RecorderState.Recording) {
                 Text(
                     text = formatClock(state.elapsedMs),
@@ -165,39 +173,6 @@ fun MicButton(
                 )
             }
         }
-    }
-}
-
-/** Draws a simple mic glyph (capsule + holder) without depending on a material-icons artifact. */
-@Composable
-private fun MicGlyph(tint: Color, modifier: Modifier = Modifier) {
-    Canvas(modifier = modifier) {
-        val w = size.width
-        val h = size.height
-        val capsule = Stroke(width = w * 0.16f)
-        val capsuleLeft = w * 0.32f
-        val capsuleTop = h * 0.16f
-        val capsuleW = w - capsuleLeft * 2f
-
-        // Mic capsule
-        drawRoundRect(
-            color = tint,
-            topLeft = androidx.compose.ui.geometry.Offset(capsuleLeft, capsuleTop),
-            size = androidx.compose.ui.geometry.Size(capsuleW, h * 0.5f),
-            cornerRadius = androidx.compose.ui.geometry.CornerRadius(capsuleW / 2f, capsuleW / 2f),
-            style = capsule,
-        )
-        // Holder arms
-        val armSpread = w * 0.22f
-        drawArc(
-            color = tint,
-            startAngle = 210f,
-            sweepAngle = 120f,
-            useCenter = false,
-            topLeft = androidx.compose.ui.geometry.Offset(w / 2f - armSpread, h * 0.42f),
-            size = androidx.compose.ui.geometry.Size(armSpread * 2f, armSpread * 2f),
-            style = capsule,
-        )
     }
 }
 

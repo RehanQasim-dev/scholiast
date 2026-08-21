@@ -323,7 +323,7 @@ class AndroidVoiceRecorder private constructor(
         record.startRecording()
         audioRecord = record
 
-        recorderJob = scope.launch {
+        recorderJob = scope.launch(kotlinx.coroutines.Dispatchers.IO) {
             readLoop(record)
         }
     }

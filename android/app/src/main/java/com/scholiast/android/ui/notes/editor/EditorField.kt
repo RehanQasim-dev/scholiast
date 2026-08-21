@@ -10,13 +10,19 @@ import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.FormatListBulleted
 import androidx.compose.material.icons.filled.Checklist
+import androidx.compose.material.icons.filled.Code
 import androidx.compose.material.icons.filled.FormatBold
 import androidx.compose.material.icons.filled.FormatItalic
 import androidx.compose.material.icons.filled.Link
+import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.PlainTooltip
 import androidx.compose.material3.Text
+import androidx.compose.material3.TooltipBox
+import androidx.compose.material3.TooltipDefaults
+import androidx.compose.material3.rememberTooltipState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
@@ -24,6 +30,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.focus.onFocusChanged
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.LocalSoftwareKeyboardController
@@ -31,7 +38,6 @@ import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.text.SpanStyle
 import androidx.compose.ui.text.input.TextFieldValue
 import androidx.compose.ui.unit.dp
-import com.scholiast.android.ui.theme.AccentPurple
 import com.scholiast.android.ui.theme.TextDisabled
 
 /**
@@ -65,15 +71,17 @@ fun EditorField(
 ) {
     val keyboardController = LocalSoftwareKeyboardController.current
     val textStyle = MaterialTheme.typography.bodyLarge.copy(color = MaterialTheme.colorScheme.onSurface)
+    val accent = MaterialTheme.colorScheme.primary
 
     val caret = if (value.selection.collapsed) value.selection.start else null
-    val displayed = remember(value, caret) {
-        value.copy(annotatedString = pillTagsAnnotated(value.text, caret))
+    val displayed = remember(value, caret, accent) {
+        value.copy(annotatedString = pillTagsAnnotated(value.text, caret, accent))
     }
 
     BasicTextField(
         value = displayed,
         onValueChange = onValueChange,
+        readOnly = !keyboardAllowed,
         modifier = modifier
             .fillMaxWidth()
             .focusRequester(focusRequester)
@@ -81,7 +89,7 @@ fun EditorField(
                 if (state.isFocused && !keyboardAllowed) keyboardController?.hide()
             },
         textStyle = textStyle,
-        cursorBrush = SolidColor(AccentPurple),
+        cursorBrush = SolidColor(accent),
         decorationBox = { innerTextField ->
             Box {
                 if (value.text.isEmpty()) {
@@ -114,8 +122,9 @@ fun EditorFormatBar(
         horizontalArrangement = Arrangement.spacedBy(2.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        FormatIconButton("Bold", Icons.Filled.FormatBold) { onCommand(EditorCommand.BOLD) }
-        FormatIconButton("Italic", Icons.Filled.FormatItalic) { onCommand(EditorCommand.ITALIC) }
+        FormatIconButton("Bold (Ctrl+B)", Icons.Filled.FormatBold) { onCommand(EditorCommand.BOLD) }
+        FormatIconButton("Italic (Ctrl+I)", Icons.Filled.FormatItalic) { onCommand(EditorCommand.ITALIC) }
+        FormatIconButton("Inline code", Icons.Filled.Code) { onCommand(EditorCommand.CODE) }
         FormatIconButton(
             "Bullet list",
             Icons.AutoMirrored.Filled.FormatListBulleted,
@@ -126,23 +135,35 @@ fun EditorFormatBar(
     }
 }
 
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 private fun FormatIconButton(label: String, icon: ImageVector, onClick: () -> Unit) {
-    IconButton(onClick = onClick, modifier = Modifier.size(48.dp)) {
-        Icon(
-            imageVector = icon,
-            contentDescription = label,
-            tint = MaterialTheme.colorScheme.onSurfaceVariant,
-            modifier = Modifier.size(22.dp),
-        )
+    TooltipBox(
+        positionProvider = TooltipDefaults.rememberPlainTooltipPositionProvider(),
+        tooltip = {
+            PlainTooltip {
+                Text(label)
+            }
+        },
+        state = rememberTooltipState(),
+    ) {
+        IconButton(onClick = onClick, modifier = Modifier.size(44.dp)) {
+            Icon(
+                imageVector = icon,
+                contentDescription = label,
+                tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                modifier = Modifier.size(22.dp),
+            )
+        }
     }
 }
 
 /**
  * The display-only pill styling for every `#tag` the caret is not inside.
- * Pure (JVM-testable) — see [EditorField].
+ * Pure (JVM-testable) — see [EditorField]. [accent] is the theme's primary
+ * color, passed in by the composable layer; `Color.Unspecified` styles nothing.
  */
-fun pillTagsAnnotated(text: String, caret: Int?): AnnotatedString {
+fun pillTagsAnnotated(text: String, caret: Int?, accent: Color = Color.Unspecified): AnnotatedString {
     val builder = AnnotatedString.Builder(text)
     TAG_TOKEN_RE.findAll(text).forEach { m ->
         val tagStart = m.range.first + m.groupValues[1].length
@@ -151,8 +172,8 @@ fun pillTagsAnnotated(text: String, caret: Int?): AnnotatedString {
         if (!caretInside) {
             builder.addStyle(
                 SpanStyle(
-                    background = AccentPurple.copy(alpha = 0.15f),
-                    color = AccentPurple,
+                    background = accent.copy(alpha = 0.15f),
+                    color = accent,
                 ),
                 tagStart,
                 tagEnd,

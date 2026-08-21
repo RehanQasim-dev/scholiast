@@ -1,3 +1,6 @@
+import java.time.LocalDateTime
+import java.time.format.DateTimeFormatter
+
 plugins {
     alias(libs.plugins.android.application)
     alias(libs.plugins.kotlin.android)
@@ -19,6 +22,8 @@ val oauthClientId: String = (oauthJson["nativeClientId"] as? String)
 val oauthClientSecret: String = (oauthJson["nativeClientSecret"] as? String)
     ?: System.getenv("GOOGLE_OAUTH_NATIVE_CLIENT_SECRET").orEmpty()
 
+val buildTimestamp = LocalDateTime.now().format(DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss"))
+
 android {
     namespace = "com.scholiast.android"
     compileSdk = 35
@@ -35,6 +40,7 @@ android {
         // GOOGLE_OAUTH_* env vars); empty otherwise → OAuthConfig.isConfigured=false.
         buildConfigField("String", "OAUTH_CLIENT_ID", "\"$oauthClientId\"")
         buildConfigField("String", "OAUTH_CLIENT_SECRET", "\"$oauthClientSecret\"")
+        buildConfigField("String", "BUILD_TIME", "\"$buildTimestamp\"")
 
         // Task 11: local STT (whisper.cpp). arm64-v8a for devices, x86_64 for the emulator.
         ndk {
@@ -118,14 +124,20 @@ dependencies {
     implementation(libs.androidx.datastore.preferences)
     implementation(libs.androidx.work.runtime.ktx)
     implementation(libs.okhttp)
+    implementation(libs.readability4j)
     implementation(libs.kotlinx.serialization.json)
     implementation(libs.coil.compose)
+    // Coil 3 has NO network fetcher by default — without this every remote
+    // AsyncImage (article images, favicons) fails silently → blank space.
+    implementation(libs.coil.network.okhttp)
 
     debugImplementation(libs.androidx.compose.ui.tooling)
     debugImplementation(libs.androidx.compose.ui.test.manifest)
 
     testImplementation(libs.junit)
     testImplementation(libs.okhttp.mockwebserver)
+    // Task 23: migration unit test runs on Robolectric (real Room over a v1 db).
+    testImplementation(libs.robolectric)
     androidTestImplementation(libs.androidx.junit)
     androidTestImplementation(libs.androidx.espresso.core)
     androidTestImplementation(platform(libs.androidx.compose.bom))

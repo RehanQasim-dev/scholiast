@@ -210,20 +210,25 @@ class SyncEngine(
     // --- Local page assembly -----------------------------------------------------
 
     /**
-     * Build the canonical local PageRecord for the snapshot. The app owns only
-     * videoItems; highlights/drawings/diagrams are SEEDED from the snap (the
-     * merge base) so `l == b` for those categories — the app faithfully passes
-     * desktop edits through (remote-new kept, remote-delete tombstoned,
-     * tombstone-not-resurrected) while only ever mutating videoItems locally.
-     * Without the seeding, an empty local list would TOMBSTONE every desktop
-     * highlight on the first sync (the plugin's `foreign` bucket concept).
+     * Build the canonical local PageRecord for the snapshot. Since Task 27 the
+     * app owns videoItems AND highlights: [PageSnapshot.highlights] is the REAL
+     * local list from the page row (`highlightsJson`), which
+     * [PageStore.saveReconciled] keeps in lockstep with the snapshot after every
+     * reconcile — so an untouched page assembles `l == b` for highlights and
+     * desktop edits pass through untouched, while a genuine local add/edit/
+     * delete merges (and tombstones) like any locally-owned category.
+     * drawings/diagrams remain SEEDED from the snap (the merge base) so
+     * `l == b` there — the app faithfully passes desktop edits through while
+     * only ever mutating its own categories locally. Without that seeding, an
+     * empty local list would TOMBSTONE every desktop drawing on the first sync
+     * (the plugin's `foreign` bucket concept).
      */
     private fun assembleLocalPage(page: PageSnapshot, snap: VideoPage?): VideoPage = VideoPage(
         version = 2,
         url = page.url,
         title = page.title ?: snap?.title,
         videoId = page.videoId ?: snap?.videoId,
-        highlights = snap?.highlights ?: emptyList(),
+        highlights = page.highlights,
         drawings = snap?.drawings ?: emptyList(),
         videoItems = page.items,
         diagrams = snap?.diagrams ?: emptyList(),

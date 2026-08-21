@@ -5,17 +5,21 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.imePadding
+import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
-import androidx.compose.material3.HorizontalDivider
+import androidx.compose.material3.ExtendedFloatingActionButton
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.SnackbarDuration
@@ -50,10 +54,12 @@ import kotlinx.coroutines.launch
 /**
  * The Notes tab (plan §5.4): the video's items as a time-ordered timeline
  * (newest-last in video time), each with a seekable `M:SS` chip, plus the
- * "＋ New note" flow that captures the player's current time into the editor
- * sheet. Hosted by Task 05's PlayerScreen panel slot.
+ * note-creation flow that captures the player's current time into the docked
+ * composer. Creation lives in an Extended FAB pinned to the panel's
+ * bottom-end (zero layout cost); the empty state carries its own centered
+ * CTA instead.
  *
- * @param timeProvider Task 05's bridge — read at "＋ New note" press to bake
+ * @param timeProvider Task 05's bridge — read at note creation to bake
  *   the moment into the draft.
  * @param seekListener Task 05's bridge — chip taps forward here via the VM.
  */
@@ -63,6 +69,8 @@ fun NotesTab(
     modifier: Modifier = Modifier,
     timeProvider: VideoTimeProvider? = null,
     seekListener: SeekRequestListener? = null,
+    onPausePlayback: (() -> Unit)? = null,
+    onResumePlayback: (() -> Unit)? = null,
     viewModel: NotesViewModel = notesViewModel(url),
 ) {
     val state by viewModel.state.collectAsStateWithLifecycle()
@@ -71,6 +79,11 @@ fun NotesTab(
 
     var draft by remember { mutableStateOf<EditorDraft?>(null) }
     var pendingDelete by remember { mutableStateOf<VideoItem?>(null) }
+
+    fun openDraft(newDraft: EditorDraft) {
+        draft = newDraft
+        onPausePlayback?.invoke()
+    }
 
     // Live updates: Task 02's repository exposes no Flow, so reload whenever
     // the tab (re)appears — catches external writes (sync, transcript panel).
@@ -83,88 +96,124 @@ fun NotesTab(
     }
 
     Box(modifier = modifier.fillMaxSize()) {
-        Column(Modifier.fillMaxSize()) {
-            Row(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(horizontal = 12.dp, vertical = 8.dp),
-                verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.SpaceBetween,
-            ) {
-                Text("Notes", style = MaterialTheme.typography.titleMedium)
-                Button(
-                    onClick = {
-                        draft = EditorDraft(
-                            itemId = null,
-                            videoTime = timeProvider?.currentTime() ?: 0.0,
-                        )
-                    },
-                    modifier = Modifier.height(48.dp),
+        if (state.items.isEmpty()) {
+            Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+                Column(
+                    horizontalAlignment = Alignment.CenterHorizontally,
+                    verticalArrangement = Arrangement.Center,
+                    modifier = Modifier.padding(24.dp),
                 ) {
-                    Icon(Icons.Filled.Add, contentDescription = null)
-                    Text("New note", modifier = Modifier.padding(start = 6.dp))
-                }
-            }
-            HorizontalDivider()
-            if (state.items.isEmpty()) {
-                Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
                     Text(
-                        text = "No notes yet — tap ＋ New note to add one at the current moment.",
+                        text = "No notes yet",
+                        style = MaterialTheme.typography.titleMedium,
+                        color = MaterialTheme.colorScheme.onSurface,
+                    )
+                    Spacer(Modifier.height(6.dp))
+                    Text(
+                        text = "Capture timestamped notes & voice notes while watching.",
                         style = MaterialTheme.typography.bodyMedium,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        modifier = Modifier.padding(24.dp),
+                        textAlign = androidx.compose.ui.text.style.TextAlign.Center,
                     )
-                }
-            } else {
-                LazyColumn(
-                    modifier = Modifier.fillMaxSize(),
-                    contentPadding = PaddingValues(12.dp),
-                    verticalArrangement = Arrangement.spacedBy(10.dp),
-                ) {
-                    items(state.items, key = { it.id }) { item ->
-                        NoteItemCard(
-                            item = item,
-                            onSeek = { seconds -> viewModel.seekTo(seconds) },
-                            onDelete = { pendingDelete = it },
-                            onAddComment = { target ->
-                                draft = EditorDraft(
-                                    itemId = target.id,
-                                    videoTime = target.videoTime,
+                    Spacer(Modifier.height(16.dp))
+                    Button(
+                        onClick = {
+                            openDraft(
+                                EditorDraft(
+                                    itemId = null,
+                                    videoTime = timeProvider?.currentTime() ?: 0.0,
                                 )
-                            },
-                        )
+                            )
+                        },
+                        modifier = Modifier.height(48.dp),
+                    ) {
+                        Icon(Icons.Filled.Add, contentDescription = null)
+                        Text("Create note", modifier = Modifier.padding(start = 6.dp))
                     }
                 }
             }
+        } else {
+            LazyColumn(
+                modifier = Modifier.fillMaxSize(),
+                contentPadding = PaddingValues(start = 12.dp, end = 12.dp, top = 12.dp, bottom = 96.dp),
+                verticalArrangement = Arrangement.spacedBy(10.dp),
+            ) {
+                items(state.items, key = { it.id }) { item ->
+                    NoteItemCard(
+                        item = item,
+                        onSeek = { seconds -> viewModel.seekTo(seconds) },
+                        onDelete = { pendingDelete = it },
+                        onAddComment = { target ->
+                            openDraft(
+                                EditorDraft(
+                                    itemId = target.id,
+                                    videoTime = target.videoTime,
+                                )
+                            )
+                        },
+                    )
+                }
+            }
+
+            // Creation entry point: floats over the list's bottom-end, hidden
+            // while the composer is open (its Save/× own the interaction then).
+            if (draft == null) {
+                ExtendedFloatingActionButton(
+                    onClick = {
+                        openDraft(
+                            EditorDraft(
+                                itemId = null,
+                                videoTime = timeProvider?.currentTime() ?: 0.0,
+                            )
+                        )
+                    },
+                    icon = { Icon(Icons.Filled.Add, contentDescription = null) },
+                    text = { Text("New note") },
+                    modifier = Modifier
+                        .align(Alignment.BottomEnd)
+                        .navigationBarsPadding()
+                        .padding(16.dp),
+                )
+            }
+        }
+
+        // The composer docks to the panel's bottom edge — the video and the
+        // timeline stay visible while writing.
+        draft?.let { d ->
+            val voice = rememberVoiceEditorSlot()
+            CommentEditorSheet(
+                draft = d,
+                timestampSeconds = d.videoTime,
+                onSave = { text ->
+                    draft = null
+                    if (text.isNotBlank()) {
+                        scope.launch {
+                            if (d.itemId == null) {
+                                viewModel.addNote(text, d.videoTime)
+                            } else {
+                                viewModel.addReply(d.itemId, text)
+                            }
+                        }
+                    }
+                    onResumePlayback?.invoke()
+                },
+                onCancel = {
+                    draft = null
+                    onResumePlayback?.invoke()
+                },
+                seekListener = { seconds -> viewModel.seekTo(seconds) },
+                voice = voice.slot,
+                onEditorViewModel = { voice.editorViewModel = it },
+                modifier = Modifier
+                    .align(Alignment.BottomCenter)
+                    .imePadding()
+                    .padding(horizontal = 12.dp, vertical = 12.dp),
+            )
         }
 
         SnackbarHost(
             hostState = snackbarHostState,
             modifier = Modifier.align(Alignment.BottomCenter),
-        )
-    }
-
-    draft?.let { d ->
-        val voice = rememberVoiceEditorSlot()
-        CommentEditorSheet(
-            draft = d,
-            timestampSeconds = d.videoTime,
-            onSave = { text ->
-                draft = null
-                if (text.isNotBlank()) {
-                    scope.launch {
-                        if (d.itemId == null) {
-                            viewModel.addNote(text, d.videoTime)
-                        } else {
-                            viewModel.addReply(d.itemId, text)
-                        }
-                    }
-                }
-            },
-            onCancel = { draft = null },
-            seekListener = { seconds -> viewModel.seekTo(seconds) },
-            voice = voice.slot,
-            onEditorViewModel = { voice.editorViewModel = it },
         )
     }
 

@@ -21,9 +21,13 @@ import kotlinx.coroutines.flow.update
  * Commands are **not optimistic**: play/pause state follows the JS `onStateChange`
  * event so UI and player can never drift.
  */
-class PlayerViewModel : ViewModel(), PlayerEvents {
+class PlayerViewModel(
+    private var positionStore: PlaybackPositionStore? = null,
+) : ViewModel(), PlayerEvents {
 
     private var bridge: PlayerBridge? = null
+    private var pendingResumeTime: Double = 0.0
+    private var lastSavedTime: Double = 0.0
 
     private val _state = MutableStateFlow(VideoState())
     val state: StateFlow<VideoState> = _state.asStateFlow()
@@ -31,17 +35,32 @@ class PlayerViewModel : ViewModel(), PlayerEvents {
     private val _capture = MutableStateFlow(CaptureState())
     val capture: StateFlow<CaptureState> = _capture.asStateFlow()
 
+    fun setPositionStore(store: PlaybackPositionStore) {
+        this.positionStore = store
+    }
+
     /** Wire the bridge (the [PlayerWebView]) and register this VM as its event sink. */
     fun bind(bridge: PlayerBridge) {
         this.bridge = bridge
         bridge.setEventsListener(this)
+        val currentVideoId = _state.value.videoId
+        if (currentVideoId.isNotEmpty()) {
+            bridge.loadVideo(currentVideoId)
+        }
     }
 
     // ------------------------------ commands out ------------------------------
 
-    /** Load a video into the (reused) player; resets all playback state. */
+    /** Load a video into the (reused) player; resets all playback state and resumes position if saved. */
     fun loadVideo(videoId: String) {
-        _state.value = VideoState(videoId = videoId)
+        val resumePos = positionStore?.getPosition(videoId) ?: 0.0
+        pendingResumeTime = if (resumePos > 3.0) resumePos else 0.0
+        val currentCaptions = _state.value.captionsEnabled
+        _state.value = VideoState(
+            videoId = videoId,
+            timeSeconds = if (pendingResumeTime > 0.0) pendingResumeTime else 0.0,
+            captionsEnabled = currentCaptions,
+        )
         _capture.value = CaptureState()
         bridge?.loadVideo(videoId)
     }
@@ -60,6 +79,16 @@ class PlayerViewModel : ViewModel(), PlayerEvents {
             PlaybackState.PLAYING, PlaybackState.BUFFERING -> pause()
             else -> play()
         }
+    }
+
+    /** Toggle captions on/off. */
+    fun toggleCaptions() {
+        setCaptions(!_state.value.captionsEnabled)
+    }
+
+    fun setCaptions(enabled: Boolean) {
+        _state.update { it.copy(captionsEnabled = enabled) }
+        bridge?.setCaptions(enabled)
     }
 
     /** Seek, clamped to [0, duration] once the duration is known. */
@@ -110,11 +139,21 @@ class PlayerViewModel : ViewModel(), PlayerEvents {
 
     override fun onPlayerReady() {
         _state.update { it.copy(playerReady = true) }
+        bridge?.setCaptions(_state.value.captionsEnabled)
+        if (pendingResumeTime > 0.0) {
+            val target = pendingResumeTime
+            pendingResumeTime = 0.0
+            seekTo(target)
+        }
     }
 
     override fun onStateChange(state: Int) {
         val playback = PlaybackState.fromIframeCode(state)
         _state.update { it.copy(playback = playback, error = null) }
+        val videoId = _state.value.videoId
+        if (videoId.isNotEmpty() && _state.value.timeSeconds > 2.0) {
+            positionStore?.savePosition(videoId, _state.value.timeSeconds)
+        }
     }
 
     override fun onError(code: Int) {
@@ -126,6 +165,19 @@ class PlayerViewModel : ViewModel(), PlayerEvents {
     override fun onTimeUpdate(timeSeconds: Double) {
         if (timeSeconds >= 0) {
             _state.update { it.copy(timeSeconds = timeSeconds) }
+            val videoId = _state.value.videoId
+            if (videoId.isNotEmpty() && kotlin.math.abs(timeSeconds - lastSavedTime) >= 2.0) {
+                lastSavedTime = timeSeconds
+                positionStore?.savePosition(videoId, timeSeconds)
+            }
+        }
+    }
+
+    override fun onCleared() {
+        super.onCleared()
+        val videoId = _state.value.videoId
+        if (videoId.isNotEmpty() && _state.value.timeSeconds > 2.0) {
+            positionStore?.savePosition(videoId, _state.value.timeSeconds)
         }
     }
 
@@ -190,6 +242,7 @@ data class VideoState(
     val rate: Double = 1.0,
     val volume: Int = 100,
     val captionsAvailable: Boolean = false,
+    val captionsEnabled: Boolean = true,
     val playerReady: Boolean = false,
     val error: PlayerError? = null,
     val isFullscreen: Boolean = false,

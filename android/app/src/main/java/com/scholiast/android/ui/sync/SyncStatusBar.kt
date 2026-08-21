@@ -27,7 +27,6 @@ import androidx.compose.ui.unit.dp
 import com.scholiast.android.domain.sync.SyncPhase
 import com.scholiast.android.domain.sync.SyncState
 import com.scholiast.android.domain.sync.SyncStatus
-import com.scholiast.android.ui.theme.AccentPurple
 import com.scholiast.android.ui.theme.Danger
 import com.scholiast.android.ui.theme.Success
 import com.scholiast.android.ui.theme.TextDisabled
@@ -72,13 +71,14 @@ fun SyncStatusChip(status: SyncStatus, modifier: Modifier = Modifier) {
     }
 }
 
+@Composable
 private fun chipContent(status: SyncStatus): Pair<String, Color> = when {
     !status.connected && !status.isRunning -> "Not connected" to TextSecondary
     status.state == SyncState.ERROR -> "Sync failed" to Danger
     status.state == SyncState.OFFLINE -> "Offline — will retry" to Danger
-    status.state == SyncState.CONNECTING -> "Connecting…" to AccentPurple
-    status.state == SyncState.DISCOVERING -> "Looking for changes…" to AccentPurple
-    status.state == SyncState.SYNCING -> "Syncing… ${countLabel(status)}" to AccentPurple
+    status.state == SyncState.CONNECTING -> "Connecting…" to MaterialTheme.colorScheme.primary
+    status.state == SyncState.DISCOVERING -> "Looking for changes…" to MaterialTheme.colorScheme.primary
+    status.state == SyncState.SYNCING -> "Syncing… ${countLabel(status)}" to MaterialTheme.colorScheme.primary
     status.lastSyncedAt != null -> "Synced ${relativeTime(status.lastSyncedAt)}" to Success
     else -> "Connected" to Success
 }
@@ -151,14 +151,14 @@ fun SyncStatusCard(status: SyncStatus, modifier: Modifier = Modifier) {
             if (indeterminate) {
                 LinearProgressIndicator(
                     modifier = Modifier.fillMaxWidth(),
-                    color = AccentPurple,
+                    color = MaterialTheme.colorScheme.primary,
                     trackColor = MaterialTheme.colorScheme.surfaceVariant,
                 )
             } else {
                 LinearProgressIndicator(
                     progress = { percent!! / 100f },
                     modifier = Modifier.fillMaxWidth(),
-                    color = AccentPurple,
+                    color = MaterialTheme.colorScheme.primary,
                     trackColor = MaterialTheme.colorScheme.surfaceVariant,
                 )
             }

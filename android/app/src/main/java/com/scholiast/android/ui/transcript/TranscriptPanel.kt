@@ -1,15 +1,26 @@
 package com.scholiast.android.ui.transcript
 
+import androidx.compose.foundation.BorderStroke
+import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.gestures.awaitEachGesture
+import androidx.compose.foundation.gestures.awaitFirstDown
 import androidx.compose.foundation.gestures.detectDragGestures
+import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.ui.input.pointer.changedToUp
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.imePadding
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyListState
 import androidx.compose.foundation.lazy.rememberLazyListState
@@ -19,6 +30,7 @@ import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
@@ -47,6 +59,7 @@ import androidx.compose.ui.text.TextLinkStyles
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.compose.LifecycleResumeEffect
@@ -60,6 +73,7 @@ import com.scholiast.android.domain.transcript.TranscriptCue
 import com.scholiast.android.domain.transcript.TranscriptParagraph
 import com.scholiast.android.ui.notes.EditorDraft
 import com.scholiast.android.ui.notes.SeekRequestListener
+import com.scholiast.android.ui.notes.TimestampChip
 import com.scholiast.android.ui.notes.VideoTimeProvider
 import com.scholiast.android.ui.notes.editor.CommentEditorSheet
 import com.scholiast.android.ui.voice.rememberVoiceEditorSlot
@@ -139,7 +153,10 @@ internal fun buildParagraphAnnotated(
         val cueStart = cueStartOffsetInParagraph(paragraph, cues, activeCueIndex)
         if (cue != null && cueStart != null) {
             builder.addStyle(
-                SpanStyle(fontWeight = FontWeight.Medium),
+                SpanStyle(
+                    color = Color.White,
+                    fontWeight = FontWeight.Bold,
+                ),
                 cueStart,
                 cueStart + cue.text.length,
             )
@@ -176,12 +193,19 @@ fun TranscriptPanel(
     modifier: Modifier = Modifier,
     timeProvider: VideoTimeProvider? = null,
     seekListener: SeekRequestListener? = null,
+    onPausePlayback: (() -> Unit)? = null,
+    onResumePlayback: (() -> Unit)? = null,
     viewModel: TranscriptViewModel = transcriptViewModel(url),
 ) {
     val state by viewModel.state.collectAsStateWithLifecycle()
     val scope = rememberCoroutineScope()
 
     var draft by remember { mutableStateOf<EditorDraft?>(null) }
+
+    fun openDraft(newDraft: EditorDraft) {
+        draft = newDraft
+        onPausePlayback?.invoke()
+    }
 
     val listState = rememberLazyListState()
     val layouts = remember { mutableStateMapOf<Int, TextLayoutResult>() }
@@ -251,14 +275,17 @@ fun TranscriptPanel(
         val viewport = listState.layoutInfo.viewportSize.height
         if (viewport <= 0) return@LaunchedEffect
         val info = listState.layoutInfo.visibleItemsInfo.firstOrNull { it.index == paraIdx }
-            ?: return@LaunchedEffect
-        val top = info.offset
-        if (top < viewport * FOLLOW_BAND.start || top > viewport * FOLLOW_BAND.endInclusive) {
-            val cueStart = cueStartOffsetInParagraph(transcript.paragraphs[paraIdx], transcript.cues, idx)
-            val lineTop = if (cueStart != null) {
-                layouts[paraIdx]?.getLineTop(layouts[paraIdx]!!.getLineForOffset(cueStart)) ?: 0f
-            } else 0f
-            listState.animateScrollToItem(paraIdx, (viewport * FOLLOW_TARGET - lineTop).toInt())
+        if (info == null) {
+            listState.animateScrollToItem(paraIdx)
+        } else {
+            val top = info.offset
+            if (top < viewport * FOLLOW_BAND.start || top > viewport * FOLLOW_BAND.endInclusive) {
+                val cueStart = cueStartOffsetInParagraph(transcript.paragraphs[paraIdx], transcript.cues, idx)
+                val lineTop = if (cueStart != null) {
+                    layouts[paraIdx]?.getLineTop(layouts[paraIdx]!!.getLineForOffset(cueStart)) ?: 0f
+                } else 0f
+                listState.animateScrollToItem(paraIdx, (viewport * FOLLOW_TARGET - lineTop).toInt())
+            }
         }
     }
 
@@ -360,7 +387,7 @@ fun TranscriptPanel(
                             state = listState,
                             modifier = Modifier.fillMaxSize(),
                             contentPadding = PaddingValues(12.dp),
-                            verticalArrangement = Arrangement.spacedBy(4.dp),
+                            verticalArrangement = Arrangement.spacedBy(10.dp),
                         ) {
                             items(transcript.paragraphs.size, key = { transcript.paragraphs[it].index }) { i ->
                                 val paragraph = transcript.paragraphs[i]
@@ -379,8 +406,9 @@ fun TranscriptPanel(
                                     },
                                     onHighlightTap = { item ->
                                         viewModel.onHighlightTap(item)
-                                        draft = EditorDraft(itemId = item.id, videoTime = item.videoTime)
+                                        openDraft(EditorDraft(itemId = item.id, videoTime = item.videoTime))
                                     },
+                                    onSeek = { seconds -> viewModel.seekTo(seconds) },
                                     onTextLayout = { idx, layout -> layouts[idx] = layout },
                                     onTextPosition = { idx, pos -> textPositions[idx] = pos },
                                 )
@@ -406,33 +434,43 @@ fun TranscriptPanel(
                         val item = viewModel.createHighlight("yellow")
                         dragRanges[pendingIdx] = null
                         if (item != null) {
-                            draft = EditorDraft(itemId = item.id, videoTime = item.videoTime)
+                            openDraft(EditorDraft(itemId = item.id, videoTime = item.videoTime))
                         }
                     }
                 },
                 modifier = Modifier.fillMaxSize(),
             )
         }
-    }
 
-    draft?.let { d ->
-        val voice = rememberVoiceEditorSlot()
-        CommentEditorSheet(
-            draft = d,
-            timestampSeconds = d.videoTime,
-            onSave = { text ->
-                draft = null
-                d.itemId?.let { id ->
-                    if (text.isNotBlank()) {
-                        scope.launch { viewModel.addReply(id, text) }
+        // The reply composer docks to the panel's bottom edge — the transcript
+        // stays visible while writing.
+        draft?.let { d ->
+            val voice = rememberVoiceEditorSlot()
+            CommentEditorSheet(
+                draft = d,
+                timestampSeconds = d.videoTime,
+                onSave = { text ->
+                    draft = null
+                    d.itemId?.let { id ->
+                        if (text.isNotBlank()) {
+                            scope.launch { viewModel.addReply(id, text) }
+                        }
                     }
-                }
-            },
-            onCancel = { draft = null },
-            seekListener = { seconds -> viewModel.seekTo(seconds) },
-            voice = voice.slot,
-            onEditorViewModel = { voice.editorViewModel = it },
-        )
+                    onResumePlayback?.invoke()
+                },
+                onCancel = {
+                    draft = null
+                    onResumePlayback?.invoke()
+                },
+                seekListener = { seconds -> viewModel.seekTo(seconds) },
+                voice = voice.slot,
+                onEditorViewModel = { voice.editorViewModel = it },
+                modifier = Modifier
+                    .align(Alignment.BottomCenter)
+                    .imePadding()
+                    .padding(horizontal = 12.dp, vertical = 12.dp),
+            )
+        }
     }
 }
 
@@ -456,11 +494,13 @@ private fun ParagraphItem(
     onTap: (TranscriptParagraph) -> Unit,
     onParagraphSelection: (Int, Int) -> Unit,
     onHighlightTap: (VideoItem) -> Unit,
+    onSeek: (Double) -> Unit,
     onTextLayout: (Int, TextLayoutResult) -> Unit,
     onTextPosition: (Int, Offset) -> Unit,
     modifier: Modifier = Modifier,
 ) {
     var layout by remember(paragraph.index) { mutableStateOf<TextLayoutResult?>(null) }
+    val isActive = activeCueIndex in paragraph.cueRange
     val annotated = remember(
         paragraph,
         cues,
@@ -480,44 +520,118 @@ private fun ParagraphItem(
             onHighlightTap,
         )
     }
-    Box(
+
+    Surface(
+        shape = RoundedCornerShape(10.dp),
+        color = if (isActive) MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.55f)
+                else MaterialTheme.colorScheme.surfaceContainerLow.copy(alpha = 0.60f),
+        border = BorderStroke(
+            1.dp,
+            if (isActive) MaterialTheme.colorScheme.primary.copy(alpha = 0.50f)
+            else MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.18f),
+        ),
         modifier = modifier
             .fillMaxWidth()
-            .clickable { onTap(paragraph) }
-            .pointerInput(paragraph.index) {
-                var anchor = 0
-                fun offsetAt(pos: Offset): Int =
-                    (layout?.getOffsetForPosition(pos) ?: 0).coerceIn(0, paragraph.text.length)
-                detectDragGestures(
-                    onDragStart = { pos ->
-                        anchor = offsetAt(pos)
-                        onLiveSelectionChange(anchor..anchor)
-                        onParagraphSelection(anchor, anchor)
-                    },
-                    onDrag = { change, _ ->
-                        change.consume()
-                        val cur = offsetAt(change.position)
-                        val range = min(anchor, cur)..max(anchor, cur)
-                        onLiveSelectionChange(range)
-                        onParagraphSelection(range.first, range.last)
-                    },
-                    onDragCancel = {
-                        onLiveSelectionChange(null)
-                        onParagraphSelection(-1, -1)
-                    },
-                )
+            .clickable {
+                onSeek(paragraph.startMs / 1000.0)
             },
     ) {
-        Text(
-            text = annotated,
-            style = MaterialTheme.typography.bodyLarge,
-            color = MaterialTheme.colorScheme.onSurface,
-            onTextLayout = {
-                layout = it
-                onTextLayout(paragraph.index, it)
-            },
-            modifier = Modifier.onGloballyPositioned { onTextPosition(paragraph.index, it.positionInWindow()) },
-        )
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(horizontal = 14.dp, vertical = 10.dp),
+        ) {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.SpaceBetween,
+            ) {
+                TimestampChip(
+                    seconds = paragraph.startMs / 1000.0,
+                    onClick = { onSeek(paragraph.startMs / 1000.0) },
+                )
+                if (isActive) {
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(5.dp),
+                    ) {
+                        Box(
+                            modifier = Modifier
+                                .size(6.dp)
+                                .background(MaterialTheme.colorScheme.primary, shape = CircleShape),
+                        )
+                        Text(
+                            text = "Playing",
+                            style = MaterialTheme.typography.labelSmall.copy(fontWeight = FontWeight.SemiBold),
+                            color = MaterialTheme.colorScheme.primary,
+                        )
+                    }
+                }
+            }
+
+            Spacer(Modifier.height(8.dp))
+
+            Box(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .pointerInput(paragraph.index) {
+                        var anchor = 0
+                        fun offsetAt(pos: Offset): Int =
+                            (layout?.getOffsetForPosition(pos) ?: 0).coerceIn(0, paragraph.text.length)
+                        awaitEachGesture {
+                            val down = awaitFirstDown()
+                            anchor = offsetAt(down.position)
+                            var isDrag = false
+                            var dragRange: IntRange? = null
+
+                            while (true) {
+                                val event = awaitPointerEvent()
+                                val change = event.changes.firstOrNull() ?: break
+                                if (change.changedToUp()) {
+                                    change.consume()
+                                    if (!isDrag) {
+                                        onSeek(paragraph.startMs / 1000.0)
+                                        onTap(paragraph)
+                                    } else {
+                                        if (dragRange != null && dragRange.last > dragRange.first) {
+                                            onParagraphSelection(dragRange.first, dragRange.last)
+                                        } else {
+                                            onParagraphSelection(-1, -1)
+                                        }
+                                    }
+                                    break
+                                } else if (change.pressed) {
+                                    val distance = (change.position - down.position).getDistance()
+                                    if (distance > viewConfiguration.touchSlop) {
+                                        isDrag = true
+                                        change.consume()
+                                        val cur = offsetAt(change.position)
+                                        val range = min(anchor, cur)..max(anchor, cur)
+                                        dragRange = range
+                                        onLiveSelectionChange(range)
+                                    }
+                                } else {
+                                    break
+                                }
+                            }
+                        }
+                    },
+            ) {
+                Text(
+                    text = annotated,
+                    style = MaterialTheme.typography.bodyLarge.copy(
+                        lineHeight = 25.sp,
+                        letterSpacing = 0.15.sp,
+                    ),
+                    color = if (isActive) MaterialTheme.colorScheme.onSurface else MaterialTheme.colorScheme.onSurfaceVariant,
+                    onTextLayout = {
+                        layout = it
+                        onTextLayout(paragraph.index, it)
+                    },
+                    modifier = Modifier.onGloballyPositioned { onTextPosition(paragraph.index, it.positionInWindow()) },
+                )
+            }
+        }
     }
 }
 

@@ -83,10 +83,12 @@ class ModelDownloadable(
     override fun loadGGML(modelsDir: File): WhisperGGML {
         val modelStore = ModelStore(modelsDir)
         val file = modelStore.modelFile(ggmlFile)
-        val actual = modelStore.sha256(file)
-        require(actual.equals(checksum, ignoreCase = true)) {
-            "Checksum mismatch for $ggmlFile: expected $checksum, got $actual. " +
-                "Delete the file and re-download."
+        if (checksum.isNotBlank()) {
+            val actual = modelStore.sha256(file)
+            require(actual.equals(checksum, ignoreCase = true)) {
+                "Checksum mismatch for $ggmlFile: expected $checksum, got $actual. " +
+                    "Delete the file and re-download."
+            }
         }
         return WhisperGGML(modelStore.mmap(file))
     }

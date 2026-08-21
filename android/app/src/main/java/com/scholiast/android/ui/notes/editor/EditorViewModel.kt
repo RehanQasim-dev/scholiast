@@ -71,6 +71,7 @@ class EditorViewModel(
         val edit = when (command) {
             EditorCommand.BOLD -> toggleSurround(field.text, range.start, range.end, "**")
             EditorCommand.ITALIC -> toggleSurround(field.text, range.start, range.end, "*")
+            EditorCommand.CODE -> toggleSurround(field.text, range.start, range.end, "`")
             EditorCommand.BULLET -> applyLineCommand(field.text, range.start, range.end, wantTask = false)
             EditorCommand.CHECKLIST -> applyLineCommand(field.text, range.start, range.end, wantTask = true)
         }
@@ -174,7 +175,7 @@ class EditorViewModel(
 }
 
 /** The toolbar commands (plan §5.4 formatting row). */
-enum class EditorCommand { BOLD, ITALIC, BULLET, CHECKLIST }
+enum class EditorCommand { BOLD, ITALIC, CODE, BULLET, CHECKLIST }
 
 /** One command's result: the new text and where the caret should land. */
 data class TextEdit(val text: String, val caret: Int)

@@ -132,22 +132,24 @@ class HomeViewModelTest {
     }
 
     @Test
-    fun `invalid open link shows a toast and keeps the input`() = runBlocking {
+    fun `non-youtube open link routes to the reader and clears the field`() = runBlocking {
+        // Task 28: open-link routing by URL type — non-YouTube http(s) URLs
+        // open the Reader (normalized), only truly invalid text toasts.
         val vm = HomeViewModel(FakeVideoItemRepository())
-        val toasts = mutableListOf<String>()
+        val opened = mutableListOf<String>()
         val job = launch(start = CoroutineStart.UNDISPATCHED) {
-            vm.pendingToast.collect { message ->
-                if (message != null) {
-                    toasts.add(message)
-                    vm.consumePendingToast()
+            vm.pendingOpenUrl.collect { url ->
+                if (url != null) {
+                    opened.add(url)
+                    vm.consumePendingOpenUrl()
                 }
             }
         }
         vm.onOpenLinkChange("https://example.com/not-a-youtube-url")
         vm.submitOpenLink()
         yield() // let the collector consume the pending emission
-        assertEquals(listOf(HomeViewModel.NOT_YOUTUBE_LINK), toasts)
-        assertEquals("https://example.com/not-a-youtube-url", vm.openLink.value)
+        assertEquals(listOf("https://example.com/not-a-youtube-url"), opened)
+        assertEquals("", vm.openLink.value)
         job.cancel()
     }
 

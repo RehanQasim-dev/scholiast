@@ -40,3 +40,12 @@ Log entries appended while working on this task (see README.md, "Agent logging p
 - **Open questions:** Task 04's HomeViewModel and Task 06's NotesViewModel failing tests need their owners; nothing blocks this task. Security review still owed on `setAllowUniversalAccessFromFileURLs`/`setAllowFileAccessFromFileURLs` (documented in `PlayerWebView.kt`).
 - **Progress:** VERIFIED. `./gradlew :app:assembleDebug` → **BUILD SUCCESSFUL** (both dev+prod debug APKs). `:app:testDevDebugUnitTest` → **PlayerViewModelTest 19/19 pass** (playing/paused/capturing/error state transitions, non-optimistic commands, clamped seek, skip ±15, rate/volume clamp, capture flow + stale-result/ re-entrancy guards). Manifest already has `android:hardwareAccelerated="true"` + `INTERNET` (Task 01). All acceptance criteria met: bridge contract per plan §3.4, chrome ≥48dp with −15/+15 + speed menu (0.75–2×) + fullscreen, landscape player-left + 320dp-min panel right, portrait 16:9 top + panel below, embed-blocked overlay with open-in-YouTube, one reused WebView. Task DONE.
 
+## [2026-08-20 20:00] task-05 agent (Player interaction & chrome polish)
+- **What I learned:**
+  - YouTube iframe in WebView received raw touch/mouse events, triggering native YouTube play/pause on click and revealing YouTube's native title banner and "More videos" / watermark footer on hover.
+  - `seekTo(s, true)` in YouTube Iframe API on mobile/WebView triggers `BUFFERING`/`PAUSED` and left the player paused when scrubbing via the slider.
+- **Decisions made:**
+  - In `player.html`: added `pointer-events: none !important;` to `#player, iframe` so all touch/mouse events land strictly on Compose `PlayerChrome`.
+  - In `player.html`: updated `commandSeekTo(s)` to check whether the player was playing or buffering before seeking, and re-invokes `player.playVideo()` to seamlessly continue playback across seeks.
+  - In `PlayerChrome.kt`: added `onDismiss` tap detection on `ChromeControls` so clicking anywhere on the background dismisses controls immediately without pausing video.
+- **Progress:** Targeted unit tests pass (19/19 in `PlayerViewModelTest`). Built devDebug APK and installed to Waydroid.

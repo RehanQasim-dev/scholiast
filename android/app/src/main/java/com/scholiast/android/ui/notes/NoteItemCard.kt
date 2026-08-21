@@ -5,6 +5,7 @@ import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxHeight
@@ -269,36 +270,61 @@ private fun ThreadSection(
     onToggle: () -> Unit,
     onAddComment: () -> Unit,
 ) {
-    if (item.notes.isEmpty()) {
-        TextButton(onClick = onAddComment) {
-            Text("Add comment")
+    val isPlainNote = item.kind != "frame" && item.kind != "transcript"
+    val replies = if (isPlainNote) item.notes.drop(1) else item.notes
+
+    if (replies.isEmpty()) {
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(top = 4.dp),
+            horizontalArrangement = Arrangement.End,
+        ) {
+            TextButton(
+                onClick = onAddComment,
+                contentPadding = PaddingValues(horizontal = 8.dp, vertical = 2.dp),
+            ) {
+                Icon(
+                    Icons.Filled.ChatBubbleOutline,
+                    contentDescription = null,
+                    modifier = Modifier.size(14.dp),
+                    tint = TextSecondary,
+                )
+                Spacer(Modifier.width(4.dp))
+                Text(
+                    text = if (isPlainNote) "Reply" else "Add comment",
+                    style = MaterialTheme.typography.labelMedium,
+                    color = TextSecondary,
+                )
+            }
         }
         return
     }
+
     Column {
-        val last = parseVideoNote(item.notes.last()).text
+        val last = parseVideoNote(replies.last()).text
         Row(
             modifier = Modifier
                 .fillMaxWidth()
                 .clickable(onClick = onToggle)
-                .padding(top = 6.dp),
+                .padding(vertical = 4.dp),
             verticalAlignment = Alignment.CenterVertically,
             horizontalArrangement = Arrangement.spacedBy(6.dp),
         ) {
             Icon(
                 Icons.Filled.ChatBubbleOutline,
                 contentDescription = null,
-                tint = TextDisabled,
+                tint = MaterialTheme.colorScheme.primary,
                 modifier = Modifier.size(14.dp),
             )
             Text(
-                text = "${item.notes.size}",
+                text = "${replies.size} ${if (replies.size == 1) "reply" else "replies"}",
                 style = MaterialTheme.typography.labelMedium,
-                color = TextSecondary,
+                color = MaterialTheme.colorScheme.primary,
             )
             if (!expanded && last.isNotBlank()) {
                 Text(
-                    text = last,
+                    text = "• $last",
                     style = MaterialTheme.typography.bodySmall,
                     color = TextSecondary,
                     maxLines = 1,
@@ -308,14 +334,14 @@ private fun ThreadSection(
         }
         if (expanded) {
             Column(Modifier.padding(top = 4.dp)) {
-                item.notes.forEach { note ->
+                replies.forEach { note ->
                     CommentBody(
                         markdown = note,
                         modifier = Modifier.padding(vertical = 4.dp),
                     )
                 }
                 TextButton(onClick = onAddComment) {
-                    Text("Add comment")
+                    Text(if (isPlainNote) "Add reply" else "Add comment")
                 }
             }
         }

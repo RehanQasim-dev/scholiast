@@ -5,6 +5,7 @@ import androidx.room.Insert
 import androidx.room.OnConflictStrategy
 import androidx.room.Query
 import androidx.room.Transaction
+import kotlinx.coroutines.flow.Flow
 
 /**
  * CRUD for [VideoPageEntity]. All writes replace whole rows (the page record is
@@ -29,6 +30,15 @@ interface VideoPageDao {
 
     @Query("SELECT * FROM video_pages")
     suspend fun listAll(): List<VideoPageEntity>
+
+    /**
+     * Observable feed of rows carrying webpage annotations (Task 23/27): a
+     * highlight list or reader content. Room re-emits on any `video_pages`
+     * write; the repository maps/drops rows (e.g. the empty-list sentinel
+     * `"[]"` with a space matches this predicate but has zero highlights).
+     */
+    @Query("SELECT * FROM video_pages WHERE highlightsJson != '[]' OR readerJson IS NOT NULL ORDER BY updatedAt DESC")
+    fun observePagesWithHighlights(): Flow<List<VideoPageEntity>>
 
     @Query("DELETE FROM video_pages WHERE urlHash = :urlHash")
     suspend fun delete(urlHash: String)

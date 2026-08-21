@@ -2,8 +2,14 @@ package com.scholiast.android.player
 
 import android.annotation.SuppressLint
 import android.content.Context
+import android.graphics.Bitmap
 import android.graphics.Color
+import android.view.View
+import android.view.ViewGroup
 import android.webkit.JavascriptInterface
+import android.webkit.WebChromeClient
+import android.webkit.WebResourceRequest
+import android.webkit.WebResourceResponse
 import android.webkit.WebSettings
 import android.webkit.WebView
 import android.webkit.WebViewClient
@@ -24,14 +30,9 @@ import org.json.JSONObject
  *   [setEventsListener].
  *
  * ## Security note (flagged for review)
- * The YouTube `<video>` element lives inside a cross-origin iframe, so reading it
- * from this `file://` page needs the WebView to relax the same-origin policy:
- * `setAllowUniversalAccessFromFileURLs(true)` + `setAllowFileAccessFromFileURLs(true)`
- * are deprecated and grant `file://` pages broad cross-origin access (the standard
- * hack Android YouTube apps use; it is what makes `canvas.drawImage(video)` work
- * and keeps the canvas un-tainted). The page contains no user data and executes
- * only our own `player.html`. If WebViewAssetLoader (https `appassets.androidplatform.net`)
- * is adopted later, these two settings can be dropped.
+ * The YouTube `<video>` element lives inside a cross-origin iframe. Loading with
+ * base URL `https://www.youtube.com` aligns the origin and allows reliable IFrame
+ * API initialization, postMessage communication, and media playback.
  *
  * ## Lifecycle
  * Call [onHostResume] / [onHostPause] from the host's lifecycle (stops JS timers
@@ -40,17 +41,35 @@ import org.json.JSONObject
 @SuppressLint("SetJavaScriptEnabled")
 class PlayerWebView(context: Context) : PlayerBridge {
 
-    private val webView = WebView(context)
+    private val webView = object : WebView(context) {
+        @SuppressLint("ClickableViewAccessibility")
+        override fun onTouchEvent(event: android.view.MotionEvent?): Boolean {
+            return false
+        }
+    }
 
     @Volatile
     private var events: PlayerEvents? = null
 
+    @Volatile
+    private var isPageLoaded = false
+
+    private val pendingCommands = mutableListOf<String>()
+
     init {
+        WebView.setWebContentsDebuggingEnabled(true)
+        webView.setLayerType(View.LAYER_TYPE_HARDWARE, null)
+        webView.layoutParams = ViewGroup.LayoutParams(
+            ViewGroup.LayoutParams.MATCH_PARENT,
+            ViewGroup.LayoutParams.MATCH_PARENT,
+        )
         webView.settings.apply {
             javaScriptEnabled = true
             domStorageEnabled = true
             mediaPlaybackRequiresUserGesture = false
-            // Capture needs to reach into the cross-origin YouTube iframe (see note above).
+            databaseEnabled = true
+            useWideViewPort = true
+            loadWithOverviewMode = true
             @Suppress("DEPRECATION")
             allowFileAccessFromFileURLs = true
             @Suppress("DEPRECATION")
@@ -58,10 +77,289 @@ class PlayerWebView(context: Context) : PlayerBridge {
             allowFileAccess = true
             mixedContentMode = WebSettings.MIXED_CONTENT_ALWAYS_ALLOW
         }
-        webView.setBackgroundColor(Color.BLACK)
-        webView.webViewClient = WebViewClient() // stay on player.html; no navigation away
+        webView.webChromeClient = object : WebChromeClient() {
+            override fun getDefaultVideoPoster(): Bitmap? {
+                return Bitmap.createBitmap(1, 1, Bitmap.Config.ARGB_8888)
+            }
+        }
+        webView.webViewClient = object : WebViewClient() {
+            override fun onPageFinished(view: WebView?, url: String?) {
+                super.onPageFinished(view, url)
+                isPageLoaded = true
+                flushPendingCommands()
+            }
+
+            override fun shouldInterceptRequest(
+                view: WebView?,
+                request: WebResourceRequest?,
+            ): WebResourceResponse? {
+                val url = request?.url?.toString() ?: return null
+                if (request.isForMainFrame) {
+                    return null
+                }
+                if (url.contains("youtube.com/embed/") || url.contains("youtube-nocookie.com/embed/")) {
+                    try {
+                        val connection = (java.net.URL(url).openConnection() as java.net.HttpURLConnection).apply {
+                            requestMethod = "GET"
+                            request.requestHeaders?.forEach { (k, v) ->
+                                if (!k.equals("Accept-Encoding", ignoreCase = true)) {
+                                    setRequestProperty(k, v)
+                                }
+                            }
+                            setRequestProperty("Accept-Encoding", "gzip, deflate")
+                            connectTimeout = 8000
+                            readTimeout = 8000
+                        }
+                        if (connection.responseCode == 200) {
+                            val rawStream = connection.inputStream
+                            val encodingHeader = connection.contentEncoding ?: ""
+                            val inputStream = when {
+                                encodingHeader.contains("gzip", ignoreCase = true) -> java.util.zip.GZIPInputStream(rawStream)
+                                encodingHeader.contains("deflate", ignoreCase = true) -> java.util.zip.InflaterInputStream(rawStream)
+                                else -> rawStream
+                            }
+                            var html = inputStream.bufferedReader(Charsets.UTF_8).use { it.readText() }
+                            val cssToInject = """
+                                <style id="scholiast-cleaner">
+                                    .ytp-chrome-top,
+                                    .ytp-chrome-bottom,
+                                    .ytp-watermark,
+                                    .ytp-pause-overlay,
+                                    .ytp-pause-overlay-container,
+                                    .ytp-gradient-top,
+                                    .ytp-gradient-bottom,
+                                    .ytp-show-cards-title,
+                                    .ytp-title,
+                                    .ytp-title-channel,
+                                    .ytp-title-link,
+                                    .ytp-title-text,
+                                    .ytp-ce-element,
+                                    .ytp-ce-covering-overlay,
+                                    .ytp-cards-teaser,
+                                    .ytp-endscreen-content,
+                                    .html5-endscreen,
+                                    .ytp-contextmenu,
+                                    .ytp-impression-link,
+                                    .ytp-paid-content-overlay,
+                                    .ytp-cairo-refresh-signature-moments,
+                                    .ytp-share-button,
+                                    .ytp-watch-later-button,
+                                    .ytp-copylink-button,
+                                    .ytp-overflow-button,
+                                    .ytp-more-videos-view,
+                                    .ytp-upnext,
+                                    a.ytp-title-link,
+                                    a.ytp-watermark,
+                                    .ytp-tooltip,
+                                    .ytp-videowall,
+                                    .ytp-autonav-endscreen-upnext-container,
+                                    .ytp-bezel,
+                                    .ytp-bezel-text-wrapper,
+                                    .ytp-fullscreen-grid,
+                                    .ytp-fullscreen-grid-percentage,
+                                    .ytp-featured-product,
+                                    .ytp-merch-shelf,
+                                    .ytp-popup,
+                                    .ytp-menu-container,
+                                    .ytp-skip-intro-button,
+                                    .ytp-cards-button,
+                                    .ytp-multicam-button,
+                                    .ytp-remote-button,
+                                    .ytp-size-button,
+                                    .ytp-subtitles-button,
+                                    .ytp-player-content,
+                                    .ytp-flyout-cta,
+                                    .ytp-suggested-action-badge,
+                                    .ytp-youtube-button {
+                                        display: none !important;
+                                        opacity: 0 !important;
+                                        visibility: hidden !important;
+                                        pointer-events: none !important;
+                                    }
+                                    /* Raise captions above our bottom control row; transform
+                                       composes with YouTube's inline positioning, so it wins
+                                       without fighting it. */
+                                    .ytp-caption-window-container { transform: translateY(-56px) !important; }
+                                    ::cue {
+                                        color: #ffffff !important;
+                                        background-color: rgba(8, 8, 12, 0.88) !important;
+                                        text-shadow: 0 1px 3px rgba(0, 0, 0, 0.95) !important;
+                                        font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif !important;
+                                        font-size: 16px !important;
+                                        font-weight: 600 !important;
+                                        line-height: 1.35 !important;
+                                    }
+                                    .caption-window, .ytp-caption-window-bottom, .ytp-caption-segment {
+                                        color: #ffffff !important;
+                                        background: rgba(8, 8, 12, 0.88) !important;
+                                        text-shadow: 0 1px 4px rgba(0, 0, 0, 0.95) !important;
+                                        border-radius: 4px !important;
+                                        font-size: 16px !important;
+                                        font-weight: 600 !important;
+                                    }
+                                </style>
+                            """.trimIndent()
+                            // Runs before YouTube's player boots: the stylesheet alone loses
+                            // races once YT re-parents/recreates its overlay DOM, so this
+                            // keeps re-hiding denylist nodes and restores the <style> if YT
+                            // strips it. Plain ES5, no template literals — it lives inside a
+                            // Kotlin raw string, so `$` and backticks are off-limits here.
+                            val jsToInject = """
+                                <script>
+                                (function () {
+                                  try {
+                                    var SEL = [
+                                      '.ytp-chrome-top',
+                                      '.ytp-chrome-bottom',
+                                      '.ytp-watermark',
+                                      '.ytp-pause-overlay',
+                                      '.ytp-pause-overlay-container',
+                                      '.ytp-gradient-top',
+                                      '.ytp-gradient-bottom',
+                                      '.ytp-show-cards-title',
+                                      '.ytp-title',
+                                      '.ytp-title-channel',
+                                      '.ytp-title-link',
+                                      '.ytp-title-text',
+                                      '.ytp-ce-element',
+                                      '.ytp-ce-covering-overlay',
+                                      '.ytp-cards-teaser',
+                                      '.ytp-endscreen-content',
+                                      '.html5-endscreen',
+                                      '.ytp-contextmenu',
+                                      '.ytp-impression-link',
+                                      '.ytp-paid-content-overlay',
+                                      '.ytp-cairo-refresh-signature-moments',
+                                      '.ytp-share-button',
+                                      '.ytp-watch-later-button',
+                                      '.ytp-copylink-button',
+                                      '.ytp-overflow-button',
+                                      '.ytp-more-videos-view',
+                                      '.ytp-upnext',
+                                      'a.ytp-title-link',
+                                      'a.ytp-watermark',
+                                      '.ytp-tooltip',
+                                      '.ytp-videowall',
+                                      '.ytp-autonav-endscreen-upnext-container',
+                                      '.ytp-bezel',
+                                      '.ytp-bezel-text-wrapper',
+                                      '.ytp-fullscreen-grid',
+                                      '.ytp-fullscreen-grid-percentage',
+                                      '.ytp-featured-product',
+                                      '.ytp-merch-shelf',
+                                      '.ytp-popup',
+                                      '.ytp-menu-container',
+                                      '.ytp-skip-intro-button',
+                                      '.ytp-cards-button',
+                                      '.ytp-multicam-button',
+                                      '.ytp-remote-button',
+                                      '.ytp-size-button',
+                                      '.ytp-subtitles-button',
+                                      '.ytp-player-content',
+                                      '.ytp-flyout-cta',
+                                      '.ytp-suggested-action-badge',
+                                      '.ytp-youtube-button'
+                                    ];
+                                    var STYLE_ID = 'scholiast-cleaner';
+                                    var FLAG = 'data-scholiast-hidden';
+                                    var FALLBACK_RULE = SEL.join(',') +
+                                      ' { display: none !important; opacity: 0 !important;' +
+                                      ' visibility: hidden !important; pointer-events: none !important; }';
+                                    // This script is injected right after the <style>, so the
+                                    // seed stylesheet exists now — keep its full text (captions
+                                    // included) to restore verbatim if YT removes it later.
+                                    var seed = null;
+                                    try { seed = document.getElementById(STYLE_ID); } catch (e) {}
+                                    var CSS_TEXT = (seed && seed.textContent) ? seed.textContent : FALLBACK_RULE;
+
+                                    function ensureStyle() {
+                                      try {
+                                        if (!document.getElementById(STYLE_ID)) {
+                                          var s = document.createElement('style');
+                                          s.id = STYLE_ID;
+                                          s.textContent = CSS_TEXT;
+                                          (document.head || document.documentElement).appendChild(s);
+                                        }
+                                      } catch (e) {}
+                                    }
+
+                                    function sweep() {
+                                      try {
+                                        ensureStyle();
+                                        for (var i = 0; i < SEL.length; i++) {
+                                          var nodes = null;
+                                          try { nodes = document.querySelectorAll(SEL[i]); } catch (e) { continue; }
+                                          if (!nodes) continue;
+                                          for (var j = 0; j < nodes.length; j++) {
+                                            var n = nodes[j];
+                                            try {
+                                              if (n.hasAttribute(FLAG)) continue;
+                                              n.style.display = 'none';
+                                              n.setAttribute(FLAG, '1');
+                                            } catch (e) {}
+                                          }
+                                        }
+                                      } catch (e) {}
+                                    }
+
+                                    sweep();
+                                    try {
+                                      var mo = new MutationObserver(function () { sweep(); });
+                                      mo.observe(document.documentElement, { childList: true, subtree: true });
+                                    } catch (e) {}
+                                    try { setInterval(sweep, 500); } catch (e) {}
+                                  } catch (e) {}
+                                })();
+                                </script>
+                            """.trimIndent()
+                            html = if (html.contains("<head>", ignoreCase = true)) {
+                                html.replaceFirst("(?i)<head>".toRegex(), "<head>$cssToInject$jsToInject")
+                            } else {
+                                cssToInject + jsToInject + html
+                            }
+                            return WebResourceResponse(
+                                "text/html",
+                                "UTF-8",
+                                java.io.ByteArrayInputStream(html.toByteArray(Charsets.UTF_8)),
+                            )
+                        }
+                    } catch (e: Exception) {
+                        return null
+                    }
+                }
+                return null
+            }
+        }
         webView.addJavascriptInterface(JsBridge(), "ScholiastBridge")
-        webView.loadUrl("file:///android_asset/player.html")
+        loadPlayerHtml(context)
+    }
+
+    private fun loadPlayerHtml(context: Context) {
+        val html = try {
+            context.assets.open("player.html").bufferedReader().use { it.readText() }
+        } catch (e: Exception) {
+            ""
+        }
+        webView.loadDataWithBaseURL(
+            "https://scholiast.app/",
+            html,
+            "text/html",
+            "UTF-8",
+            null,
+        )
+    }
+
+    private fun flushPendingCommands() {
+        webView.post {
+            val copy = synchronized(pendingCommands) {
+                val list = ArrayList(pendingCommands)
+                pendingCommands.clear()
+                list
+            }
+            copy.forEach { js ->
+                webView.evaluateJavascript(js, null)
+            }
+        }
     }
 
     /** The underlying [WebView] for [androidx.compose.ui.viewinterop.AndroidView]. */
@@ -95,19 +393,22 @@ class PlayerWebView(context: Context) : PlayerBridge {
         eval("commandSetVolume($percent)")
     }
 
+    override fun setCaptions(enabled: Boolean) {
+        eval("commandSetCaptions($enabled)")
+    }
+
     override fun captureFrame() {
         eval("commandCaptureFrame()")
     }
 
-    /** Pause rendering, JS timers and video when the host screen is paused. */
+    /** Pause video and WebView when the host screen is paused. */
     fun onHostPause() {
-        webView.pauseTimers()
+        pause()
         webView.onPause()
     }
 
-    /** Resume rendering and JS timers. */
+    /** Resume WebView when the host screen is resumed. */
     fun onHostResume() {
-        webView.resumeTimers()
         webView.onResume()
     }
 
@@ -118,9 +419,17 @@ class PlayerWebView(context: Context) : PlayerBridge {
         webView.destroy()
     }
 
-    /** `evaluateJavascript` must run on the main thread. */
+    /** `evaluateJavascript` must run on the main thread; queues if the page hasn't finished loading. */
     private fun eval(js: String) {
-        webView.post { webView.evaluateJavascript(js, null) }
+        webView.post {
+            if (!isPageLoaded) {
+                synchronized(pendingCommands) {
+                    pendingCommands.add(js)
+                }
+            } else {
+                webView.evaluateJavascript(js, null)
+            }
+        }
     }
 
     /**

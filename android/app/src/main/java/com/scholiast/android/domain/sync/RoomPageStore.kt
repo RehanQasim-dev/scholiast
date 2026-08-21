@@ -2,7 +2,9 @@ package com.scholiast.android.domain.sync
 
 import com.scholiast.android.data.db.VideoPageDao
 import com.scholiast.android.data.db.VideoPageEntity
+import com.scholiast.android.data.model.PageHighlight
 import com.scholiast.android.data.model.ScholiastJson
+import com.scholiast.android.data.model.VideoItem
 import com.scholiast.android.data.model.VideoPage
 import com.scholiast.android.data.normalize.Normalize
 
@@ -21,7 +23,7 @@ class RoomPageStore(private val dao: VideoPageDao) : PageStore {
 
     override suspend fun load(url: String): PageSnapshot {
         val hash = Normalize.urlHash(Normalize.normalizeUrl(url))
-        val row = dao.loadPage(hash)
+        val row = dao.getEntity(hash)
         return if (row == null) {
             PageSnapshot(
                 url = Normalize.normalizeUrl(url),
@@ -33,17 +35,44 @@ class RoomPageStore(private val dao: VideoPageDao) : PageStore {
                 headRevisionId = null,
             )
         } else {
+            val snap = snapOf(row)
             PageSnapshot(
                 url = row.url,
                 videoId = row.videoId,
                 title = row.title,
-                items = row.items,
-                snap = row.snap,
+                items = itemsOf(row),
+                snap = snap,
                 fileId = row.fileId,
                 headRevisionId = row.headRevisionId,
+                highlights = localHighlights(row, snap),
             )
         }
     }
+
+    /**
+     * The page's real local highlight list. Rows written before Task 27 made
+     * highlights locally owned carry the pristine schema default `'[]'` while
+     * their snapshot already holds desktop-synced highlights — for exactly
+     * those rows (default marker + non-empty snap) the snapshot seeds the list
+     * once, so the first post-update reconcile passes desktop data through
+     * instead of tombstoning it. `RoomPageHighlightRepository` writes a
+     * distinct empty sentinel (`"[ ]"`), so a deliberate local delete-to-empty
+     * is never re-seeded.
+     */
+    private fun localHighlights(row: VideoPageEntity, snap: VideoPage?): List<PageHighlight> =
+        if (row.highlightsJson == "[]" && snap?.highlights?.isNotEmpty() == true) {
+            snap.highlights
+        } else {
+            row.highlights
+        }
+
+    /** The row's parsed items (the same conversion [com.scholiast.android.data.db.JsonTypeConverters] applies). */
+    private fun itemsOf(row: VideoPageEntity): List<VideoItem> =
+        runCatching { ScholiastJson.decode<List<VideoItem>>(row.itemsJson) }.getOrDefault(emptyList())
+
+    /** The row's parsed snapshot, or null when absent/corrupt. */
+    private fun snapOf(row: VideoPageEntity): VideoPage? =
+        row.snapJson?.let { json -> runCatching { ScholiastJson.decode<VideoPage>(json) }.getOrNull() }
 
     override suspend fun listAllUrls(): List<String> =
         dao.listAll().map { it.url }
@@ -67,6 +96,11 @@ class RoomPageStore(private val dao: VideoPageDao) : PageStore {
             videoId = merged.videoId,
             title = merged.title,
             itemsJson = ScholiastJson.encode(merged.videoItems),
+            // Persist the merged highlight list so the row's local state stays
+            // in lockstep with the snapshot (exactly like itemsJson): without
+            // this, highlights pulled from the desktop would look "missing
+            // locally" on the NEXT reconcile and get tombstoned.
+            highlightsJson = ScholiastJson.encode(merged.highlights),
             snapJson = ScholiastJson.encode(merged),
             fileId = outMeta.id,
             headRevisionId = outMeta.headRevisionId,

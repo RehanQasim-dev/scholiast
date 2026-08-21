@@ -93,13 +93,25 @@ Compose UI (screens)  →  ViewModels (StateFlow)  →  Domain layer  →  Data 
 
 - **Player**: a `WebView` hosts the YouTube IFrame Player API (`app/src/main/assets/player.html`).
   All media playback and frame capture happen inside the WebView; all chrome (play/pause,
-  seek, −15s/+15s, speed, fullscreen) is Compose overlay. A `JavascriptInterface` bridge
-  carries events out and commands in. See plan §3.4 for the exact message contract.
+  seek, −15s/+15s, Closed Captions/subtitles toggle with high-contrast text rendering, speed, fullscreen) is Compose overlay.
+  The landscape screen features a draggable resizable split panel between video and notes/transcript,
+  and note creation/replies automatically pause playback and resume upon saving. A `JavascriptInterface`
+  bridge carries events out and commands in.
+- **Notes & Transcript UX**:
+  - **Transcript**: Paragraph cards with rounded borders, clickable `[M:SS]` timestamp seek pills,
+    karaoke-style active spoken cue highlights in bold white, "● Playing" status, and smooth auto-scrolling
+    following live playback.
+  - **Notes & Comment Editor**: Floating modal dialog with no swipe drag-handle, prominent primary "Create note"
+    button in the empty state, standard Material microphone icon with recording ring animation, formatting bar with
+    inline code `<>` button and tooltips, and high-contrast disabled Save states.
+  - **Settings**: Responsive capped width (max 600dp) for clean tablet layout, dropdown menus for Speech Language
+    and Preferred Transcriber, simplified single Explore & single Import model actions with active engine status badge,
+    and distinct destructive red styling for data wipes.
 - **Data**: kotlinx.serialization DTOs that mirror the desktop TypeScript types
   byte-for-byte (`VideoItem`, `VideoMarkup`, `PageRecord`, …). Room stores per-page JSON
   blobs + OCR text + sync metadata. Frame JPEGs are real files in `filesDir/frames/`,
   never inline bytes. Secrets (API keys, Drive tokens) live in the Android Keystore.
-- **Voice**: a tap-to-toggle recorder streams 16 kHz PCM (ported from the FUTO Keyboard's
+- **Voice**: a tap-to-toggle recorder streams 16 kHz PCM on background IO (ported from the FUTO Keyboard's
   `AudioRecognizer`), feeds either Groq Whisper (online), Gemini (online, prompt-aware), or
   the local whisper.cpp engine (offline). A Gemini voice-edit pipeline offers preview →
   Accept/Discard.
@@ -161,16 +173,23 @@ Rules:
 
 ---
 
-## 5. Build, test, run
+## 5. Build, test, run, and install
 
 - The app module is `android/app`. From `android/`:
-  - Build: `./gradlew :app:assembleDebug`
-  - Unit tests: `./gradlew :app:testDebugUnitTest`
-  - Instrumented tests: `./gradlew :app:connectedDebugAndroidTest`
-- Native (whisper): compiled automatically by the Gradle build via CMake; needs the NDK
-  (see `app/build.gradle.kts` / `libs.versions.toml`).
-- Sync golden tests compare Kotlin merge output to the TS fixtures in `../shared/` — run
-  them whenever touching `domain/sync/merge/`.
+  - **Always build `dev` version**: Always build the development flavor by default (`./gradlew assembleDevDebug`) unless the user explicitly asks for the `prod` version. Output APK: `app/build/outputs/apk/dev/debug/app-dev-debug.apk`.
+  - **Auto-install to Waydroid**: Whenever you build an APK after changes, ALWAYS run:
+    ```bash
+    waydroid app install app/build/outputs/apk/dev/debug/app-dev-debug.apk
+    ```
+    (or using absolute path `waydroid app install <repo-root>/android/app/build/outputs/apk/dev/debug/app-dev-debug.apk`)
+    so that the updated app is automatically installed in Waydroid for the user.
+  - **Testing**: **Do NOT run the entire test suite repeatedly** (`testDevDebugUnitTest` or all tests across the app take a lot of time and waste user time). Run ONLY the specific targeted test class or method that is affected by your changes:
+    ```bash
+    ./gradlew testDevDebugUnitTest --tests "com.scholiast.android.player.PlayerViewModelTest"
+    ```
+  - **Build Timestamp Indicator**: The app exposes `BuildConfig.BUILD_TIME` in `build.gradle.kts` and displays `Build: <timestamp> (<version>)` in the bottom-left corner of the Home screen so the user can immediately verify the active installation.
+  - Native (whisper): compiled automatically by the Gradle build via CMake; needs the NDK (see `app/build.gradle.kts` / `libs.versions.toml`).
+  - Sync golden tests compare Kotlin merge output to the TS fixtures in `../shared/` — run only `MergePageRecordTest` when touching `domain/sync/merge/`.
 
 ---
 
