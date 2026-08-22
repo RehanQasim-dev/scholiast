@@ -22,3 +22,4 @@ dependencyResolutionManagement {
 
 rootProject.name = "Scholiast"
 include(":app")
+include(":helper")

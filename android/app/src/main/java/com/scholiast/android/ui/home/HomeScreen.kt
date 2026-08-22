@@ -63,6 +63,8 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalFocusManager
+import androidx.compose.ui.platform.LocalSoftwareKeyboardController
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.ImeAction
@@ -105,6 +107,12 @@ fun HomeScreen(
     val syncStatus by viewModel.syncStatus.collectAsStateWithLifecycle()
     val snackbarHostState = remember { SnackbarHostState() }
     var tab by rememberSaveable { mutableStateOf(HomeTab.VIDEOS) }
+    val focusManager = LocalFocusManager.current
+    val keyboardController = LocalSoftwareKeyboardController.current
+    fun dismissKeyboard() {
+        focusManager.clearFocus()
+        keyboardController?.hide()
+    }
 
     LaunchedEffect(Unit) { viewModel.refresh() }
 
@@ -181,6 +189,7 @@ fun HomeScreen(
                             pasteFromClipboard(context, clipboardManager) { text ->
                                 viewModel.onOpenLinkChange(text)
                                 viewModel.submitOpenLink()
+                                dismissKeyboard()
                             }
                         },
                     ) {
@@ -190,12 +199,15 @@ fun HomeScreen(
                 singleLine = true,
                 shape = RoundedCornerShape(16.dp),
                 keyboardOptions = KeyboardOptions(imeAction = ImeAction.Go),
-                keyboardActions = KeyboardActions(onGo = { viewModel.submitOpenLink() }),
+                keyboardActions = KeyboardActions(onGo = {
+                    viewModel.submitOpenLink()
+                    dismissKeyboard()
+                }),
             )
 
             Spacer(Modifier.height(16.dp))
 
-            SegmentedTabs(tab, onSelect = { tab = it })
+            SegmentedTabs(tab, onSelect = { tab = it; dismissKeyboard() })
 
             Spacer(Modifier.height(16.dp))
 

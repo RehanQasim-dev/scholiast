@@ -217,3 +217,63 @@ records the full product spec and the milestone map (M0–M6 + v1.1).
 
 Milestones in brief: M0 skeleton+Home · M1 player+notes · M2 voice (Groq/Gemini/local) ·
 M3 transcript · M4 frames+OCR · M5 Drive sync · M6 settings+polish · v1.1 chat+flashcards.
+---
+
+## 8. Managing implementation agents (orchestrator playbook — hard rules)
+
+Lessons distilled from the tasks 23–33 orchestration. Every rule here exists because its
+violation cost a re-do; treat them as binding, not advisory.
+
+### 8.1 How subagents actually behave
+
+- **Empty final messages are NORMAL and do NOT mean "did nothing".** Agents frequently write
+  files silently, then truncate or drop their report. ALWAYS verify on disk before judging:
+  task.md `Status:`, LOG.md line count, `ls` of the files the task owns.
+- **They stall mid-task** — long thinking phases end in cut-off one-liners ("Now build:",
+  "Rewriting it cleanly…"). This is a pause, not a failure.
+- **They cannot see the orchestrator's conversation.** A prompt without exact paths, signatures,
+  and commands produces guesswork.
+
+### 8.2 The resume protocol (the single most important skill)
+
+- **NEVER take over an agent's task yourself once it is handed off** — not after one empty
+  reply, not after three. The orchestrator doing the work silently robs the agent of context
+  and breaks the logging trail. The only exception: the user explicitly orders it.
+- **Resume the SAME session** (`task_id`) as many times as needed. An agent that looked dead
+  for four resumes has finished on the fifth. Expected resume counts per task: 1–6+.
+- **Before every resume, check what landed on disk**, then open with: what is ALREADY done
+  ("do NOT redo X"), what remains, step by step. Never make it re-read finished work.
+- **Nudge phrasing that works:** "Proceed to implementation NOW", "you have thought enough —
+  act", "your next output must contain tool calls that write code", "think briefly, act much".
+  Discourage further analysis explicitly when an agent keeps returning planning text.
+- **Give numbered order-of-work lists** — file-by-file, exact signatures, exact build/test
+  commands. Vague nudges get vague silence; concrete step 1 gets tool calls.
+- **Handoff protocol:** if any work happened outside the agent (orchestrator, user, another
+  agent), the resume prompt MUST itemize it file-by-file — including breakages left
+  intentionally — so nothing is redone or conflicts.
+
+### 8.3 Rules for every launch prompt
+
+- **Self-contained always**: spec path, plan sections to read, EXACT public API signatures from
+  prior tasks' LOG.md files, build/test/install commands, environment quirks already fixed.
+- **Minimal tests only** (user mandate): "only write minimal tests, the most necessary ones, not
+  any unnecessary ones." One line per launch prompt; never let an agent grow a test suite for
+  its own sake.
+- **Always include**: "Report progress EVERY response even mid-work — NEVER return an empty
+  final message" and "Final message MUST include build outcome + test counts + deviations."
+- **Carry environment fixes forward** in the prompt (e.g., the pinned JDK in
+  `gradle.properties`) so later agents don't rediscover solved problems.
+- **File ownership is sacred**: parallel agents own disjoint file lists from their task.md;
+  cross-file edits are forbidden (log-and-request instead). Integration into shared files
+  belongs exclusively to the final integration task.
+
+### 8.4 Orchestration structure
+
+- **Wave-based parallelism**: one small baseline/contract task first (models, interfaces,
+  migration), then fan out only genuinely independent tasks in parallel (2–4 at a time),
+  dependency graph written into `../android-tasks/README.md`. Later waves start only when the
+  wave they depend on is DONE on disk (statuses verified, not assumed).
+- **Wave agents skip Waydroid installs** — only the final integration/verification task builds,
+  installs, and runs the on-device checklist (avoids install thrash between parallel agents).
+- **Verify independently at the end**: statuses read, one clean `assembleDevDebug`, targeted
+  test suites green — trust but confirm, agents' self-reports have been wrong about tests.

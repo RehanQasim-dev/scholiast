@@ -42,6 +42,10 @@ Rules:
 - Record anything another task or the orchestrator would need to know.
 - If you change a decision in the plan file, say so in your log entry.
 
+> **Revision B (WebView pivot, locked):** the reader surface now renders cleaned article HTML
+> in a WebView with the extension's TS annotation kernel (tasks 34–36). Tasks 26/28/29/33 are
+> superseded — kept for history. Voice/sheets/sync/routing/storage are unchanged.
+
 ## Task list (20 tasks)
 
 | # | Task | Summary | Depends on |

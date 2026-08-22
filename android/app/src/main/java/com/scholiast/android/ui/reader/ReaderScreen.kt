@@ -10,6 +10,7 @@ import android.widget.Toast
 import androidx.activity.compose.BackHandler
 import androidx.compose.animation.core.Animatable
 import androidx.compose.animation.core.LinearEasing
+import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
@@ -37,6 +38,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableDoubleStateOf
 import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
@@ -47,8 +49,8 @@ import androidx.compose.runtime.snapshotFlow
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Rect
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.input.key.Key
 import androidx.compose.ui.input.key.KeyEventType
@@ -57,9 +59,6 @@ import androidx.compose.ui.input.key.isMetaPressed
 import androidx.compose.ui.input.key.key
 import androidx.compose.ui.input.key.onPreviewKeyEvent
 import androidx.compose.ui.input.key.type
-import androidx.compose.ui.input.nestedscroll.NestedScrollConnection
-import androidx.compose.ui.input.nestedscroll.NestedScrollSource
-import androidx.compose.ui.input.nestedscroll.nestedScroll
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalUriHandler
@@ -190,30 +189,17 @@ private fun ReadyContent(
         view.performHapticFeedback(android.view.HapticFeedbackConstants.KEYBOARD_TAP)
     }
 
-    // ---- annotation state (Task 32 mounting) -------------------------------
-    val tracker = remember { SelectionTracker() }
-    val selection = rememberReaderSelection()
+    // ---- highlights + sheets (shared) — WebView owns selection ------------
     var highlights by remember { mutableStateOf<List<PageHighlight>>(emptyList()) }
     var lastPillRect by remember { mutableStateOf<Rect?>(null) }
     val voiceIntegration = rememberReaderVoiceIntegration(viewModel)
 
-    DisposableEffect(tracker) {
-        selectionTrackerGlobal = tracker
-        onDispose {
-            selectionTrackerGlobal = null
-            tracker.clearLayouts()
-        }
-    }
     LaunchedEffect(viewModel.url) {
         highlights = viewModel.highlightStore.highlights(viewModel.url)
     }
 
-    // Thread sheet focus + draft (Task 31) — declared before the callbacks that
-    // capture them.
     var focusedGroupKey by remember { mutableStateOf<String?>(null) }
     var sheetDraft by remember { mutableStateOf(TextFieldValue("")) }
-
-    /** Delete-undo toast payload (desktop parity: snapshot → optimistic delete → Undo). */
     var undoToast by remember { mutableStateOf<UndoToast?>(null) }
 
     fun persistUpsert(hl: PageHighlight) {
@@ -237,127 +223,9 @@ private fun ReadyContent(
         sheetDraft = TextFieldValue("")
     }
 
-    /** Create highlights from the committed selection; returns the thread key. */
-    fun createFromSelection(color: String): String? {
-        val spans = selection.committed ?: return null
-        if (spans.isEmpty()) return null
-        val created = HighlightController.create(
-            article.blocks, spans, color, existing = highlights,
-        )
-        if (created.isEmpty()) return null
-        lastPillRect = selection.commitPill
-        highlights = created // create() returns the full merged list (absorbed removed)
-        created.forEach(::persistUpsert)
-        hapticTick() // plan §6.5: haptic tick in the same frame as the visual commit
-        selection.consumeCommit()
-        enqueueSync()
-        return HighlightController.groupIdOf(created.last()) ?: created.last().id
-    }
-
-    val host = remember(article) {
-        AnnotationHost(
-            tracker = tracker,
-            selection = selection,
-            articleProvider = { article },
-            highlights = { highlights },
-            onTapHighlight = { hit ->
-                openSheet(hit.groupId ?: hit.highlightId)
-            },
-            onHintRewrite = { rehints ->
-                rehints.forEach { r ->
-                    highlights.firstOrNull { it.id == r.highlightId }?.let { hl ->
-                        persistUpsert(RehintWriter.apply(hl, r))
-                    }
-                }
-            },
-            // Task 33 C6 + same-page anchors: a link whose scheme/host/path
-            // matches THIS page scrolls to its #fragment block instead of
-            // leaving the reader; anything else opens in the browser.
-            onLinkTap = { target ->
-                val parsed = runCatching { android.net.Uri.parse(target) }.getOrNull()
-                val page = runCatching { android.net.Uri.parse(viewModel.url) }.getOrNull()
-                val samePage = parsed != null && page != null &&
-                    parsed.scheme == page.scheme &&
-                    parsed.host == page.host &&
-                    (parsed.path ?: "") == (page.path ?: "")
-                val fragment = parsed?.fragment.orEmpty()
-                if (samePage && fragment.isNotBlank()) {
-                    val blockIdx = article.blocks.indexOfFirst {
-                        it.anchorId == fragment || it.anchorId?.startsWith(fragment) == true
-                    }
-                    if (blockIdx >= 0) {
-                        selection.clear()
-                        scope.launch {
-                            runCatching {
-                                val viewport = listState.layoutInfo.viewportSize.height
-                                listState.scrollToItem(blockIdx, -(viewport / 4))
-                            }
-                            hapticTick()
-                        }
-                    } else {
-                        android.widget.Toast.makeText(
-                            context, "Section not found on this page", android.widget.Toast.LENGTH_SHORT,
-                        ).show()
-                    }
-                } else if (!samePage) {
-                    runCatching { uriHandler.openUri(target) }
-                }
-            },
-            onCommit = {},
-            pillVisible = { selection.committed != null && focusedGroupKey == null },
-            pillRect = { selection.commitPill ?: lastPillRect },
-            onColor = { color -> createFromSelection(color) },
-            onMic = {
-                val key = createFromSelection("yellow")
-                    ?: voiceIntegration.controller.drafts.value.keys.firstOrNull()?.let { id ->
-                        highlights.firstOrNull { it.id == id }?.let {
-                            HighlightController.groupIdOf(it) ?: it.id
-                        }
-                    }
-                    ?: return@AnnotationHost
-                voiceIntegration.onMicPressed(HighlightDraftTarget(key))
-            },
-            onComment = {
-                val key = createFromSelection("yellow") ?: return@AnnotationHost
-                openSheet(key)
-            },
-            onPillDismiss = { selection.clear() },
-        )
-    }
-
-    // ---- back-gesture unwind: sheet → selection → exit (plan §6.4) ----------
-    // Composed BEFORE the sheet so ThreadSheet's own handlers win while visible.
-    BackHandler(enabled = !selection.isDragging && selection.committed != null) {
-        selection.clear()
-    }
     BackHandler(enabled = focusedGroupKey != null) { closeSheet() }
 
-    // ---- deep link reveal (#sc-hl=<id>), plan §5.9 --------------------------
-    val deepLinkId = remember(rawUrl) { DeepLink.highlightId(rawUrl) }
-    var flashTarget by remember { mutableStateOf<PlacedHighlight?>(null) }
-    val flashProgress = remember { Animatable(0f) }
-    LaunchedEffect(deepLinkId, highlights, article.fetchedAt) {
-        val id = deepLinkId ?: return@LaunchedEffect
-        if (highlights.isEmpty() || listState.layoutInfo.totalItemsCount == 0) {
-            snapshotFlow { listState.layoutInfo.totalItemsCount }.first { it > 0 }
-        }
-        val resolved = DeepLink.resolve(article, highlights, id) ?: return@LaunchedEffect
-        runCatching {
-            // Block top lands ~⅓ viewport from the screen top (plan §5.9).
-            val viewport = listState.layoutInfo.viewportSize.height
-            listState.scrollToItem(resolved.blockIndex, -(viewport / 3))
-        }
-        // single soft emphasis pulse ~2.6s (static hold under reduced motion)
-        flashTarget = resolved
-        flashProgress.snapTo(0f)
-        if (reducedMotion) {
-            flashProgress.snapTo(1f)
-            delay(REVEAL_HOLD_REDUCED_MS)
-        } else {
-            flashProgress.animateTo(1f, tween(REVEAL_PULSE_MS, easing = LinearEasing))
-        }
-        flashTarget = null
-    }
+    // Deep link now handled via webHandles.revealHighlight in bridge onReady.
 
     // Restore the saved scroll once content exists (exact index+offset pair).
     LaunchedEffect(listState, article.fetchedAt) {
@@ -379,29 +247,7 @@ private fun ReadyContent(
         }
     }
 
-    // Pending selection SURVIVES scrolling (user report: auto-dismiss lost
-    // work). The pill hides while the list is in motion and re-anchors from
-    // fresh layouts on settle; it clears only when the anchor block was
-    // disposed (scrolled far away).
-    LaunchedEffect(listState, article.fetchedAt) {
-        snapshotFlow { listState.isScrollInProgress }.collect { scrolling ->
-            if (scrolling) {
-                selection.hidePill()
-            } else {
-                val spans = selection.committed
-                when {
-                    spans == null -> Unit
-                    tracker.layoutResults[spans.first().blockIndex] == null -> selection.clear()
-                    else -> {
-                        val first = spans.first()
-                        selection.commitPill =
-                            pillRectFor(article.blocks, first.blockIndex to first.range, density)
-                            ?: lastPillRect
-                    }
-                }
-            }
-        }
-    }
+
 
     // ---- coach mark: first Reader visit only (plan §6.2) --------------------
     var coachVisible by remember { mutableStateOf(false) }
@@ -420,87 +266,154 @@ private fun ReadyContent(
         CoachMarkPrefs.markShown(context)
     })
 
-    // Top bar tracks scroll 1:1 (plan §6.5): a nested-scroll connection absorbs
-    // finger/fling deltas before (hide) or after (show) the list consumes them.
-    // No independent animation anywhere.
-    var hiddenPx by remember { mutableFloatStateOf(0f) }
-    val barConnection = remember(barHeightPx) {
-        object : NestedScrollConnection {
-            override fun onPreScroll(available: Offset, source: NestedScrollSource): Offset {
-                val dy = available.y
-                if (dy <= 0f) return Offset.Zero
-                val old = hiddenPx
-                val new = (old + dy).coerceAtMost(barHeightPx)
-                hiddenPx = new
-                return Offset(0f, new - old)
-            }
-
-            override fun onPostScroll(
-                consumed: Offset,
-                available: Offset,
-                source: NestedScrollSource,
-            ): Offset {
-                val dy = available.y
-                if (dy >= 0f) return Offset.Zero
-                val old = hiddenPx
-                val new = (old + dy).coerceAtLeast(0f)
-                hiddenPx = new
-                return Offset(0f, new - old)
-            }
+    // Top bar stays hidden by default — the article gets the full screen from
+    // the first frame — and only reappears on scroll-up or near the top. The
+    // WebView owns its own scrolling (it's a native View, not a Compose
+    // scrollable), so this is driven by the JS bundle's throttled onScrollPct
+    // bridge callback rather than a NestedScrollConnection (which never sees
+    // WebView-internal scroll deltas at all).
+    var rawHiddenPx by remember { mutableFloatStateOf(barHeightPx) }
+    val hiddenPx by animateFloatAsState(targetValue = rawHiddenPx, label = "readerTopBarHide")
+    var lastScrollPct by remember { mutableDoubleStateOf(0.0) }
+    fun onArticleScrollPct(pct: Double) {
+        val delta = pct - lastScrollPct
+        when {
+            delta > 0.6 -> rawHiddenPx = barHeightPx
+            delta < -0.6 -> rawHiddenPx = 0f
         }
+        lastScrollPct = pct
     }
 
     var showTypography by remember { mutableStateOf(false) }
     var showDeleteConfirm by remember { mutableStateOf(false) }
 
-    // Task 33 C7: hardware-keyboard select-all — Ctrl+A / Meta+A selects the
-    // whole article and raises the pill over its first block. Preview phase,
-    // but inert while the sheet is open so the comment field keeps its own
-    // select-all.
-    fun onSelectAll(): Boolean {
-        if (focusedGroupKey != null) return false
-        val all = selection.selectAll(article)
-        if (all.isEmpty()) return false
-        val first = all.first()
-        selection.commitPill = pillRectFor(article.blocks, first.blockIndex to first.range, density)
-        return true
+    // WebView reader host — replaces NativeReader (Revision B). The JS bundle
+    // handles Readability cleaning, selection, pill, and highlight painting;
+    // Kotlin owns persistence, sync, voice, and sheets.
+    val deepLinkId = remember(rawUrl) { DeepLink.highlightId(rawUrl) }
+    val (bridge, handlesFactory) = remember { ReaderWebViewFactory.create() }
+    var webHandles by remember { mutableStateOf<ReaderWebHandles?>(null) }
+    var webReady by remember { mutableStateOf(false) }
+    var pendingSelectionJson by remember { mutableStateOf<String?>(null) }
+
+    // Bridge routing — JS → Kotlin persistence.
+    val bridgeCallbacks = remember(highlights) {
+        object : ReaderBridgeCallbacks {
+            override fun onReady() {
+                webReady = true
+                scope.launch {
+                    // Paint saved highlights once JS is ready.
+                    val json = com.scholiast.android.data.model.ScholiastJson.encode(highlights)
+                    webHandles?.paintHighlights(json)
+                    // Apply current theme.
+                    webHandles?.setReaderTheme(true, (16 + settings.fontStep * 1) , settings.serif, settings.wideWidth)
+                    // Deep link reveal after paint.
+                    deepLinkId?.let { id -> webHandles?.revealHighlight(id) }
+                    // Scroll restore is handled via onScrollPct; initial position 0.
+                }
+            }
+            override fun onHighlightCreated(json: String) {
+                scope.launch {
+                    val hl = try { com.scholiast.android.data.model.ScholiastJson.decode<com.scholiast.android.data.model.PageHighlight>(json) } catch (_: Exception) { null } ?: return@launch
+                    highlights = highlights + hl
+                    persistUpsert(hl)
+                    enqueueSync()
+                }
+            }
+            override fun onHighlightUpdated(json: String) {
+                scope.launch {
+                    val hl = try { com.scholiast.android.data.model.ScholiastJson.decode<com.scholiast.android.data.model.PageHighlight>(json) } catch (_: Exception) { null } ?: return@launch
+                    highlights = highlights.map { if (it.id == hl.id) hl else it }
+                    persistUpsert(hl)
+                    enqueueSync()
+                }
+            }
+            override fun onHighlightDeleted(id: String) {
+                scope.launch {
+                    highlights = highlights.filterNot { it.id == id }
+                    viewModel.highlightStore.delete(viewModel.url, id)
+                    enqueueSync()
+                }
+            }
+            override fun onLinkTap(url: String) { runCatching { uriHandler.openUri(url) } }
+            override fun onScrollPct(pct: Double) { onArticleScrollPct(pct) }
+            override fun onSelectionState(json: String?) { pendingSelectionJson = json }
+        }
+    }
+    DisposableEffect(bridge) {
+        bridge.callbacks = bridgeCallbacks
+        onDispose { bridge.callbacks = null }
+    }
+    // Keep theme in sync.
+    LaunchedEffect(settings) {
+        if (webReady) webHandles?.setReaderTheme(true, 16 + settings.fontStep, settings.serif, settings.wideWidth)
+    }
+    // Repaint when highlights change externally (e.g., pull).
+    LaunchedEffect(highlights, webReady) {
+        if (webReady) {
+            val json = com.scholiast.android.data.model.ScholiastJson.encode(highlights)
+            webHandles?.paintHighlights(json)
+        }
     }
 
     Box(
         modifier = Modifier
-            .fillMaxSize()
-            .onPreviewKeyEvent { event ->
-                val isSelectAll =
-                    event.type == KeyEventType.KeyUp &&
-                        event.key == Key.A &&
-                        (event.isCtrlPressed || event.isMetaPressed)
-                if (isSelectAll) onSelectAll() else false
-            }
-            .nestedScroll(barConnection),
+            .fillMaxSize(),
     ) {
-        NativeReader(
-            article = article,
-            settings = settings,
-            listState = listState,
-            annotation = host,
+        // WebView content — replaces NativeReader (kept for history, deleted in Task 36).
+        androidx.compose.ui.viewinterop.        AndroidView(
+            factory = { ctx ->
+                WebView(ctx).apply {
+                    this.settings.javaScriptEnabled = true
+                    this.settings.domStorageEnabled = true
+                    this.settings.allowFileAccess = true
+                    setBackgroundColor(0xFF0B0D14.toInt())
+                    addJavascriptInterface(bridge, "AndroidBridge")
+                    bridge.webView = this
+                    webViewClient = object : WebViewClient() {
+                        override fun onPageFinished(view: WebView?, url: String?) {
+                            super.onPageFinished(view, url)
+                            if (webHandles == null && view != null) {
+                                webHandles = handlesFactory(view)
+                            }
+                            // Inject reader CSS.
+                            try {
+                                val css = ctx.assets.open("wwwreader/android-reader.css").bufferedReader().readText()
+                                val escCss = css.replace("\\", "\\\\").replace("`", "\\`").replace("$", "\\$")
+                                evaluateJavascript("(function(){var s=document.createElement('style');s.textContent=`$escCss`;document.head.appendChild(s);})();", null)
+                            } catch (_: Exception) {}
+                            // Inject reader JS bundle — it does Readability swap + kernel boot.
+                            try {
+                                val js = ctx.assets.open("wwwreader/android-reader.js").bufferedReader().readText()
+                                evaluateJavascript(js, null)
+                            } catch (_: Exception) {}
+                        }
+                    }
+                    loadUrl(viewModel.url)
+                }
+            },
+            modifier = Modifier.fillMaxSize(),
+            update = { view ->
+                if (webHandles == null) {
+                    webHandles = handlesFactory(view)
+                    bridge.webView = view
+                    view.addJavascriptInterface(bridge, "AndroidBridge")
+                }
+            },
         )
 
-        // Deep-link emphasis pulse over the painted highlight (root coords).
-        flashTarget?.let { placed ->
-            Canvas(modifier = Modifier.fillMaxSize()) {
-                val t = flashProgress.value
-                if (t <= 0f) return@Canvas
-                val layout = tracker.layoutResults[placed.blockIndex] ?: return@Canvas
-                val bounds = tracker.rootBounds[placed.blockIndex] ?: return@Canvas
-                val boost = if (reducedMotion) REVEAL_STATIC_BOOST else sin(PI * t).toFloat() * REVEAL_PULSE_AMPLITUDE
-                val hue = highlightColor(placed.highlight.color ?: "yellow")
-                for (r in rangeRectsInBlock(layout, placed.range)) {
-                    drawRect(
-                        color = hue.copy(alpha = HIGHLIGHT_FILL_ALPHA + boost),
-                        topLeft = Offset(r.left + bounds.left, r.top + bounds.top),
-                        size = Size(r.width, r.height),
-                    )
-                }
+        // The WebView briefly renders the live page in ITS OWN (often light)
+        // theme before our CSS/JS injection lands on onPageFinished; cover
+        // that flash with the reader's own dark background until the kernel
+        // reports onReady() (DOM swapped + painted).
+        if (!webReady) {
+            Box(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .background(Color(0xFF0B0D14)),
+                contentAlignment = Alignment.Center,
+            ) {
+                CircularProgressIndicator()
             }
         }
 
@@ -513,21 +426,43 @@ private fun ReadyContent(
             onOpenOriginal = { openInBrowser(context, viewModel.url) },
             onDeletePageData = { showDeleteConfirm = true },
             onCopyArticle = {
-                val plain = article.blocks.joinToString("\n\n") { b ->
-                    when (b.kind) {
-                        "li" -> (b.listOrdinal?.let { "$it. " } ?: "• ") + b.text
-                        "img" -> b.imgAlt.orEmpty().ifBlank { "[image]" }
-                        else -> b.text
+                // Prefer WebView's cleaned text (via JS) when available; fallback to blocks.
+                val handles = webHandles
+                if (handles != null && webReady) {
+                    handles.getArticleText { text ->
+                        val plain = text?.takeIf { it.isNotBlank() } ?: article.blocks.joinToString("\n\n") { b ->
+                            when (b.kind) {
+                                "li" -> (b.listOrdinal?.let { "$it. " } ?: "• ") + b.text
+                                "img" -> b.imgAlt.orEmpty().ifBlank { "[image]" }
+                                else -> b.text
+                            }
+                        }
+                        val cm = context.getSystemService(Context.CLIPBOARD_SERVICE) as android.content.ClipboardManager
+                        cm.setPrimaryClip(
+                            android.content.ClipData.newPlainText(
+                                article.title ?: "Article",
+                                (article.title?.plus("\n\n") ?: "") + plain,
+                            ),
+                        )
+                        Toast.makeText(context, "Article copied", Toast.LENGTH_SHORT).show()
                     }
+                } else {
+                    val plain = article.blocks.joinToString("\n\n") { b ->
+                        when (b.kind) {
+                            "li" -> (b.listOrdinal?.let { "$it. " } ?: "• ") + b.text
+                            "img" -> b.imgAlt.orEmpty().ifBlank { "[image]" }
+                            else -> b.text
+                        }
+                    }
+                    val cm = context.getSystemService(Context.CLIPBOARD_SERVICE) as android.content.ClipboardManager
+                    cm.setPrimaryClip(
+                        android.content.ClipData.newPlainText(
+                            article.title ?: "Article",
+                            (article.title?.plus("\n\n") ?: "") + plain,
+                        ),
+                    )
+                    Toast.makeText(context, "Article copied", Toast.LENGTH_SHORT).show()
                 }
-                val cm = context.getSystemService(Context.CLIPBOARD_SERVICE) as android.content.ClipboardManager
-                cm.setPrimaryClip(
-                    android.content.ClipData.newPlainText(
-                        article.title ?: "Article",
-                        (article.title?.plus("\n\n") ?: "") + plain,
-                    ),
-                )
-                Toast.makeText(context, "Article copied", Toast.LENGTH_SHORT).show()
             },
         )
         if (showTypography) {
@@ -845,16 +780,6 @@ private fun DeletePageDataDialog(onConfirm: () -> Unit, onDismiss: () -> Unit) {
 }
 
 // ------------------------------------------------------------- helpers
-
-/** Rewrites `extras.hint` after the painter re-resolved from the quote anchor. */
-private object RehintWriter {
-    fun apply(hl: PageHighlight, r: Rehint): PageHighlight =
-        hl.copy(
-            extras = kotlinx.serialization.json.JsonObject(
-                hl.extras + ("hint" to HighlightController.hintJson(r.hint)),
-            ),
-        )
-}
 
 @Composable
 private fun readerViewModel(url: String): ReaderViewModel {

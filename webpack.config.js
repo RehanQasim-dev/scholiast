@@ -246,5 +246,98 @@ module.exports = (env, argv) => {
 		]
 	};
 
-	return [mainConfig];
+	// Android WebView reader bundle: self-contained IIFE (no chunks) emitted to
+	// its own directory and copied into the Android app's assets. Built together
+	// with the extension configs, or alone via:
+	//   npm run build:android-reader   (= webpack --config-name android-reader)
+	const androidReaderConfig = {
+		name: 'android-reader',
+		mode: argv.mode,
+		entry: {
+			'android-reader': './src/android-reader.ts',
+		},
+		output: {
+			path: path.resolve(__dirname, 'dist-android'),
+			filename: '[name].js',
+			globalObject: 'window',
+			module: false,
+		},
+		devtool: isProduction ? false : 'source-map',
+		performance: { hints: false },
+		optimization: {
+			minimize: true,
+			splitChunks: false,
+			runtimeChunk: false,
+			minimizer: [
+				new TerserPlugin({
+					terserOptions: {
+						mangle: false,
+						compress: { defaults: true, ecma: 2020, module: false },
+						format: { ascii_only: true, comments: false },
+						module: false,
+						keep_classnames: true,
+						keep_fnames: true
+					},
+					extractComments: false
+				})
+			],
+		},
+		resolve: {
+			extensions: ['.ts', '.tsx', '.js'],
+		},
+		module: {
+			rules: [
+				{ test: /\.m?js$/, resolve: { fullySpecified: false } },
+				{
+					test: /\.tsx?$/,
+					use: [
+						{
+							loader: 'ts-loader',
+							options: {
+								transpileOnly: true,
+								compilerOptions: { module: 'ES2020' }
+							}
+						}
+					],
+					exclude: /node_modules/,
+				},
+				{
+					test: /\.css$/,
+					use: [
+						MiniCssExtractPlugin.loader,
+						{ loader: 'css-loader', options: { sourceMap: !isProduction } },
+						{ loader: 'postcss-loader', options: { sourceMap: !isProduction } },
+					]
+				},
+			]
+		},
+		plugins: [
+			new MiniCssExtractPlugin({
+				filename: '[name].css'
+			}),
+			new CopyPlugin({
+				patterns: [
+					{ from: 'src/android/test/test.html', to: 'test.html' },
+				],
+			}),
+			{
+				apply: (compiler) => {
+					compiler.hooks.afterEmit.tap('CopyAndroidReaderAssets', () => {
+						const dest = path.resolve(__dirname, 'android/app/src/main/assets/wwwreader');
+						fs.mkdirSync(dest, { recursive: true });
+						for (const file of ['android-reader.js', 'android-reader.css']) {
+							const src = path.resolve(__dirname, 'dist-android', file);
+							if (fs.existsSync(src)) {
+								fs.copyFileSync(src, path.join(dest, file));
+							} else {
+								console.warn(`[build] android asset missing after emit: ${file}`);
+							}
+						}
+					});
+				}
+			},
+		],
+	};
+
+	return [mainConfig, androidReaderConfig];
 };

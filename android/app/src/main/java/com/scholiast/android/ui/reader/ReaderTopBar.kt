@@ -66,6 +66,7 @@ fun ReaderTopBar(
 ) {
     Surface(
         color = MaterialTheme.colorScheme.surface.copy(alpha = 0.92f),
+        contentColor = MaterialTheme.colorScheme.onSurface,
         modifier = modifier.offset { IntOffset(0, -hiddenPx.roundToInt()) },
     ) {
         Row(

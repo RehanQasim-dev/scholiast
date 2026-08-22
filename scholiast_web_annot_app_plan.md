@@ -251,3 +251,43 @@ shared/anchor.ts	domain/reader/AnchorKt.kt	Create + 3-tier resolve; golden-teste
 Extension mergeOverlappingHighlights, trim-range semantics	domain/reader/ ports	Grouping + boundary hygiene parity
 Existing app: VoiceRecorder, Transcribers, CommentEditorSheet, TagIndex, SyncEngine, Normalize	reused as-is	Zero changes outside the listed spine points
 
+
+---
+
+# Revision B — WebView pivot (post-native post-mortem)
+
+Status: LOCKED (user Q&A). Supersedes the native-first hybrid for the READER SURFACE ONLY;
+everything outside the reader (voice, sheets, sync spine, routing, storage) stands.
+
+## Why
+Hands-on testing showed the native selection system (Compose 1.9 internalized its selection
+API, forcing a hand-built parallel selection machine: SelectionTracker geometry, drag state,
+word snapping) to be unfixable whack-a-mole — fixing one defect surfaced others. A WebView
+deletes the problem class: OS text selection is free, HTML renders images/lists/links/anchors
+correctly by definition, and the ANNOTATION KERNEL IS ALREADY WRITTEN — it is the desktop
+extension's TypeScript (`shared/anchor.ts`, `highlighter-overlays.ts` painting, swatch popup),
+battle-tested on the live web for months.
+
+## Locked decisions
+| Area | Decision |
+|---|---|
+| Flutter | DEFERRED. Full-app rewrite rejected for now (would invalidate working voice/sync/player systems; desktop covered by extension + Obsidian plugin + dashboard). Revisit only if a desktop-native need emerges. |
+| Rendering | **Cleaned reader HTML**: OkHttp fetch → Readability.js (Mozilla original) inside the WebView → sanitized DOM styled by OUR stylesheet (dark palette, typography vars). Pocket-style; ads/nav never present. |
+| Annotation kernel | Bundled TS from this repo's own modules (anchors incl. fuzzy resolve, Custom Highlight API painting, swatch pill, badges) behind an `AndroidBridge` JS↔Kotlin contract. |
+| Dark mode | Reader CSS variables = app palette; toggle re-renders instantly. |
+| Native reader code | DELETE IMMEDIATELY (user decision): ReaderBlockText, SelectionTracker, HighlightController/Painter, SwatchPill, Linearizer render path, snapToWords, NativeReader block renderer. Kept: AnchorKt + golden tests (reference), Extractor fixtures reference, ThreadSheet/Voice/controllers/repository/sync. |
+| Storage | Unchanged: highlights ride PageRecord.highlights through the same merge; extracted article cached in Room (`readerJson` now stores cleaned HTML string + title/byline) for offline reopen. |
+
+## Bridge contract (JS ↔ Kotlin)
+JS→K: `highlightCreated(json)`, `highlightUpdated(json)`, `highlightDeleted(id)` (each fires
+repository writes + enqueueSyncNow inside Kotlin).
+K→JS: `paintHighlights(jsonArray)`, `revealHighlight(id)` (scroll+pulse), `setReaderTheme(dark,
+fontPx, serif, wide)`, `getArticleText(cb)` (copy-article), `getScrollPct()/scrollToPct(p)`
+(persistence + deep links).
+
+## Tasks
+| # | Task | Wave |
+|---|---|---|
+| 34 | `android-reader` webpack bundle: Readability.js + kernel + reader.css → single assets | 1 |
+| 35 | ReaderWebScreen: WebView host + bridge + chrome (dark/copy/typography/scroll/deep-link), voice+ThreadSheet remount | 2 |
+| 36 | Delete native-selection stack + regression pass + docs + install | 3 |
