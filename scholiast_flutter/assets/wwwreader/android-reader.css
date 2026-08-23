@@ -1,0 +1,90 @@
+/* Scholiast Reader — injected into live WebView by ReaderWebViewHost */
+
+:root {
+  --sc-bg: #0b0d14;
+  --sc-surface: #151822;
+  --sc-hairline: #232733;
+  --sc-text: #ffffff;
+  --sc-text-secondary: #9aa0a6;
+  --sc-accent: #8b7cf6;
+  --sc-yellow: #fef08a;
+  --sc-yellow-border: #eab308;
+  --sc-green: #bbf7d0;
+  --sc-green-border: #22c55e;
+  --sc-red: #fecaca;
+  --sc-red-border: #ef4444;
+}
+
+html {
+  scroll-behavior: smooth;
+}
+
+body {
+  background: #0b0d14;
+  color: #e8e8ee;
+  line-height: 1.65;
+  -webkit-font-smoothing: antialiased;
+  text-rendering: optimizeLegibility;
+}
+
+body.scholiast-serif {
+  font-family: "Libre Caslon Text", Georgia, serif;
+}
+
+/* Highlight spans painted by android-reader.js — matches NativeArticleView colors */
+.scholiast-highlight {
+  padding: 1px 2px;
+  border-radius: 3px;
+  box-decoration-break: clone;
+  -webkit-box-decoration-break: clone;
+  transition: background-color 0.2s ease, border-color 0.2s ease;
+}
+
+.scholiast-highlight.scholiast-active {
+  outline: 2px solid var(--sc-accent);
+  outline-offset: 1px;
+  background-color: rgba(139, 124, 246, 0.22) !important;
+}
+
+.scholiast-pending {
+  background: rgba(139, 124, 246, 0.18);
+  border-bottom: 2px dashed var(--sc-accent);
+  border-radius: 3px;
+}
+
+/* Reader chrome adjustments for injected pages */
+a {
+  color: var(--sc-accent);
+  text-decoration-thickness: 1px;
+  text-underline-offset: 2px;
+}
+
+a:hover {
+  color: #a78bfa;
+}
+
+img {
+  max-width: 100%;
+  height: auto;
+  border-radius: 8px;
+}
+
+/* Selection color */
+::selection {
+  background: rgba(139, 124, 246, 0.32);
+}
+
+/* Scrollbar styling for desktop WebView */
+::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+
+::-webkit-scrollbar-thumb {
+  background: #232733;
+  border-radius: 4px;
+}
+
+::-webkit-scrollbar-track {
+  background: transparent;
+}
