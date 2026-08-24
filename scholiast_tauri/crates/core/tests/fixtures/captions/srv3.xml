@@ -1,0 +1,5 @@
+<transcript>
+  <p t="0" d="2000"><s>Hello</s><s> world</s></p>
+  <p t="2500" d="1200">&quot;Quoted&quot; &lt;stuff&gt;</p>
+  <p t="4000">plain<br/>text</p>
+</transcript>

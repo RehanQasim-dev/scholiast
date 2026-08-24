@@ -1,0 +1,26 @@
+{
+  "wireMagic": "pb3",
+  "events": [
+    {
+      "tStartMs": 0,
+      "dDurationMs": 2680,
+      "segs": [
+        { "utf8": "Welcome" },
+        { "tOffsetMs": 900, "utf8": " to " },
+        { "tOffsetMs": 1800, "utf8": "the course" }
+      ]
+    },
+    { "aAppend": 1, "segs": [{ "utf8": ", everyone." }] },
+    {
+      "tStartMs": 3000,
+      "dDurationMs": 1500,
+      "segs": [
+        { "utf8": "Today we cover " },
+        { "tOffsetMs": 700, "acAsrConf": 251, "utf8": "parsing & lexing" }
+      ]
+    },
+    { "segs": [{ "utf8": "   " }] },
+    { "tStartMs": 6000, "dDurationMs": 1000, "segs": [{ "utf8": "Third line" }] },
+    { "aAppend": 1, "dDurationMs": 4000, "segs": [{ "utf8": " continued." }] }
+  ]
+}

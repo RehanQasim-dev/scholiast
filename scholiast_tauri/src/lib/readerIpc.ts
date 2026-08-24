@@ -1,0 +1,105 @@
+import { invokeCommand } from "./ipc";
+
+export interface ArticleSummary {
+  urlHash: string;
+  url: string;
+  title: string | null;
+  domain: string | null;
+  updatedAt: number;
+}
+
+export interface AddArticleResult {
+  urlHash: string;
+  title: string;
+}
+
+export interface PageView {
+  urlHash: string;
+  url: string;
+  title: string | null;
+  /** Sanitized article HTML; null/empty until extraction captures it. */
+  body: string | null;
+  capturedAt: number | null;
+  updatedAt: number;
+}
+
+/** Extension highlight shape (`type`-tagged); Rust round-trips it via serde. */
+export interface HighlightPayload {
+  type: "text" | "element";
+  id?: string;
+  xpath?: string | null;
+  startOffset?: number | null;
+  endOffset?: number | null;
+  content: string;
+  notes?: string[];
+  color?: string | null;
+  groupId?: string | null;
+  anchor?: unknown;
+  updatedAt?: number;
+}
+
+export type HighlightView = HighlightPayload & { id: string };
+
+export interface CommentView {
+  id: string;
+  body: string;
+  createdAt: number;
+  editedAt: number | null;
+}
+
+export function addArticle(args: {
+  url: string;
+  title?: string;
+}): Promise<AddArticleResult> {
+  return invokeCommand<AddArticleResult>("add_article", args);
+}
+
+export function listArticles(): Promise<ArticleSummary[]> {
+  return invokeCommand<ArticleSummary[]>("list_articles");
+}
+
+export function getPage(args: { urlHash: string }): Promise<PageView | null> {
+  return invokeCommand<PageView | null>("get_page", args);
+}
+
+export function deleteArticle(args: { urlHash: string }): Promise<boolean> {
+  return invokeCommand<boolean>("delete_article", args);
+}
+
+export function saveHighlight(args: {
+  urlHash: string;
+  highlight: HighlightPayload;
+}): Promise<void> {
+  return invokeCommand<void>("save_highlight", args);
+}
+
+export function listHighlights(args: { urlHash: string }): Promise<HighlightView[]> {
+  return invokeCommand<HighlightView[]>("list_highlights", args);
+}
+
+export function deleteHighlight(args: { highlightId: string }): Promise<boolean> {
+  return invokeCommand<boolean>("delete_highlight", args);
+}
+
+export function updateHighlightColor(args: {
+  highlightId: string;
+  color: string;
+}): Promise<boolean> {
+  return invokeCommand<boolean>("update_highlight_color", args);
+}
+
+/** `note` is the full inline-marker string; its timestamp id is preserved. */
+export function saveComment(args: {
+  highlightId: string;
+  note: string;
+}): Promise<CommentView> {
+  return invokeCommand<CommentView>("save_comment", args);
+}
+
+export function listComments(args: { highlightId: string }): Promise<CommentView[]> {
+  return invokeCommand<CommentView[]>("list_comments", args);
+}
+
+export function deleteComment(args: { commentId: string }): Promise<boolean> {
+  return invokeCommand<boolean>("delete_comment", args);
+}

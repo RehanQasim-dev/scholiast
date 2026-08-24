@@ -1,0 +1,44 @@
+[
+  {
+    "index": 0,
+    "text": "so today we are going to look at how a compiler actually works.",
+    "start": 0.0,
+    "end": 6.0,
+    "cueRange": [0, 1]
+  },
+  {
+    "index": 1,
+    "text": "And then we will build a tiny interpreter",
+    "start": 3.5,
+    "end": 9.0,
+    "cueRange": [2, 3]
+  },
+  {
+    "index": 2,
+    "text": "welcome back everyone.",
+    "start": 30.0,
+    "end": 33.0,
+    "cueRange": [4, 4]
+  },
+  {
+    "index": 3,
+    "text": "first we tokenize the source then we parse it into a tree then we walk the tree emitting code the whole time without punctuation here",
+    "start": 33.5,
+    "end": 70.0,
+    "cueRange": [5, 6]
+  },
+  {
+    "index": 4,
+    "text": "that is the whole pipeline.",
+    "start": 72.5,
+    "end": 74.0,
+    "cueRange": [7, 7]
+  },
+  {
+    "index": 5,
+    "text": "questions so far okay great now let us begin and we keep talking with no punctuation at all in this long stretch of speech",
+    "start": 80.0,
+    "end": 126.0,
+    "cueRange": [8, 10]
+  }
+]

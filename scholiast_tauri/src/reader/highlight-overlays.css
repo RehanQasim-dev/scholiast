@@ -1,0 +1,76 @@
+/*
+ * Reader highlight overlays (task 29).
+ *
+ * Native path: CSS Custom Highlight API. `highlightPaint.ts` registers one
+ * Highlight registry per color under these names; the rules below paint them.
+ * Fallback path (no CSS.highlights — older WebKitGTK/jsdom): the same visual
+ * comes from <mark class="sc-hl sc-hl-<color>" data-sc-hl="<id>"> spans that
+ * the painter wraps around the resolved ranges.
+ */
+
+::highlight(sc-hl-yellow) {
+  background-color: var(--sc-hl-yellow);
+}
+
+::highlight(sc-hl-red) {
+  background-color: var(--sc-hl-red);
+}
+
+::highlight(sc-hl-green) {
+  background-color: var(--sc-hl-green);
+}
+
+mark.sc-hl {
+  padding: 0.05em 0;
+  border-radius: 2px;
+  color: inherit;
+}
+
+mark.sc-hl-yellow {
+  background-color: var(--sc-hl-yellow);
+}
+
+mark.sc-hl-red {
+  background-color: var(--sc-hl-red);
+}
+
+mark.sc-hl-green {
+  background-color: var(--sc-hl-green);
+}
+
+/* Dismissible notice for highlights whose anchors no longer resolve. */
+.sc-unplaced-chip {
+  position: fixed;
+  left: 12px;
+  bottom: 12px;
+  z-index: 40;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 10px;
+  border-radius: 9999px;
+  background: var(--sc-elevated, #151824);
+  border: 1px solid var(--sc-hairline, #232733);
+  font-size: 0.75rem;
+  line-height: 1;
+  color: var(--sc-text-2, #9aa0a6);
+}
+
+.sc-unplaced-chip button {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 20px;
+  min-height: 20px;
+  padding: 0;
+  border: none;
+  border-radius: 9999px;
+  background: none;
+  color: inherit;
+  font-size: 0.85rem;
+  cursor: pointer;
+}
+
+.sc-unplaced-chip button:hover {
+  color: var(--sc-text, #fff);
+}

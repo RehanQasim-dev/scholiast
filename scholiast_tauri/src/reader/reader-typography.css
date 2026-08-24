@@ -1,0 +1,234 @@
+/*
+ * Reader article typography (task 26, plan §6.9/§7).
+ * Everything is scoped under .sc-article; tokens come from styles/tokens.css.
+ */
+
+.sc-article {
+  width: min(var(--sc-article-width, 736px), 100%);
+  margin-inline: auto;
+  font-size: calc(1rem + var(--reader-font-step, 0) * 1px);
+  color: var(--sc-text);
+}
+
+.sc-article-header {
+  margin-bottom: 2.25rem;
+}
+
+.sc-article-title {
+  margin: 0;
+  font-family:
+    "Geist",
+    ui-sans-serif,
+    system-ui,
+    -apple-system,
+    "Segoe UI",
+    Roboto,
+    sans-serif;
+  font-size: clamp(1.625rem, 1.2rem + 1.8vw, 2.125rem);
+  font-weight: 600;
+  line-height: 1.22;
+  letter-spacing: -0.01em;
+  color: var(--sc-text);
+}
+
+.sc-article-byline {
+  margin: 0.5rem 0 0;
+  font-family:
+    "Geist",
+    ui-sans-serif,
+    system-ui,
+    -apple-system,
+    "Segoe UI",
+    Roboto,
+    sans-serif;
+  font-size: 0.875rem;
+  color: var(--sc-text-3);
+}
+
+/* Body text carries the font-step scale; headings below use em so they stay
+   proportional to it. The serif pref swaps only the reading typeface. */
+.sc-article-body {
+  line-height: 1.75;
+  overflow-wrap: break-word;
+}
+
+.sc-article--serif .sc-article-body {
+  font-family: "Libre Caslon Text", Georgia, serif;
+}
+
+.sc-article-body p {
+  margin: 0 0 1.25em;
+}
+
+.sc-article-body h1,
+.sc-article-body h2,
+.sc-article-body h3,
+.sc-article-body h4,
+.sc-article-body h5,
+.sc-article-body h6 {
+  margin: 1.7em 0 0.55em;
+  font-weight: 600;
+  letter-spacing: -0.005em;
+  line-height: 1.28;
+  color: var(--sc-text);
+}
+
+.sc-article-body h1 {
+  font-size: 1.9em;
+}
+.sc-article-body h2 {
+  font-size: 1.5em;
+}
+.sc-article-body h3 {
+  font-size: 1.25em;
+}
+.sc-article-body h4,
+.sc-article-body h5,
+.sc-article-body h6 {
+  font-size: 1.05em;
+}
+
+.sc-article-body a {
+  color: var(--sc-accent);
+  text-decoration: none;
+  transition: color var(--sc-dur-fast) var(--sc-ease-out);
+}
+
+.sc-article-body a:hover {
+  text-decoration: underline;
+}
+
+.sc-article-body blockquote {
+  margin: 1.5em 0;
+  padding: 0.25em 0 0.25em 1.15em;
+  border-left: 3px solid var(--sc-accent);
+  color: var(--sc-text-2);
+}
+
+.sc-article-body blockquote p:last-child {
+  margin-bottom: 0;
+}
+
+.sc-article-body ul,
+.sc-article-body ol {
+  margin: 0 0 1.25em;
+  padding-left: 1.6em;
+}
+
+.sc-article-body li {
+  margin: 0.35em 0;
+}
+
+.sc-article-body img {
+  max-width: 100%;
+  height: auto;
+  border-radius: var(--sc-radius-md);
+}
+
+.sc-article-body figure {
+  margin: 1.75em 0;
+}
+
+.sc-article-body figcaption {
+  margin-top: 0.6em;
+  font-size: 0.85em;
+  color: var(--sc-text-3);
+}
+
+.sc-article-imgchip {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.5ch;
+  max-width: 100%;
+  padding: 0.4rem 0.75rem;
+  border: 1px dashed var(--sc-hairline);
+  border-radius: var(--sc-radius-sm);
+  background: var(--sc-surface);
+  color: var(--sc-text-3);
+  font-family:
+    "Geist",
+    ui-sans-serif,
+    system-ui,
+    -apple-system,
+    "Segoe UI",
+    Roboto,
+    sans-serif;
+  font-size: 0.8125rem;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.sc-article-body code {
+  padding: 0.15em 0.4em;
+  border: 1px solid var(--sc-hairline);
+  border-radius: var(--sc-radius-sm);
+  background: var(--sc-elevated);
+  font-size: 0.875em;
+}
+
+.sc-article-body pre {
+  margin: 1.5em 0;
+  padding: 1rem 1.15rem;
+  border: 1px solid var(--sc-hairline);
+  border-radius: var(--sc-radius-md);
+  background: var(--sc-elevated);
+  overflow-x: auto;
+  line-height: 1.6;
+  font-size: 0.875em;
+}
+
+.sc-article-body pre code {
+  padding: 0;
+  border: 0;
+  background: none;
+  font-size: 1em;
+}
+
+.sc-article-body hr {
+  margin: 2.5em 0;
+  border: 0;
+  border-top: 1px solid var(--sc-hairline);
+}
+
+.sc-article-body table {
+  width: 100%;
+  margin: 1.5em 0;
+  border-collapse: collapse;
+  font-size: 0.95em;
+}
+
+.sc-article-body th,
+.sc-article-body td {
+  padding: 0.5rem 0.75rem;
+  border: 1px solid var(--sc-hairline);
+  text-align: left;
+  vertical-align: top;
+}
+
+.sc-article-body th {
+  background: var(--sc-surface);
+  font-weight: 600;
+}
+
+.sc-article-state {
+  padding: 3.5rem 1.5rem;
+  border: 1px dashed var(--sc-hairline);
+  border-radius: var(--sc-radius-lg);
+  background: var(--sc-surface);
+  text-align: center;
+  color: var(--sc-text-2);
+}
+
+.sc-article-state p {
+  margin: 0;
+  font-family:
+    "Geist",
+    ui-sans-serif,
+    system-ui,
+    -apple-system,
+    "Segoe UI",
+    Roboto,
+    sans-serif;
+  font-size: 0.875rem;
+}

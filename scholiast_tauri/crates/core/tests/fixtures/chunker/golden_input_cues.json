@@ -1,0 +1,12 @@
+[
+  { "start": 0.0, "end": 3.0, "text": "so today we are going to look at" },
+  { "start": 3.5, "end": 6.0, "text": "how a compiler actually works. And then" },
+  { "start": 6.5, "end": 9.0, "text": "we will build a tiny interpreter" },
+  { "start": 30.0, "end": 33.0, "text": "welcome back everyone." },
+  { "start": 33.5, "end": 50.0, "text": "first we tokenize the source" },
+  { "start": 51.0, "end": 70.0, "text": "then we parse it into a tree then we walk the tree emitting code the whole time without punctuation here" },
+  { "start": 72.5, "end": 74.0, "text": "that is the whole pipeline." },
+  { "start": 80.0, "end": 95.0, "text": "questions so far" },
+  { "start": 95.5, "end": 110.0, "text": "okay great now let us begin" },
+  { "start": 110.5, "end": 126.0, "text": "and we keep talking with no punctuation at all in this long stretch of speech" }
+]

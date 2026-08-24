@@ -1,0 +1,56 @@
+[package]
+name = "scholiast"
+version = "0.1.0"
+edition = "2021"
+description = "Scholiast — lecture notes companion"
+
+[lib]
+name = "scholiast_lib"
+crate-type = ["staticlib", "cdylib", "rlib"]
+
+[build-dependencies]
+tauri-build = { version = "2", features = [] }
+
+[dependencies]
+base64 = "0.22"
+keyring = { version = "3", features = [
+  "apple-native",
+  "sync-secret-service",
+  "windows-native",
+] }
+reqwest = { version = "0.13", default-features = false, features = [
+  "charset",
+  "multipart",
+  "rustls",
+] }
+scholiast-core = { path = "../crates/core" }
+serde = { workspace = true }
+serde_json = { workspace = true }
+sha2 = "0.10"
+sqlx = { workspace = true }
+tauri = { version = "2", features = ["protocol-asset"] }
+tauri-plugin-deep-link = "2"
+tauri-plugin-opener = "2"
+tauri-plugin-store = "2"
+whisper-rs = { version = "0.14", optional = true }
+
+# --- Task 16 (Drive OAuth + keyring): appended deps; keep separate from the
+# --- lists above (another wave owns target-specific sections).
+getrandom = "0.3"
+tokio = { workspace = true, features = ["net", "io-util"] }
+dom_smoothie = "0.18.0"
+encoding_rs = "0.8.35"
+
+[dev-dependencies]
+tempfile = "3"
+tokio = { workspace = true }
+wiremock = "0.6"
+
+[features]
+local-stt = ["dep:whisper-rs"]
+
+[target.'cfg(target_os = "linux")'.dependencies]
+cairo-rs = "0.18"
+gtk = "0.18"
+image = { version = "0.25", default-features = false, features = ["jpeg"] }
+webkit2gtk = "2"

@@ -1,0 +1,73 @@
+@import "tailwindcss";
+
+:root {
+  --sc-bg: #000000;
+  --sc-surface: #0b0d14;
+  --sc-elevated: #151824;
+  --sc-hairline: #232733;
+  --sc-text: #ffffff;
+  --sc-text-2: #9aa0a6;
+  --sc-text-3: #4a4f59;
+  --sc-accent: #8b7cf6;
+  --sc-hl-yellow: #f9e64d;
+  --sc-hl-red: #ff5a5a;
+  --sc-hl-green: #5fe3a0;
+  --sc-danger: #ff5a5a;
+  --sc-success: #5fe3a0;
+  --sc-radius-sm: 8px;
+  --sc-radius-md: 12px;
+  --sc-radius-lg: 16px;
+  --sc-dur-fast: 150ms;
+  --sc-dur-slow: 250ms;
+  --sc-ease-out: cubic-bezier(0, 0, 0.2, 1);
+}
+
+@theme inline {
+  --color-base: var(--sc-bg);
+  --color-surface: var(--sc-surface);
+  --color-elevated: var(--sc-elevated);
+  --color-hairline: var(--sc-hairline);
+  --color-text: var(--sc-text);
+  --color-text-2: var(--sc-text-2);
+  --color-text-3: var(--sc-text-3);
+  --color-accent: var(--sc-accent);
+  --color-hl-yellow: var(--sc-hl-yellow);
+  --color-hl-red: var(--sc-hl-red);
+  --color-hl-green: var(--sc-hl-green);
+  --radius-sm: var(--sc-radius-sm);
+  --radius-md: var(--sc-radius-md);
+  --radius-lg: var(--sc-radius-lg);
+}
+
+@layer base {
+  body {
+    margin: 0;
+    background: var(--sc-bg);
+    color: var(--sc-text);
+    font-family:
+      ui-sans-serif,
+      system-ui,
+      -apple-system,
+      "Segoe UI",
+      Roboto,
+      sans-serif;
+    -webkit-font-smoothing: antialiased;
+  }
+
+  /* Visible keyboard focus everywhere, without restyling pointer clicks. */
+  :focus-visible {
+    outline: 2px solid var(--sc-accent);
+    outline-offset: 2px;
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    *,
+    *::before,
+    *::after {
+      animation-duration: 0.01ms !important;
+      animation-iteration-count: 1 !important;
+      transition-duration: 0.01ms !important;
+      scroll-behavior: auto !important;
+    }
+  }
+}
