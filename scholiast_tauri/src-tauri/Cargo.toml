@@ -13,11 +13,6 @@ tauri-build = { version = "2", features = [] }
 
 [dependencies]
 base64 = "0.22"
-keyring = { version = "3", features = [
-  "apple-native",
-  "sync-secret-service",
-  "windows-native",
-] }
 reqwest = { version = "0.13", default-features = false, features = [
   "charset",
   "multipart",
@@ -54,3 +49,12 @@ cairo-rs = "0.18"
 gtk = "0.18"
 image = { version = "0.25", default-features = false, features = ["jpeg"] }
 webkit2gtk = "2"
+
+# No Android backend exists; `secrets.rs` falls back to an app-private file
+# store there (see the android module TODO).
+[target.'cfg(not(target_os = "android"))'.dependencies]
+keyring = { version = "3", features = [
+  "apple-native",
+  "sync-secret-service",
+  "windows-native",
+] }

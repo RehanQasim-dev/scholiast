@@ -4,14 +4,18 @@
   "version": "0.1.0",
   "type": "module",
   "scripts": {
+    "predev": "cargo sweep --maxsize 10GB . 2>/dev/null || true",
     "dev": "vite",
+    "prebuild": "cargo sweep --maxsize 10GB . 2>/dev/null || true",
     "build": "tsc --noEmit && vite build",
     "preview": "vite preview",
     "tauri": "tauri",
     "lint": "eslint .",
     "typecheck": "tsc --noEmit",
     "test": "vitest run",
-    "format": "prettier --write ."
+    "format": "prettier --write .",
+    "prune": "cargo sweep --maxsize 10GB .",
+    "clean": "cargo clean --manifest-path Cargo.toml"
   },
   "dependencies": {
     "@excalidraw/excalidraw": "^0.18.1",

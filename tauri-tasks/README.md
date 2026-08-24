@@ -134,3 +134,16 @@ coordinated by the orchestrator.
 - **App:** debug deb bundles; binary boots (screenshot-verified Home + Reader flows); WEBKIT SW-compositing set programmatically
 - **Deferred to v1.1:** task-15 (Gemma OCR) · task-20 (chat + flashcards)
 - **Human gates remaining:** frame-capture round-trip on a real video · real Drive OAuth connect + two-client sync · offline voice via local whisper model · physical keyboard/mouse pass
+
+## Android wave (tasks 33–36)
+
+| # | Task | Summary | Depends on |
+|---|------|---------|------------|
+| 33 | Android scaffold | `tauri android init`, aarch64 build, secrets shim, Waydroid boot | 01–32 |
+| 34 | Platform services | whisper-rs on-device, mic permissions, deep-link + share-intent | 33 |
+| 35 | Mobile UI | bottom tabs, safe areas, drawers/sheets, touch targets | 33 |
+| 36 | Waydroid E2E | full checklist with screenshot evidence, bug fixes | 33, 34, 35 |
+
+```
+Wave A:  33 scaffold ──► (34 ∥ 35) ──► 36 Waydroid E2E
+```

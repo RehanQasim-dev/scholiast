@@ -29,6 +29,7 @@ async fn app_health(state: tauri::State<'_, AppState>) -> Result<Health, String>
     Ok(Health { ok: true })
 }
 
+#[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     #[cfg(target_os = "linux")]
     std::env::set_var("WEBKIT_DISABLE_COMPOSITING_MODE", "1");
@@ -39,6 +40,8 @@ pub fn run() {
         .plugin(tauri_plugin_deep_link::init())
         .setup(|app| {
             let data_dir = app.path().app_data_dir()?;
+            #[cfg(target_os = "android")]
+            secrets::init_store(&data_dir);
             let app_state = tauri::async_runtime::block_on(AppState::init(data_dir))?;
             app.manage(app_state);
             sync::scheduler::spawn(app.handle().clone());
@@ -77,7 +80,9 @@ pub fn run() {
             commands::drive::delete_secret,
             capture::capture_frame,
             capture::cleanup_capture,
+            #[cfg(target_os = "linux")]
             capture::persist::save_frame_item,
+            #[cfg(target_os = "linux")]
             capture::persist::get_frame_item,
             commands::data::data_stats,
             commands::data::wipe_local_data,

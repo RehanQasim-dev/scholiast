@@ -26,7 +26,6 @@ use std::sync::Arc;
 
 const GROQ_TRANSCRIPTIONS_URL: &str = "https://api.groq.com/openai/v1/audio/transcriptions";
 const GEMINI_GENERATE_URL: &str = "https://generativelanguage.googleapis.com/v1beta/models";
-const KEYRING_SERVICE: &str = "scholiast";
 
 /// Keyring entry holding the Groq API key.
 pub const KEY_GROQ: &str = "groq.api_key";
@@ -124,15 +123,16 @@ pub trait KeyProvider: Send + Sync {
     fn key(&self, entry: &str) -> Option<String>;
 }
 
-/// Reads passwords from the OS keyring under service `scholiast`.
+/// Reads secrets from the platform store under service `scholiast` (OS keyring
+/// on desktop, app-private file store on Android — see `crate::secrets`).
 pub struct KeyringProvider;
 
 impl KeyProvider for KeyringProvider {
     fn key(&self, entry: &str) -> Option<String> {
-        keyring::Entry::new(KEYRING_SERVICE, entry)
-            .ok()?
-            .get_password()
+        let name = crate::secrets::SecretName::parse(entry)?;
+        crate::secrets::get_secret(name)
             .ok()
+            .flatten()
             .filter(|k| !k.is_empty())
     }
 }

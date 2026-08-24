@@ -17,6 +17,7 @@ use scholiast_core::error::{Reply, ScholiastError};
 use serde::{Deserialize, Serialize};
 use tauri::{AppHandle, Manager};
 
+#[cfg(target_os = "linux")]
 use crate::store::internal;
 
 /// Crop rectangle in device pixels relative to the webview origin.
@@ -54,6 +55,7 @@ const MAX_CAPTURE_WIDTH: u32 = 1280;
 
 /// Crops `rect` out of `img`, clamping out-of-bounds edges; errors when the
 /// intersection is empty.
+#[cfg(target_os = "linux")]
 pub(crate) fn crop_rect(
     img: &image::RgbaImage,
     rect: &CaptureRect,
@@ -193,7 +195,7 @@ pub(crate) fn now_stamp() -> u128 {
         .unwrap_or_default()
 }
 
-#[cfg(test)]
+#[cfg(all(test, target_os = "linux"))]
 mod tests {
     use super::*;
 
