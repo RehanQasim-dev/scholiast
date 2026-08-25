@@ -1,6 +1,6 @@
 # Task 34: Android Platform Services
 
-Status: NOT STARTED
+Status: IN PROGRESS
 Wave: A (Android)
 Depends on: task-33
 

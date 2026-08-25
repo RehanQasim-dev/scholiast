@@ -1,6 +1,6 @@
 # Task 35: Mobile UI Adaptation
 
-Status: NOT STARTED
+Status: DONE
 Wave: A (Android)
 Depends on: task-33
 
