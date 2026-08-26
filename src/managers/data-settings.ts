@@ -13,6 +13,7 @@ function confirmPhrase(phrase: string): boolean {
 
 export function initializeDataSettings(): void {
 	const driveBtn = document.getElementById('wipe-drive-btn') as HTMLButtonElement | null;
+	const githubBtn = document.getElementById('wipe-github-btn') as HTMLButtonElement | null;
 	const localBtn = document.getElementById('wipe-local-btn') as HTMLButtonElement | null;
 	const statusEl = document.getElementById('wipe-status');
 	if (!driveBtn || !localBtn || !statusEl) return;
@@ -45,5 +46,6 @@ export function initializeDataSettings(): void {
 	}
 
 	driveBtn.addEventListener('click', () => wipe(driveBtn, 'wipeDriveData', 'delete drive data', 'Deleting Drive data…', 'Google Drive data deleted'));
+	if (githubBtn) githubBtn.addEventListener('click', () => wipe(githubBtn, 'wipeGithubData', 'delete github data', 'Deleting GitHub data…', 'GitHub data deleted'));
 	localBtn.addEventListener('click', () => wipe(localBtn, 'wipeLocalData', 'delete local data', 'Deleting local data…', 'Local data deleted'));
 }

@@ -15,6 +15,7 @@ import { initializeInterpreterSettings } from '../managers/interpreter-settings'
 import { showSettingsSection, initializeSidebar } from '../managers/settings-section-ui';
 import { initializeReaderSettings } from '../managers/reader-settings';
 import { initializeSyncSettings } from '../managers/sync-settings';
+import { initializeGithubSyncSettings } from '../managers/github-sync-settings';
 import { initializeObsidianSyncSettings } from '../managers/obsidian-sync-settings';
 import { initializeDataSettings } from '../managers/data-settings';
 import { initializeAutoSave } from '../utils/auto-save';
@@ -60,6 +61,12 @@ document.addEventListener('DOMContentLoaded', async () => {
 				await initializeSyncSettings();
 			} catch (error) {
 				console.error('Error initializing sync settings, continuing:', error);
+			}
+
+			try {
+				await initializeGithubSyncSettings();
+			} catch (error) {
+				console.error('Error initializing GitHub sync settings, continuing:', error);
 			}
 
 			try {

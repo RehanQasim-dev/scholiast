@@ -258,9 +258,9 @@ async function repoPath(p: string): Promise<{ info: RepoInfo; apiPath: string }>
 // --- Folder / file helpers ---------------------------------------------------
 
 export async function listFolder(folder: DriveFolder, interactive = false): Promise<DriveFileMeta[]> {
-	const { info, apiPath: base } = await repoPath(folder);
+	const { info, apiPath } = await repoPath(folder);
 	try {
-		const res = await githubFetch(`${base(folder)}?ref=${info.branch}`, { method: 'GET' }, interactive);
+		const res = await githubFetch(`${apiPath}?ref=${info.branch}`, { method: 'GET' }, interactive);
 		const data = await res.json();
 		if (!Array.isArray(data)) return [];
 		return data
@@ -269,9 +269,6 @@ export async function listFolder(folder: DriveFolder, interactive = false): Prom
 	} catch (e: any) {
 		if (String(e.message).includes('404')) return [];
 		throw e;
-	}
-	function base(f: string) {
-		return `/repos/${info.owner}/${info.repo}/contents/${f}`;
 	}
 }
 

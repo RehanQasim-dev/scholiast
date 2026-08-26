@@ -7,6 +7,7 @@ import { Settings } from './types/types';
 import { debugLog } from './utils/debug';
 import { sync as syncToDrive, syncChanged, findPagesForDiagrams, getStatus as getSyncStatus, resetSyncState } from './utils/sync-engine';
 import { connect as connectDrive, disconnect as disconnectDrive, getRegisteredRedirectUri, isConfigured as isSyncConfigured, wipeAppData } from './utils/google-drive';
+import * as github from './utils/github';
 import {
 	markDirty as obsidianMarkDirty,
 	enqueueAll as obsidianEnqueueAll,
@@ -432,7 +433,8 @@ const debouncedObsidianFlush = debounce(() => {
 browser.storage.onChanged.addListener((changes, area) => {
 	if (area !== 'local') return;
 	const changed = changedPages(changes);
-	if (isSyncConfigured()) {
+	const anySyncConfigured = isSyncConfigured() || github.isConfigured();
+	if (anySyncConfigured) {
 		const syncUrls = new Set<string>([...changed.hl, ...changed.dr, ...changed.va]);
 		if (syncUrls.size) queueSyncPush([...syncUrls]);
 		// A diagram edit touches only the `diagrams` map — map it to its page(s).
@@ -454,7 +456,7 @@ if (browser.alarms) {
 	browser.alarms.create(SYNC_ALARM, { periodInMinutes: 5 });
 	browser.alarms.onAlarm.addListener((alarm) => {
 		if (alarm.name === SYNC_ALARM) {
-			if (isSyncConfigured()) syncToDrive(false).catch(err => console.warn('Drive sync poll failed:', err));
+			if (isSyncConfigured() || github.isConfigured()) syncToDrive(false).catch(err => console.warn('Sync poll failed:', err));
 			// Retry any pending Obsidian writes (e.g. the app was closed earlier).
 			obsidianFlush().catch(() => {});
 		}
@@ -462,7 +464,7 @@ if (browser.alarms) {
 }
 
 browser.runtime.onStartup.addListener(() => {
-	if (isSyncConfigured()) syncToDrive(false).catch(() => {});
+	if (isSyncConfigured() || github.isConfigured()) syncToDrive(false).catch(() => {});
 	obsidianFlush().catch(() => {});
 });
 
@@ -470,11 +472,11 @@ let lastDrivePollTime = 0;
 const DRIVE_POLL_COOLDOWN_MS = 5000;
 
 function triggerDrivePollIfNeeded() {
-	if (!isSyncConfigured()) return;
+	if (!isSyncConfigured() && !github.isConfigured()) return;
 	const now = Date.now();
 	if (now - lastDrivePollTime > DRIVE_POLL_COOLDOWN_MS) {
 		lastDrivePollTime = now;
-		syncToDrive(false).catch(err => console.warn('Drive sync poll on focus failed:', err));
+		syncToDrive(false).catch(err => console.warn('Sync poll on focus failed:', err));
 	}
 }
 
@@ -482,8 +484,9 @@ browser.runtime.onMessage.addListener((request: unknown, _sender: browser.Runtim
 	if (typeof request !== 'object' || request === null) return;
 	const action = (request as any).action as string;
 	const driveActions = ['syncConnect', 'syncDisconnect', 'syncNow', 'syncStatus'];
+	const githubActions = ['githubSyncConnect', 'githubSyncDisconnect', 'githubSyncNow', 'githubSyncStatus'];
 	const obsidianActions = ['obsidianGetConfig', 'obsidianSetConfig', 'obsidianTest', 'obsidianSyncAll', 'obsidianStatus'];
-	if (!driveActions.includes(action) && !obsidianActions.includes(action)) {
+	if (!driveActions.includes(action) && !githubActions.includes(action) && !obsidianActions.includes(action)) {
 		return;
 	}
 	(async () => {
@@ -515,6 +518,39 @@ browser.runtime.onMessage.addListener((request: unknown, _sender: browser.Runtim
 				return;
 			}
 
+			if (githubActions.includes(action)) {
+				switch (action) {
+					case 'githubSyncConnect':
+						await github.connect();
+						await syncToDrive(true);
+						break;
+					case 'githubSyncDisconnect':
+						await github.disconnect();
+						// Clear GitHub pagemeta but keep Drive + local; next sync will be no-op for GitHub
+						{
+							const all = await browser.storage.local.get(null);
+							const gKeys = Object.keys(all).filter(k => k.startsWith('pagemeta:github:'));
+							if (gKeys.length) await browser.storage.local.remove(gKeys);
+						}
+						break;
+					case 'githubSyncNow':
+						await syncToDrive(true);
+						break;
+					case 'githubSyncStatus':
+						// no side effect
+						break;
+				}
+				const gStatus = { connected: await github.isConnected().catch(()=>false), lastSyncedAt: (await getSyncStatus()).lastSyncedAt, syncing: (await getSyncStatus()).syncing } as any;
+				// Try to get real repo info
+				let repoStr = '';
+				try {
+					const info = await (github as any).getRepoInfo?.() || await browser.storage.local.get('github_repo').then(r=>r['github_repo']);
+					if (info) repoStr = `${info.owner}/${info.repo}`;
+				} catch {}
+				sendResponse({ success: true, status: gStatus, configured: github.isConfigured(), redirectUrl: github.getRegisteredRedirectUri(), repo: repoStr });
+				return;
+			}
+
 			switch (action) {
 				case 'syncConnect':
 					await connectDrive();
@@ -538,6 +574,11 @@ browser.runtime.onMessage.addListener((request: unknown, _sender: browser.Runtim
 				sendResponse({ success: false, error: err instanceof Error ? err.message : String(err), config: await getObsidianConfig(), status: await getObsidianStatus() });
 				return;
 			}
+			if (githubActions.includes(action)) {
+				const gStatus = { connected: await github.isConnected().catch(()=>false) } as any;
+				sendResponse({ success: false, error: err instanceof Error ? err.message : String(err), status: gStatus, configured: github.isConfigured(), redirectUrl: github.getRegisteredRedirectUri() });
+				return;
+			}
 			const status = await getSyncStatus();
 			sendResponse({ success: false, error: err instanceof Error ? err.message : String(err), status, configured: isSyncConfigured(), redirectUrl: getRegisteredRedirectUri() });
 		}
@@ -550,12 +591,19 @@ browser.runtime.onMessage.addListener((request: unknown, _sender: browser.Runtim
 //   wipeLocalData  — clear all local annotation data (storage.local keys + image blobs).
 browser.runtime.onMessage.addListener((request: unknown, _sender, sendResponse: (r?: any) => void): true | undefined => {
 	const action = (request as { action?: string } | null)?.action;
-	if (action !== 'wipeDriveData' && action !== 'wipeLocalData') return;
+	if (action !== 'wipeDriveData' && action !== 'wipeGithubData' && action !== 'wipeLocalData') return;
 	(async () => {
 		try {
 			if (action === 'wipeDriveData') {
 				const count = await wipeAppData(false); // silent token renew; never block on a consent window
 				await resetSyncState(); // local snapshots/meta now point at deleted files
+				sendResponse({ success: true, count });
+			} else if (action === 'wipeGithubData') {
+				const count = await github.wipeAppData(false);
+				// Clear GitHub pagemeta but keep Drive + local
+				const all = await browser.storage.local.get(null);
+				const gKeys = Object.keys(all).filter(k => k.startsWith('pagemeta:github:'));
+				if (gKeys.length) await browser.storage.local.remove(gKeys);
 				sendResponse({ success: true, count });
 			} else {
 				const all = await browser.storage.local.get(null);
@@ -572,8 +620,9 @@ browser.runtime.onMessage.addListener((request: unknown, _sender, sendResponse: 
 	return true;
 });
 
-// Log the OAuth redirect URI once so it can be registered in Google Cloud.
-console.info('[Obsidian Clipper sync] OAuth redirect URI to register:', getRegisteredRedirectUri());
+// Log the OAuth redirect URIs once so they can be registered.
+console.info('[Obsidian Clipper sync] Drive OAuth redirect URI to register:', getRegisteredRedirectUri());
+try { console.info('[Obsidian Clipper sync] GitHub OAuth redirect URI to register:', github.getRegisteredRedirectUri()); } catch {}
 
 browser.runtime.onMessage.addListener((request: unknown, sender: browser.Runtime.MessageSender, sendResponse: (response?: any) => void): true | undefined => {
 	if (typeof request === 'object' && request !== null) {
