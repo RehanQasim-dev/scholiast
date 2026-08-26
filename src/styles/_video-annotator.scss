@@ -740,9 +740,9 @@ $ob-vid-meta: 11.5px;
 	&.green { border-left-color: #4ac582; }
 }
 
-// Actions inline for video comments
+// Actions inline for video comments — hidden until hover so timestamp stays flush right
 .obsidian-comment-actions-inline {
-	display: flex;
+	display: none;
 	gap: 4px;
 	opacity: 0;
 	pointer-events: none;
@@ -787,8 +787,8 @@ $ob-vid-meta: 11.5px;
 	margin-top: 4px;
 }
 .ob-vidc-thread:hover .obsidian-comment-actions-inline,
-.ob-vidc-thread:hover .obsidian-comment-actions-inline,
 .ob-vid-msg:hover .obsidian-comment-actions-inline {
+	display: flex;
 	opacity: 1;
 	pointer-events: auto;
 }

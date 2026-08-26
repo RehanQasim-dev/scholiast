@@ -258,14 +258,17 @@ function renderConversation() {
 				head.className = 'ob-vid-msg-header';
 			}
 			
-			// Time is wall-clock, always at the right edge; actions sit just left of it on hover
-			let timeEl: HTMLElement | null = null;
+			const actionsContainer = document.createElement('div');
+			actionsContainer.style.display = 'flex';
+			actionsContainer.style.alignItems = 'center';
+			actionsContainer.style.marginLeft = 'auto';
+			actionsContainer.style.gap = '4px';
+			
 			if (parsed.timestamp) {
-				timeEl = document.createElement('span');
+				const timeEl = document.createElement('span');
 				timeEl.className = 'ob-vid-msg-time';
 				timeEl.textContent = clockTime(parsed.timestamp);
-				timeEl.style.marginLeft = 'auto';
-				timeEl.style.flexShrink = '0';
+				actionsContainer.appendChild(timeEl);
 			}
 			
 			const actions = document.createElement('div');
@@ -313,30 +316,23 @@ function renderConversation() {
 				actions.appendChild(threadDelBtn);
 			}
 			
+			actionsContainer.appendChild(actions);
+			
 			if (index === 0) {
 				const chip = head.querySelector('.ob-vidc-stamp');
 				if (chip && chip.parentNode) {
 					const row = document.createElement('div');
 					row.style.display = 'flex';
 					row.style.alignItems = 'center';
-					row.style.gap = '8px';
 					row.style.width = '100%';
-					row.style.justifyContent = 'flex-start';
 					chip.parentNode.insertBefore(row, chip);
 					row.appendChild(chip);
-					if (timeEl) { timeEl.style.marginLeft = 'auto'; row.appendChild(timeEl); }
-					row.appendChild(actions);
+					row.appendChild(actionsContainer);
 				} else {
-					if (timeEl) head.appendChild(timeEl);
-					head.appendChild(actions);
+					head.appendChild(actionsContainer);
 				}
 			} else {
-				head.style.display = 'flex';
-				head.style.alignItems = 'center';
-				head.style.gap = '8px';
-				head.style.width = '100%';
-				if (timeEl) head.appendChild(timeEl);
-				head.appendChild(actions);
+				head.appendChild(actionsContainer);
 				bubble.appendChild(head);
 			}
 
