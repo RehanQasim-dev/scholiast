@@ -3,9 +3,9 @@ import {
 } from './video-storage';
 import { renderMarkupSvg } from './video-markup';
 import { makeVideoNote, parseVideoNote, renderNoteHtml, formatVideoTime } from './video-notes';
-import { getVideoElement } from './youtube-detect';
+import { getVideoElement, getAccurateCurrentTime } from './youtube-detect';
 import { loadFrameImage } from './frame-store';
-import { engagePlayerStage, mountHost, unmountHost, disengagePlayerStage } from './video-player-stage';
+import { engagePlayerStage, mountHost, unmountHost, disengagePlayerStage, markPanelEsc } from './video-player-stage';
 
 // Per-video "conversation" comment panel: a right-docked overlay listing every
 // annotation for the video (frame / note / transcript) as grouped thread cards
@@ -87,7 +87,8 @@ export async function openComments(o: OpenCommentsOpts): Promise<void> {
 export function addCommentOnlyNote(): void {
 	if (!active || !opts || !opts.video) return;
 	opts.video.pause();
-	const note: VideoItem = { id: genVideoId(), kind: 'note', videoTime: opts.video.currentTime, notes: [] };
+	const vt = getAccurateCurrentTime(opts.video);
+	const note: VideoItem = { id: genVideoId(), kind: 'note', videoTime: vt, notes: [] };
 	items.push(note);
 	items.sort((a, b) => a.videoTime - b.videoTime);
 	focusId = note.id;
@@ -235,16 +236,14 @@ function renderConversation() {
 				head.className = 'ob-vid-msg-header';
 			}
 			
-			const actionsContainer = document.createElement('div');
-			actionsContainer.style.display = 'flex';
-			actionsContainer.style.alignItems = 'center';
-			actionsContainer.style.marginLeft = 'auto';
-			
+			// Time is wall-clock, always at the right edge; actions sit just left of it on hover
+			let timeEl: HTMLElement | null = null;
 			if (parsed.timestamp) {
-				const timeEl = document.createElement('span');
+				timeEl = document.createElement('span');
 				timeEl.className = 'ob-vid-msg-time';
 				timeEl.textContent = clockTime(parsed.timestamp);
-				actionsContainer.appendChild(timeEl);
+				timeEl.style.marginLeft = 'auto';
+				timeEl.style.flexShrink = '0';
 			}
 			
 			const actions = document.createElement('div');
@@ -260,7 +259,7 @@ function renderConversation() {
 				renderConversation();
 			});
 			actions.appendChild(editBtn);
-
+ 
 			const delBtn = document.createElement('button');
 			delBtn.className = 'obsidian-comment-delete';
 			delBtn.title = 'Delete comment';
@@ -292,23 +291,30 @@ function renderConversation() {
 				actions.appendChild(threadDelBtn);
 			}
 			
-			actionsContainer.appendChild(actions);
-			
 			if (index === 0) {
 				const chip = head.querySelector('.ob-vidc-stamp');
 				if (chip && chip.parentNode) {
 					const row = document.createElement('div');
 					row.style.display = 'flex';
 					row.style.alignItems = 'center';
+					row.style.gap = '8px';
 					row.style.width = '100%';
+					row.style.justifyContent = 'flex-start';
 					chip.parentNode.insertBefore(row, chip);
 					row.appendChild(chip);
-					row.appendChild(actionsContainer);
+					if (timeEl) { timeEl.style.marginLeft = 'auto'; row.appendChild(timeEl); }
+					row.appendChild(actions);
 				} else {
-					head.appendChild(actionsContainer);
+					if (timeEl) head.appendChild(timeEl);
+					head.appendChild(actions);
 				}
 			} else {
-				head.appendChild(actionsContainer);
+				head.style.display = 'flex';
+				head.style.alignItems = 'center';
+				head.style.gap = '8px';
+				head.style.width = '100%';
+				if (timeEl) head.appendChild(timeEl);
+				head.appendChild(actions);
 				bubble.appendChild(head);
 			}
 
@@ -459,11 +465,15 @@ function seekTo(seconds: number) {
 
 function onKeyUpShield(e: KeyboardEvent) {
 	if (!active) return;
+	if ((e.altKey || e.metaKey) && e.key === 'Tab') return;
 	if ((e.target as HTMLElement)?.classList?.contains('ob-vid-input')) e.stopPropagation();
 }
 
 function onKeyDown(e: KeyboardEvent) {
 	if (!active) return;
+	// Let the OS handle window switching even while typing
+	if ((e.altKey || e.metaKey) && e.key === 'Tab') return;
+	if (e.altKey && e.key === 'Tab') return;
 	const target = e.target as HTMLElement;
 	const inChat = !!target?.classList?.contains('ob-vid-input');
 	if (inChat) {
@@ -473,7 +483,20 @@ function onKeyDown(e: KeyboardEvent) {
 			// Edit textarea handles its own Escape and Enter
 			return;
 		}
-		if (e.key === 'Escape') { e.preventDefault(); teardown(); }
+		if (e.key === 'Escape') {
+			e.preventDefault(); e.stopPropagation(); e.stopImmediatePropagation();
+			// 1st Esc cancels the draft text only; 2nd Esc closes panel
+			if (inputEl && inputEl.value.trim().length > 0) {
+				inputEl.value = '';
+				autosizeInput();
+				return;
+			}
+			if (inputEl && document.activeElement === inputEl) {
+				inputEl.blur();
+				return;
+			}
+			markPanelEsc(); teardown();
+		}
 		else if (e.key === 'Enter' && !e.shiftKey) { 
 			if (e.isComposing) return;
 			e.preventDefault(); 
@@ -483,7 +506,7 @@ function onKeyDown(e: KeyboardEvent) {
 	}
 	// Not typing: only claim Escape; let every other key reach YouTube (Space →
 	// play/pause, etc.) so its shortcuts keep working behind the panel.
-	if (e.key === 'Escape') { e.preventDefault(); e.stopPropagation(); teardown(); }
+	if (e.key === 'Escape') { e.preventDefault(); e.stopPropagation(); e.stopImmediatePropagation(); markPanelEsc(); teardown(); }
 }
 
 // --- Teardown ----------------------------------------------------------------

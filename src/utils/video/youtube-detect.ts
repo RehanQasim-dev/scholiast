@@ -35,6 +35,29 @@ export function getPlayerContainer(): HTMLElement | null {
 		|| (getVideoElement()?.parentElement ?? null);
 }
 
+export function getAccurateCurrentTime(fallbackVideo: HTMLVideoElement | null = null): number {
+	const v = fallbackVideo || getVideoElement();
+	let t = v?.currentTime ?? 0;
+	if (t > 0.5) return t;
+	// YouTube's player API is more reliable than the video element during
+	// ads / buffering / early load where currentTime can be 0.
+	try {
+		const p = document.querySelector('#movie_player') as any;
+		if (p && typeof p.getCurrentTime === 'function') {
+			const yt = p.getCurrentTime();
+			if (typeof yt === 'number' && yt > 0 && isFinite(yt)) return yt;
+		}
+	} catch {}
+	// Scan all videos for any non-zero time
+	try {
+		const vids = Array.from(document.querySelectorAll('video'));
+		for (const vid of vids) {
+			if (vid.currentTime > 0.5) return vid.currentTime;
+		}
+	} catch {}
+	return t;
+}
+
 export function getVideoTitle(): string {
 	const h1 = document.querySelector<HTMLElement>('h1.ytd-watch-metadata, h1.title');
 	const fromDom = h1?.textContent?.trim();

@@ -26,7 +26,7 @@ const COLOR_HEX: Record<PencilColor, string> = {
 	green: '#2da05f',
 };
 
-const ACCENT = '#895DF4';
+const ACCENT = '#2f9e62';
 
 interface PencilStroke {
 	id: string;
@@ -165,8 +165,8 @@ function docSize(): { w: number; h: number } {
 // must be %23-encoded for use inside a data URI. Hotspot sits on the nib tip.
 function pencilCursor(nibHex: string): string {
 	const svg = `<svg xmlns='http://www.w3.org/2000/svg' width='32' height='32' viewBox='0 0 24 24'>`
-		+ `<path d='M18.16 2.16 21.84 5.84 10.2 17.48 6.52 13.8Z' fill='%23000000' stroke='%23895DF4' stroke-width='1.75' stroke-linejoin='round'/>`
-		+ `<path d='M10.2 17.48 6.52 13.8 2 22Z' fill='${nibHex}' stroke='%23895DF4' stroke-width='1.75' stroke-linejoin='round'/>`
+		+ `<path d='M18.16 2.16 21.84 5.84 10.2 17.48 6.52 13.8Z' fill='%23000000' stroke='%232f9e62' stroke-width='1.75' stroke-linejoin='round'/>`
+		+ `<path d='M10.2 17.48 6.52 13.8 2 22Z' fill='${nibHex}' stroke='%232f9e62' stroke-width='1.75' stroke-linejoin='round'/>`
 		+ `</svg>`;
 	return `url("data:image/svg+xml;utf8,${svg}") 3 29, crosshair`;
 }
@@ -279,7 +279,7 @@ function createMarqueeDiv(): HTMLDivElement {
 	d.style.width = '0';
 	d.style.height = '0';
 	d.style.border = `1px dashed ${ACCENT}`;
-	d.style.background = 'rgba(137, 93, 244, 0.12)';
+	d.style.background = 'rgba(47, 158, 98, 0.12)';
 	d.style.pointerEvents = 'none';
 	d.style.zIndex = '2147483641';
 	d.style.boxSizing = 'border-box';

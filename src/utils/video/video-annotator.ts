@@ -5,7 +5,7 @@ import {
 import { renderMarkupSvg, snapLineTo45 } from './video-markup';
 import { makeVideoNote, parseVideoNote, renderNoteHtml, formatVideoTime } from './video-notes';
 import {
-	getVideoElement, getVideoId, getVideoTitle, getPlayerContainer, isYouTubeWatchPage,
+	getVideoElement, getVideoId, getVideoTitle, getPlayerContainer, isYouTubeWatchPage, getAccurateCurrentTime,
 } from './youtube-detect';
 import { captureFrame } from './frame-capture';
 import { saveFrameImage } from './frame-store';
@@ -233,7 +233,7 @@ export async function startCommentOnly(): Promise<void> {
 	if (!v) return;
 	// Comment-only (frameless) is now just the per-video conversation panel,
 	// opened on a fresh note item (written on first reply).
-	const note: VideoItem = { id: genVideoId(), kind: 'note', videoTime: v.currentTime, notes: [] };
+	const note: VideoItem = { id: genVideoId(), kind: 'note', videoTime: getAccurateCurrentTime(v), notes: [] };
 	await openComments({
 		watchUrl: location.href,
 		videoId: getVideoId(),
@@ -257,7 +257,7 @@ function prepareSession() {
 	currentTool = 'pencil';
 	currentColor = 'yellow';
 	currentStrokeWidth = 'medium';
-	videoTime = video ? video.currentTime : 0;
+	videoTime = getAccurateCurrentTime(video);
 	watchUrl = location.href;
 	videoId = getVideoId();
 	videoTitle = getVideoTitle();
@@ -270,13 +270,18 @@ function prepareSession() {
 // browser force-exiting YouTube fullscreen. Released on teardown, after which a
 // plain Esc exits fullscreen as usual. No-ops outside fullscreen / unsupported.
 function lockEscape() {
+	if (!document.fullscreenElement) return;
+	try { window.dispatchEvent(new CustomEvent('__obVpsLock')); } catch {}
+	try { document.dispatchEvent(new CustomEvent('__obVpsLock')); } catch {}
 	const kb = (navigator as unknown as { keyboard?: { lock?: (k: string[]) => Promise<void> } }).keyboard;
-	if (openedFullscreen && kb?.lock) {
+	if (kb?.lock) {
 		try { kb.lock(['Escape'])?.catch(() => {}); } catch { /* ignore */ }
 	}
 }
 
 function unlockEscape() {
+	try { window.dispatchEvent(new CustomEvent('__obVpsUnlock')); } catch {}
+	try { document.dispatchEvent(new CustomEvent('__obVpsUnlock')); } catch {}
 	const kb = (navigator as unknown as { keyboard?: { unlock?: () => void } }).keyboard;
 	if (kb?.unlock) {
 		try { kb.unlock(); } catch { /* ignore */ }
@@ -1138,6 +1143,7 @@ function goToComment() {
 // while typing in our boxes so Space doesn't reach the player.
 function onKeyUpShield(e: KeyboardEvent) {
 	if (!active) return;
+	if ((e.altKey || e.metaKey) && e.key === 'Tab') return;
 	const t = e.target as HTMLElement;
 	if (t?.classList?.contains('ob-vid-textinput') || t?.classList?.contains('ob-vid-input')) {
 		e.stopPropagation();
@@ -1146,6 +1152,7 @@ function onKeyUpShield(e: KeyboardEvent) {
 
 function onKeyDown(e: KeyboardEvent) {
 	if (!active) return;
+	if ((e.altKey || e.metaKey) && e.key === 'Tab') return;
 	const t = e.target as HTMLElement;
 	const inText = !!t?.classList?.contains('ob-vid-textinput');
 	const inChat = !!t?.classList?.contains('ob-vid-input');
@@ -1174,7 +1181,16 @@ function onKeyDown(e: KeyboardEvent) {
 			}
 			// Enter = newline (let it through).
 		} else { // chat box
-			if (e.key === 'Escape') { e.preventDefault(); teardown(true); }
+			if (e.key === 'Escape') {
+				e.preventDefault(); e.stopImmediatePropagation();
+				const inp = t as HTMLTextAreaElement;
+				if (inp.value && inp.value.trim().length > 0) {
+					inp.value = ''; inp.style.height = 'auto';
+					return;
+				}
+				if (document.activeElement === inp) { inp.blur(); return; }
+				teardown(true);
+			}
 			else if (e.key === 'Enter' && !e.shiftKey) { 
 				if (e.isComposing) return;
 				e.preventDefault(); 

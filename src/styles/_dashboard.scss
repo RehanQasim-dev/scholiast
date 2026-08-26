@@ -13,21 +13,21 @@
    ========================================================================== */
 
 :root {
-	--sc-bg: #0a0a0c;
-	--sc-elev: #101013;
-	--sc-elev-2: #16161a;
-	--sc-elev-3: #1d1d22;
+	--sc-bg: #070d0a;
+	--sc-elev: #0f1e14;
+	--sc-elev-2: #13261b;
+	--sc-elev-3: #1a3322;
 
-	--sc-line: rgba(255, 255, 255, 0.07);
-	--sc-line-2: rgba(255, 255, 255, 0.12);
+	--sc-line: rgba(47, 158, 98, 0.09);
+	--sc-line-2: rgba(47, 158, 98, 0.18);
 
-	--sc-text: #ededf0;
-	--sc-text-2: #a2a2ac;
-	--sc-text-3: #6e6e78;
+	--sc-text: #a8d5b5;
+	--sc-text-2: #7fb090;
+	--sc-text-3: #4a705b;
 
-	--sc-accent: #8c73fa;
-	--sc-accent-2: #a78bfa;
-	--sc-accent-weak: rgba(140, 115, 250, 0.15);
+	--sc-accent: #2f9e62;
+	--sc-accent-2: #6fcf97;
+	--sc-accent-weak: rgba(47, 158, 98, 0.14);
 	--sc-danger: #f0526f;
 	--sc-danger-weak: rgba(240, 82, 111, 0.14);
 
@@ -82,16 +82,16 @@ body {
 	margin: 0;
 	background: var(--sc-bg);
 	color: var(--sc-text);
-	font-family: 'Geist', ui-sans-serif, system-ui, sans-serif;
+	font-family: 'JetBrains Mono', ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, 'Liberation Mono', monospace;
 	font-size: 14px;
-	line-height: 1.5;
-	letter-spacing: -0.011em;
+	line-height: 1.6;
+	letter-spacing: 0.015em;
 	-webkit-font-smoothing: antialiased;
 	text-rendering: optimizeLegibility;
 }
 
 ::selection {
-	background: rgba(140, 115, 250, 0.32);
+	background: rgba(47, 158, 98, 0.32);
 }
 
 ::-webkit-scrollbar { width: 10px; height: 10px; }
@@ -809,7 +809,7 @@ body {
 
 	&__title {
 		margin: 0 0 6px;
-		font-family: 'Libre Caslon Text', Georgia, serif;
+		font-family: 'JetBrains Mono', Georgia, serif;
 		font-size: 26px;
 		line-height: 1.25;
 		font-weight: 400;
@@ -991,7 +991,7 @@ body {
 		border-radius: 0 var(--sc-r-sm) var(--sc-r-sm) 0;
 		background: var(--sc-tint, rgba(255, 255, 255, 0.03));
 		color: var(--sc-text);
-		font-family: 'Libre Caslon Text', Georgia, serif;
+		font-family: 'JetBrains Mono', Georgia, serif;
 		font-size: var(--sc-quote-size);
 		line-height: var(--sc-quote-leading);
 		letter-spacing: -0.003em;
@@ -1040,7 +1040,7 @@ body {
 		border-radius: 999px;
 		background: rgba(255, 255, 255, 0.06);
 		color: var(--sc-text-2);
-		font-family: 'Geist', sans-serif;
+		font-family: 'JetBrains Mono', sans-serif;
 		font-size: 11.5px;
 		vertical-align: baseline;
 
@@ -1051,7 +1051,7 @@ body {
 .sc-ann.is-overflowing .sc-quote__more { display: inline-block; }
 
 .sc-hit {
-	background: rgba(140, 115, 250, 0.34);
+	background: rgba(47, 158, 98, 0.34);
 	color: inherit;
 	border-radius: 2px;
 	padding: 0 1px;
@@ -1437,7 +1437,7 @@ kbd {
 
 	&__title {
 		margin: 0;
-		font-family: 'Libre Caslon Text', Georgia, serif;
+		font-family: 'JetBrains Mono', Georgia, serif;
 		font-size: 27px;
 		font-weight: 400;
 		letter-spacing: -0.015em;
@@ -1542,9 +1542,9 @@ kbd {
 
 		&.is-future { background: transparent; }
 
-		&[data-level='1'] { background: rgba(140, 115, 250, 0.28); }
-		&[data-level='2'] { background: rgba(140, 115, 250, 0.48); }
-		&[data-level='3'] { background: rgba(140, 115, 250, 0.7); }
+		&[data-level='1'] { background: rgba(47, 158, 98, 0.28); }
+		&[data-level='2'] { background: rgba(47, 158, 98, 0.48); }
+		&[data-level='3'] { background: rgba(47, 158, 98, 0.7); }
 		&[data-level='4'] { background: var(--sc-accent); }
 	}
 }

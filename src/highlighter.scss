@@ -273,8 +273,8 @@ body.obsidian-highlight-overlays-hidden {
 	// a purple glow matching the text emphasis and the comment box ring.
 	&.is-active {
 		mix-blend-mode: normal;
-		border: 2px solid #895DF4 !important;
-		box-shadow: 0 0 0 6px rgba(137, 93, 244, 0.45), 0 0 16px 4px rgba(137, 93, 244, 0.35);
+		border: 2px solid #2f9e62 !important;
+		box-shadow: 0 0 0 6px rgba(47, 158, 98, 0.45), 0 0 16px 4px rgba(47, 158, 98, 0.35);
 		border-radius: 6px;
 	}
 }
@@ -299,7 +299,7 @@ body.obsidian-highlight-overlays-hidden {
 	border: 1px solid #424242;
 	border-radius: 20px;
 	box-shadow: 0 2px 6px rgba(0, 0, 0, 0.2);
-	font-family: ui-sans-serif, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Inter", sans-serif;
+	font-family: 'JetBrains Mono', ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, 'Liberation Mono', monospace;
 	font-size: 12px;
 	font-weight: 500;
 	line-height: 1;
@@ -351,7 +351,7 @@ body.obsidian-highlight-overlays-hidden {
 	border: 1px solid rgba(255, 255, 255, 0.12);
 	border-radius: 999px;
 	box-shadow: 0 4px 14px rgba(0, 0, 0, 0.28);
-	font-family: ui-sans-serif, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Inter", sans-serif;
+	font-family: 'JetBrains Mono', ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, 'Liberation Mono', monospace;
 
 	button {
 		display: flex;
@@ -379,8 +379,8 @@ body.obsidian-highlight-overlays-hidden {
 		}
 
 		&.is-active {
-			background: rgba(137, 93, 244, 0.28);
-			color: #A68AF9;
+			background: rgba(47, 158, 98, 0.28);
+			color: #6fcf97;
 		}
 
 		&[data-tool="exit"]:hover {
@@ -473,7 +473,7 @@ body.obsidian-highlight-overlays-hidden {
 		height: auto !important;
 		line-height: 1 !important;
 		cursor: pointer;
-		font-family: ui-sans-serif, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Inter", sans-serif !important;
+		font-family: 'JetBrains Mono', ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, 'Liberation Mono', monospace !important;
 		font-size: 12px !important;
 		font-weight: 500 !important;
 		gap: 4px !important;
@@ -502,28 +502,28 @@ body {
 // on <body> (set in content.ts) and resolves to a set of CSS variables. Text
 // size is likewise driven by a body data attribute.
 body[data-ob-comment-theme="slate"] .obsidian-comment-box {
-	--ob-box-bg: 27, 32, 48; // #1b2030
-	--ob-text: #cdd6e6;
-	--ob-muted: #8a93a6;
-	--ob-divider: rgba(255, 255, 255, 0.10);
+	--ob-box-bg: 7, 13, 10; // #070d0a terminal
+	--ob-text: #a8d5b5;
+	--ob-muted: #6e9a7e;
+	--ob-divider: rgba(47, 158, 98, 0.12);
 }
 body[data-ob-comment-theme="charcoal"] .obsidian-comment-box {
-	--ob-box-bg: 30, 30, 30; // #1e1e1e
-	--ob-text: #e6e6e6;
-	--ob-muted: #9a9a9a;
-	--ob-divider: rgba(255, 255, 255, 0.10);
+	--ob-box-bg: 11, 22, 16; // terminal charcoal variation
+	--ob-text: #a8d5b5;
+	--ob-muted: #6e9a7e;
+	--ob-divider: rgba(47, 158, 98, 0.12);
 }
 body[data-ob-comment-theme="oled"] .obsidian-comment-box {
-	--ob-box-bg: 10, 10, 10; // #0a0a0a
-	--ob-text: #ededed;
-	--ob-muted: #8c8c8c;
-	--ob-divider: rgba(255, 255, 255, 0.13);
+	--ob-box-bg: 5, 10, 8; // terminal oled darkest
+	--ob-text: #a8d5b5;
+	--ob-muted: #6e9a7e;
+	--ob-divider: rgba(47, 158, 98, 0.14);
 }
 body[data-ob-comment-theme="warm"] .obsidian-comment-box {
-	--ob-box-bg: 33, 28, 23; // #211c17
-	--ob-text: #ece3d4;
-	--ob-muted: #b3a892;
-	--ob-divider: rgba(255, 255, 255, 0.10);
+	--ob-box-bg: 10, 20, 14; // terminal warm green variation
+	--ob-text: #a8d5b5;
+	--ob-muted: #6e9a7e;
+	--ob-divider: rgba(47, 158, 98, 0.12);
 }
 
 body[data-ob-comment-size="small"] .obsidian-comment-box { --ob-font: 14px; }
@@ -531,12 +531,11 @@ body[data-ob-comment-size="default"] .obsidian-comment-box { --ob-font: 15.5px; 
 body[data-ob-comment-size="large"] .obsidian-comment-box { --ob-font: 17px; }
 
 .obsidian-comment-box {
-	// Theme palette — defaults to Slate so the box looks right even before the
-	// body attribute is set. RGB triplet for the surface; hex for text/muted.
-	--ob-box-bg: 27, 32, 48;          // #1b2030
-	--ob-text: #cdd6e6;
-	--ob-muted: #8a93a6;
-	--ob-divider: rgba(255, 255, 255, 0.10);
+	// Theme palette — terminal green defaults (dark, muted mint, soft not punchy)
+	--ob-box-bg: 7, 13, 10;          // #070d0a
+	--ob-text: #a8d5b5;
+	--ob-muted: #6e9a7e;
+	--ob-divider: rgba(47, 158, 98, 0.12);
 	// Comment text size (overridden per body[data-ob-comment-size]).
 	--ob-font: 15.5px;
 
@@ -555,7 +554,7 @@ body[data-ob-comment-size="large"] .obsidian-comment-box { --ob-font: 17px; }
 	border-radius: 10px;
 	box-shadow: 0 6px 20px rgba(0, 0, 0, 0.3);
 	padding: 4px 6px;
-	font-family: ui-sans-serif, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Inter", sans-serif;
+	font-family: 'JetBrains Mono', ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, 'Liberation Mono', monospace;
 	z-index: 9;
 	color: var(--ob-text);
 	box-sizing: border-box;
@@ -711,8 +710,8 @@ body[data-ob-comment-size="large"] .obsidian-comment-box { --ob-font: 17px; }
 
 	li[data-checked="true"] {
 		.ob-md-check {
-			border-color: #895DF4;
-			background: #895DF4
+			border-color: #2f9e62;
+			background: #2f9e62
 				// Inline tick, so no icon font or extra element is needed.
 				url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='white' stroke-width='3.5' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='m5 13 4 4L19 7'/%3E%3C/svg%3E")
 				center / 10px 10px no-repeat;
@@ -743,8 +742,8 @@ body[data-ob-comment-size="large"] .obsidian-comment-box { --ob-font: 17px; }
 
 	.obsidian-inline-tag {
 		// Always on a dark themed surface, so use the lighter accent.
-		color: #A68AF9;
-		background: rgba(137, 93, 244, 0.25);
+		color: #6fcf97;
+		background: rgba(47, 158, 98, 0.25);
 		padding: 1px 5px;
 		border-radius: 4px;
 		font-weight: 500;
@@ -789,7 +788,7 @@ body[data-ob-comment-size="large"] .obsidian-comment-box { --ob-font: 17px; }
 		// Sleek, thin scrollbar tinted with the accent — barely there until the
 		// pointer is over it.
 		scrollbar-width: thin;
-		scrollbar-color: rgba(137, 93, 244, 0.45) transparent;
+		scrollbar-color: rgba(47, 158, 98, 0.45) transparent;
 		&::-webkit-scrollbar {
 			width: 3px;
 		}
@@ -797,11 +796,11 @@ body[data-ob-comment-size="large"] .obsidian-comment-box { --ob-font: 17px; }
 			background: transparent;
 		}
 		&::-webkit-scrollbar-thumb {
-			background: rgba(137, 93, 244, 0.4);
+			background: rgba(47, 158, 98, 0.4);
 			border-radius: 3px;
 		}
 		&::-webkit-scrollbar-thumb:hover {
-			background: rgba(137, 93, 244, 0.65);
+			background: rgba(47, 158, 98, 0.65);
 		}
 
 		.obsidian-tag-option {
@@ -815,8 +814,8 @@ body[data-ob-comment-size="large"] .obsidian-comment-box { --ob-font: 17px; }
 
 			&.is-selected,
 			&:hover {
-				background: rgba(137, 93, 244, 0.25);
-				color: #A68AF9;
+				background: rgba(47, 158, 98, 0.25);
+				color: #6fcf97;
 			}
 		}
 	}
@@ -847,7 +846,7 @@ body[data-ob-comment-size="large"] .obsidian-comment-box { --ob-font: 17px; }
 			flex-grow: 1;
 
 			a {
-				color: #A68AF9;
+				color: #6fcf97;
 				text-decoration: underline;
 			}
 			strong { font-weight: 700; }
@@ -919,7 +918,7 @@ body[data-ob-comment-size="large"] .obsidian-comment-box { --ob-font: 17px; }
 				margin-right: 4px;
 				
 				&.synced {
-					color: #A68AF9;
+					color: #6fcf97;
 				}
 				&.unsynced {
 					color: var(--ob-muted);
@@ -943,7 +942,7 @@ body[data-ob-comment-size="large"] .obsidian-comment-box { --ob-font: 17px; }
 			}
 
 			.obsidian-comment-edit:hover {
-				color: #A68AF9;
+				color: #6fcf97;
 			}
 			.obsidian-comment-delete:hover,
 			.obsidian-comment-thread-delete:hover {
@@ -1066,8 +1065,8 @@ body[data-ob-comment-size="large"] .obsidian-comment-box { --ob-font: 17px; }
 
 				&.is-active {
 					opacity: 1;
-					color: #A68AF9;
-					background: rgba(137, 93, 244, 0.2);
+					color: #6fcf97;
+					background: rgba(47, 158, 98, 0.2);
 				}
 			}
 
@@ -1117,7 +1116,7 @@ body[data-ob-comment-size="large"] .obsidian-comment-box { --ob-font: 17px; }
 		}
 
 		&.has-text .obsidian-comment-editor-actions button.obsidian-comment-save-new svg {
-			background: #895DF4 !important;
+			background: #2f9e62 !important;
 			color: #ffffff !important;
 		}
 

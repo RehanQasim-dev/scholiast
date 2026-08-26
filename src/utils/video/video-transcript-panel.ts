@@ -8,7 +8,7 @@ import {
 	LoadedTranscript, TranscriptCue, loadTranscript, getSessionLang, setSessionLang,
 } from './video-transcript';
 import { openComments, isCommentsActive } from './video-comments';
-import { engagePlayerStage, mountHost, unmountHost, disengagePlayerStage } from './video-player-stage';
+import { engagePlayerStage, mountHost, unmountHost, disengagePlayerStage, markPanelEsc } from './video-player-stage';
 
 // Live YouTube transcript-annotation panel (the `T` flow). Pauses the video and
 // docks a scrollable transcript on the right, auto-scrolled to a fixed 30s
@@ -456,6 +456,7 @@ async function openCommentFor(itemId: string) {
 
 function onKeyUpShield(e: KeyboardEvent) {
 	if (!active) return;
+	if ((e.altKey || e.metaKey) && e.key === 'Tab') return;
 	// Only shield typing inside our own fields (e.g. the language picker).
 	const t = e.target as HTMLElement;
 	if (t?.tagName === 'SELECT' || t?.closest?.('.ob-vt-host .ob-vid-input')) e.stopPropagation();
@@ -463,9 +464,10 @@ function onKeyUpShield(e: KeyboardEvent) {
 
 function onKeyDown(e: KeyboardEvent) {
 	if (!active || isCommentsActive()) return;
+	if ((e.altKey || e.metaKey) && e.key === 'Tab') return;
 	// Only claim Escape; every other key flows to YouTube so its shortcuts
 	// (Space → play/pause, arrows → seek, etc.) keep working behind the panel.
-	if (e.key === 'Escape') { e.preventDefault(); e.stopPropagation(); if (popupEl) removePopup(); else teardown(); }
+	if (e.key === 'Escape') { e.preventDefault(); e.stopPropagation(); e.stopImmediatePropagation(); markPanelEsc(); if (popupEl) removePopup(); else teardown(); }
 }
 
 // --- Toast + teardown --------------------------------------------------------

@@ -62,4 +62,15 @@
 			if (Object.getOwnPropertyDescriptor(PointerEvent.prototype, p)) patchEventProperty(PointerEvent.prototype, p, true);
 		});
 	}
+
+	// Keyboard Lock bridge: content scripts run in an isolated world where
+	// navigator.keyboard may be undefined, so Esc to exit fullscreen cannot be
+	// prevented there. The page world *does* have it. Listen for lock/unlock
+	// requests from the content script.
+	window.addEventListener('__obVpsLock', function () {
+		try { if (navigator.keyboard && navigator.keyboard.lock) navigator.keyboard.lock(['Escape']).catch(function () {}); } catch (e) {}
+	});
+	window.addEventListener('__obVpsUnlock', function () {
+		try { if (navigator.keyboard && navigator.keyboard.unlock) navigator.keyboard.unlock(); } catch (e) {}
+	});
 })();

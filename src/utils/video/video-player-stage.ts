@@ -17,7 +17,7 @@ import { getPlayerContainer } from './youtube-detect';
 // fullscreen element is an ancestor, the host sits outside the scaled subtree and
 // needs no counter-scale.
 
-const PANEL_MIN = 280, PANEL_MAX = 800;
+const PANEL_MIN = 224, PANEL_MAX = 640;
 
 let player: HTMLElement | null = null;
 let dim: HTMLElement | null = null;
@@ -37,6 +37,10 @@ try {
 	const w = sessionStorage.getItem('ob-vid-panel-width');
 	if (w) customWidth = parseInt(w, 10);
 } catch (e) {}
+
+let lastPanelEsc = 0;
+let lastPlayerForRestore: HTMLElement | null = null;
+export function markPanelEsc(): void { lastPanelEsc = Date.now(); }
 
 export function setCustomPanelWidth(w: number) {
 	customWidth = w;
@@ -80,7 +84,8 @@ function measureBase() {
 		player.style.transition = prevTransition;
 		base = { left: r.left, top: r.top, width: r.width, height: r.height };
 	}
-	panelW = customWidth || Math.min(Math.max(280, Math.round(window.innerWidth * 0.34)), 420);
+	// 20% narrower than legacy 0.34/420: saves video space while keeping readability
+	panelW = customWidth || Math.min(Math.max(224, Math.round(window.innerWidth * 0.272)), 336);
 	panelW = Math.max(PANEL_MIN, Math.min(panelW, PANEL_MAX));
 	// Allow the panel to consume up to 70% of the video width if the user explicitly drags it that large
 	panelW = Math.min(panelW, base.width * 0.7);
@@ -134,11 +139,35 @@ function hostMountTarget(): HTMLElement {
 // While in fullscreen, capture Escape so it closes the panel instead of the
 // browser force-exiting fullscreen. Ref-counted via engage/disengage so a
 // transcript↔comment switch doesn't release the lock the open panel still needs.
+// Per https://developer.chrome.com/blog/better-full-screen-mode the lock must
+// be requested while JS-initiated fullscreen is active, ideally in a
+// fullscreenchange handler. Content scripts run in an isolated world where
+// navigator.keyboard is often undefined, so we inject a transient <script> that
+// runs in the page (main world) where the API exists.
 function lockEscape() {
+	if (!fs) return;
+	// Try main world via inline script (no race with external patch loading)
+	try {
+		const s = document.createElement('script');
+		s.textContent = `try{ navigator.keyboard && navigator.keyboard.lock && navigator.keyboard.lock(['Escape']).catch(()=>{}) }catch(e){}`;
+		(document.head || document.documentElement).appendChild(s);
+		s.remove();
+	} catch {}
+	// Also try isolated world (works in some browsers) and dispatch to patch
+	try { window.dispatchEvent(new CustomEvent('__obVpsLock')); } catch {}
+	try { document.dispatchEvent(new CustomEvent('__obVpsLock')); } catch {}
 	const kb = (navigator as unknown as { keyboard?: { lock?: (k: string[]) => Promise<void> } }).keyboard;
-	if (fs && kb?.lock) { try { kb.lock(['Escape'])?.catch(() => {}); } catch { /* ignore */ } }
+	if (kb?.lock) { try { kb.lock(['Escape'])?.catch(() => {}); } catch { /* ignore */ } }
 }
 function unlockEscape() {
+	try {
+		const s = document.createElement('script');
+		s.textContent = `try{ navigator.keyboard && navigator.keyboard.unlock && navigator.keyboard.unlock() }catch(e){}`;
+		(document.head || document.documentElement).appendChild(s);
+		s.remove();
+	} catch {}
+	try { window.dispatchEvent(new CustomEvent('__obVpsUnlock')); } catch {}
+	try { document.dispatchEvent(new CustomEvent('__obVpsUnlock')); } catch {}
 	const kb = (navigator as unknown as { keyboard?: { unlock?: () => void } }).keyboard;
 	if (kb?.unlock) { try { kb.unlock(); } catch { /* ignore */ } }
 }
@@ -147,6 +176,7 @@ export function engagePlayerStage(): void {
 	if (refCount === 0) {
 		player = getPlayerContainer();
 		if (!player) return;
+		lastPlayerForRestore = player;
 		saved = {
 			transform: player.style.transform,
 			transformOrigin: player.style.transformOrigin,
@@ -171,8 +201,8 @@ export function engagePlayerStage(): void {
 		// as a focused unit; the transcript panel scrolls internally.
 		savedHtmlOverflow = document.documentElement.style.overflow;
 		document.documentElement.style.overflow = 'hidden';
-		lockEscape();
 		injectPatchScript();
+		lockEscape();
 		window.addEventListener('resize', relayoutAll, true);
 		document.addEventListener('fullscreenchange', onFsChange, true);
 	}
@@ -226,6 +256,8 @@ export function disengagePlayerStage(): void {
 		}
 		dim?.remove();
 		dim = null;
+		// Keep lastPlayerForRestore for fallback re-enter after Esc
+		if (player) lastPlayerForRestore = player;
 		player = null;
 		saved = null;
 		hosts.clear();
@@ -275,8 +307,26 @@ function relayoutAll() {
 }
 
 function onFsChange() {
-	if (!player) return;
-	fs = !!fsElement();
+	const wasFs = fs;
+	const nowFs = !!fsElement();
+	// Fallback: if fullscreen exited right after a panel Esc, the browser
+	// ignored keyboard.lock and exited anyway. Re-enter so first Esc only
+	// closes the panel and stays fullscreen; second Esc then exits normally.
+	if (wasFs && !nowFs && Date.now() - lastPanelEsc < 700) {
+		const restoreTarget = lastPlayerForRestore || document.querySelector('#movie_player') as HTMLElement | null;
+		if (restoreTarget && restoreTarget.requestFullscreen) {
+			// Still within transient activation, so this succeeds
+			restoreTarget.requestFullscreen().catch(() => {});
+		}
+		// Even if re-enter fails, don't let a half-torn host linger windowed
+	}
+	if (!player && !wasFs) return;
+	if (!player) {
+		fs = nowFs;
+		if (fs) lockEscape(); else unlockEscape();
+		return;
+	}
+	fs = nowFs;
 	const target = hostMountTarget();
 	// Re-home hosts into the (new) correct parent. Moving a node resets the
 	// scrollTop of any scroll container inside it, so snapshot and restore it
