@@ -576,19 +576,23 @@ declare global {
 		}
 
 		const annot = isAnnotatorActive(), com = isCommentsActive(), trans = isTranscriptPanelActive();
-		if (annot || com || trans) {
-			// Pressing the key for the panel that's already open → just suppress it
-			// (don't toggle/reopen). Mid-capture (draw) we also stay put.
-			if (annot) return;
-			if (k === transKey && trans) return;
+		if (annot) return;
+		if (k === transKey && trans) return;
+		// Snapshot `S` should work even when a note/transcript panel is open — keep
+		// the panel mounted and capture alongside it (no close-first flicker).
+		if (k === capKey) {
+			ensureHighlighterCSS();
+			videoCapture();
+			return;
+		}
+		if (com || trans) {
 			// A different panel's key → switch: close the open one, then open the
 			// requested panel below.
 			if (com) closeComments();
 			if (trans) closeTranscriptPanel();
 		}
 		ensureHighlighterCSS();
-		if (k === capKey) videoCapture();
-		else if (k === comKey) videoCommentOnly();
+		if (k === comKey) videoCommentOnly();
 		else videoTranscript();
 	}, true);
 

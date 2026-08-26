@@ -587,10 +587,10 @@ function App() {
 					</div>
 				)}
 
-				<div style={{ pointerEvents: 'auto', position: 'absolute', bottom: 4, right: 10, display: 'flex', alignItems: 'center', gap: '8px', background: 'rgba(23, 27, 38, 0.92)', backdropFilter: 'blur(12px)', WebkitBackdropFilter: 'blur(12px)', padding: '3px 10px', borderRadius: '8px', border: '1px solid rgba(255, 255, 255, 0.14)', color: '#e7eaf1', boxShadow: '0 4px 14px rgba(0, 0, 0, 0.4)' }}>
-					<label style={{ fontSize: '12px', fontWeight: 600, color: '#e7eaf1' }}>Dim</label>
-					<input type="range" min="0" max="50" value={dimOpacity} onChange={(e) => setDimOpacity(parseInt(e.target.value))} style={{ width: '80px', accentColor: '#8b7cf6', cursor: 'pointer' }} />
-					<span style={{ fontSize: '12px', fontWeight: 600, minWidth: '3ch', textAlign: 'right', color: '#a78bfa' }}>{dimOpacity}%</span>
+				<div style={{ pointerEvents: 'auto', position: 'absolute', bottom: 4, right: 10, display: 'flex', alignItems: 'center', gap: '8px', background: 'rgba(7, 13, 10, 0.92)', backdropFilter: 'blur(12px)', WebkitBackdropFilter: 'blur(12px)', padding: '3px 10px', borderRadius: '8px', border: '1px solid rgba(47, 158, 98, 0.18)', color: '#a8d5b5', boxShadow: '0 4px 14px rgba(0, 0, 0, 0.5)' }}>
+					<label style={{ fontSize: '12px', fontWeight: 600, color: '#a8d5b5', fontFamily: "'JetBrains Mono', monospace" }}>Dim</label>
+					<input type="range" min="0" max="50" value={dimOpacity} onChange={(e) => setDimOpacity(parseInt(e.target.value))} style={{ width: '80px', accentColor: '#2f9e62', cursor: 'pointer' }} />
+					<span style={{ fontSize: '12px', fontWeight: 600, minWidth: '3ch', textAlign: 'right', color: '#6fcf97', fontFamily: "'JetBrains Mono', monospace" }}>{dimOpacity}%</span>
 				</div>
 			</div>}
 		</>

@@ -7,8 +7,9 @@
 	<style>
 		body, html {
 			margin: 0; padding: 0; width: 100%; height: 100%;
-			/* Solid dark background prevents paused video underneath from peeking through canvas margins */
-			overflow: hidden; background: #0b0d14;
+			/* Terminal dark green — darker than screenshot, matches panel */
+			overflow: hidden; background: #070d0a;
+			font-family: 'JetBrains Mono', ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
 		}
 		#app { width: 100%; height: 100%; }
 		/* Keep Excalidraw's own canvas transparent so the dim body shows through. */
@@ -100,7 +101,7 @@
 
 		/* Cancel: Neutral ghost style */
 		.action-btn-cancel {
-			background: rgba(23, 27, 38, 0.85);
+			background: rgba(7, 13, 10, 0.85);
 			color: #d1d5db;
 			border-color: rgba(255, 255, 255, 0.14);
 			box-shadow: 0 2px 8px rgba(0, 0, 0, 0.3);
@@ -111,33 +112,33 @@
 			border-color: rgba(255, 255, 255, 0.22);
 		}
 
-		/* Comment: Soft Purple Secondary Accent */
+		/* Comment: Terminal Green Secondary */
 		.action-btn-comment {
-			background: rgba(139, 124, 246, 0.18);
-			color: #ddd6fe;
-			border-color: rgba(139, 124, 246, 0.35);
+			background: rgba(47, 158, 98, 0.18);
+			color: #a8d5b5;
+			border-color: rgba(47, 158, 98, 0.35);
 			box-shadow: 0 2px 8px rgba(0, 0, 0, 0.3);
 		}
 		.action-btn-comment:hover {
-			background: rgba(139, 124, 246, 0.3);
+			background: rgba(47, 158, 98, 0.28);
 			color: #ffffff;
-			border-color: rgba(139, 124, 246, 0.5);
+			border-color: rgba(47, 158, 98, 0.5);
 		}
 
-		/* Save: Vibrant Primary Purple Accent */
+		/* Save: Terminal Green Primary */
 		.action-btn-save {
-			background: #8b7cf6;
+			background: #2f9e62;
 			color: #ffffff;
-			border-color: rgba(255, 255, 255, 0.2);
+			border-color: rgba(255, 255, 255, 0.18);
 			font-weight: 600;
-			box-shadow: 0 2px 10px rgba(139, 124, 246, 0.45);
+			box-shadow: 0 2px 10px rgba(47, 158, 98, 0.45);
 		}
 		.action-btn-save:hover {
-			background: #7c6aed;
-			box-shadow: 0 4px 14px rgba(139, 124, 246, 0.6);
+			background: #278a54;
+			box-shadow: 0 4px 14px rgba(47, 158, 98, 0.6);
 		}
 
-		/* Bottom options bar — slim, flush to the bottom edge */
+		/* Bottom options bar — terminal green glass */
 		.bottom-options-bar {
 			position: absolute;
 			bottom: 4px;
@@ -145,15 +146,15 @@
 			transform: translateX(-50%);
 			display: flex;
 			gap: 12px;
-			background: rgba(23, 27, 38, 0.92);
+			background: rgba(7, 13, 10, 0.92);
 			backdrop-filter: blur(12px);
 			-webkit-backdrop-filter: blur(12px);
 			border-radius: 18px;
-			padding: 2px 12px;
-			border: 1px solid rgba(255, 255, 255, 0.12);
+			padding: 3px 14px;
+			border: 1px solid rgba(47, 158, 98, 0.18);
 			pointer-events: auto;
 			align-items: center;
-			box-shadow: 0 6px 20px rgba(0, 0, 0, 0.4);
+			box-shadow: 0 6px 20px rgba(0, 0, 0, 0.5);
 		}
 
 		.option-group {
@@ -176,7 +177,7 @@
 		}
 
 		.option-popup-inner {
-			background: rgba(23, 27, 38, 0.95);
+			background: rgba(7, 13, 10, 0.95);
 			backdrop-filter: blur(12px);
 			-webkit-backdrop-filter: blur(12px);
 			border-radius: 12px;
@@ -243,8 +244,8 @@
 		/* Any island Excalidraw does still draw gets the dark glass treatment.
 		   (The class is `Island`, capitalised — `.island` matched nothing.) */
 		.excalidraw .Island {
-			background: rgba(23, 27, 38, 0.9) !important;
-			border: 1px solid rgba(255, 255, 255, 0.12) !important;
+			background: rgba(7, 13, 10, 0.9) !important;
+			border: 1px solid rgba(47, 158, 98, 0.18) !important;
 			box-shadow: 0 4px 16px rgba(0, 0, 0, 0.4) !important;
 		}
 
@@ -275,10 +276,10 @@
 		.layer-ui__wrapper .FixedSideContainer_side_bottomLeft .island,
 		.layer-ui__wrapper .undo-redo-actions .island,
 		.layer-ui__wrapper .undo-redo-buttons {
-			background: rgba(23, 27, 38, 0.9) !important;
+			background: rgba(7, 13, 10, 0.9) !important;
 			backdrop-filter: blur(12px) !important;
 			-webkit-backdrop-filter: blur(12px) !important;
-			border: 1px solid rgba(255, 255, 255, 0.14) !important;
+			border: 1px solid rgba(47, 158, 98, 0.18) !important;
 			border-radius: 6px !important;
 			padding: 0 2px !important;
 			box-shadow: 0 4px 14px rgba(0, 0, 0, 0.4) !important;
@@ -332,13 +333,22 @@
 			height: 12px !important;
 		}
 
-		/* 5. TOP TOOLBAR: Scale down and make compact so it doesn't overlap video */
+		/* 5. TOP TOOLBAR: Terminal sized, not shrunken */
 		.excalidraw { --editor-container-padding: 0 !important; }
 
 		.layer-ui__wrapper .App-toolbar {
-			transform: scale(0.7) !important;
+			transform: scale(0.92) !important;
 			transform-origin: top center !important;
-			margin-top: 0 !important;
+			margin-top: 4px !important;
+		}
+		.layer-ui__wrapper .App-toolbar .ToolIcon_type_button,
+		.layer-ui__wrapper .App-toolbar .App-toolbar__extra-tools-trigger {
+			width: 36px !important;
+			height: 36px !important;
+		}
+		.layer-ui__wrapper .App-toolbar .ToolIcon__icon {
+			width: 20px !important;
+			height: 20px !important;
 		}
 	</style>
 </head>

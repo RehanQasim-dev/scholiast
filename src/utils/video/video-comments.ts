@@ -79,8 +79,30 @@ export async function openComments(o: OpenCommentsOpts): Promise<void> {
 		loaded.push(o.ensureItem);
 	}
 	loaded.sort((a, b) => a.videoTime - b.videoTime);
+	// Rehydrate frame JPEGs (stored in IndexedDB, not in the metadata blob)
+	for (const it of loaded) {
+		if (it.kind === 'frame' && it.frame && !it.frame.dataUrl) {
+			try {
+				const url = await loadFrameImage(it.id);
+				if (url) it.frame.dataUrl = url;
+			} catch {}
+		}
+	}
 	items = loaded;
 	if (!o.focusItemId && !focusId) focusId = null;
+	renderConversation();
+}
+
+export async function appendFrameFromSnapshot(item: VideoItem): Promise<void> {
+	if (!active || !opts) return;
+	if (item.kind === 'frame' && item.frame && !item.frame.dataUrl) {
+		try { const u = await loadFrameImage(item.id); if (u) item.frame.dataUrl = u; } catch {}
+	}
+	if (!items.some(i => i.id === item.id)) {
+		items.push(item);
+		items.sort((a, b) => a.videoTime - b.videoTime);
+	}
+	focusId = item.id;
 	renderConversation();
 }
 

@@ -39,7 +39,7 @@ export interface VideoItem {
 	id: string;
 	notes?: string[];
 	updatedAt?: number;
-	frame?: { dataUrl?: string; driveId?: string; [k: string]: unknown };
+	frame?: { dataUrl?: string; driveId?: string; githubId?: string; [k: string]: unknown };
 	[k: string]: unknown;
 }
 export interface StoredVideo {
@@ -327,6 +327,8 @@ export interface PageDiagram {
 	updatedAt?: number;
 	driveId?: string;       // Drive blob id for the rendered PNG
 	sceneDriveId?: string;  // Drive file id for the editable scene JSON
+	githubId?: string;      // GitHub blob path/sha for the rendered PNG
+	sceneGithubId?: string; // GitHub file sha for the editable scene JSON
 	[k: string]: unknown;   // image/scene BYTES never live here — only pointers
 }
 
@@ -452,6 +454,117 @@ export function mergePageRecord(
 		diagrams: [...gRes.kept.values()],
 		tombstones: tombs,
 	};
+}
+
+/**
+ * Multi-remote merge: base + local + N remotes (Drive, GitHub, ...).
+ * Built by unioning all remotes into one virtual remote (newest per id,
+ * tombstones max) and then running the standard 3-way merge. This gives
+ * `merge(base,local,union(remotes))` which correctly handles the case where
+ * GitHub has A and Drive has B (union has both) and where tombstones are
+ * spread across remotes.
+ */
+export function mergePageRecordMulti(
+	base: PageRecord | null,
+	local: PageRecord | null,
+	remotes: (PageRecord | null)[],
+	now: number,
+): PageRecord {
+	const filtered = remotes.filter((r): r is PageRecord => !!r);
+	if (filtered.length === 0) return mergePageRecord(base, local, null, now);
+	if (filtered.length === 1) return mergePageRecord(base, local, filtered[0], now);
+
+	const url = local?.url || filtered[0]?.url || base?.url || '';
+	const union = emptyPageRecord(url);
+
+	// Tombstones: max timestamp per id across all remotes + base
+	const allTombSources = [...filtered.map(r => r.tombstones), base?.tombstones].filter(Boolean) as PageTombstones[];
+	for (const key of ['highlights','drawings','comments','videoItems','diagrams'] as const) {
+		const out: Record<string, number> = {};
+		for (const src of allTombSources) {
+			const m = (src as any)[key] as Record<string, number>;
+			for (const id of Object.keys(m || {})) {
+				const v = m[id];
+				if (v !== undefined && (out[id] === undefined || v > out[id])) out[id] = v;
+			}
+		}
+		(union.tombstones as any)[key] = out;
+	}
+
+	// Helper to union array of PageRecords by id, newest wins but keep both driveId/githubId
+	function unionById<T extends { id: string; updatedAt?: number; [k:string]: any }>(getArr: (r: PageRecord) => T[], mergeIds?: (a: T, b: T) => T): T[] {
+		const map = new Map<string, T>();
+		for (const r of filtered) {
+			for (const it of getArr(r) || []) {
+				const prev = map.get(it.id);
+				if (!prev) { map.set(it.id, { ...it }); continue; }
+				const prevVer = (prev.updatedAt || 0) || (parseInt(prev.id, 10) || 0);
+				const curVer = (it.updatedAt || 0) || (parseInt(it.id, 10) || 0);
+				if (curVer > prevVer) {
+					// keep ids from both
+					const merged = mergeIds ? mergeIds(it, prev) : { ...it };
+					// union drive/github ids if present on prev but not on newer
+					for (const k of ['driveId','githubId','sceneDriveId','sceneGithubId','githubSha']) {
+						if ((prev as any)[k] && !(merged as any)[k]) (merged as any)[k] = (prev as any)[k];
+					}
+					// also preserve frame githubId/driveId inside videoItem.frame
+					if ((prev as any).frame && (merged as any).frame) {
+						const pf = (prev as any).frame, mf = (merged as any).frame;
+						for (const fk of ['driveId','githubId']) if (pf[fk] && !mf[fk]) mf[fk] = pf[fk];
+					}
+					map.set(it.id, merged);
+				} else {
+					// prev stays, but union ids from it
+					for (const k of ['driveId','githubId','sceneDriveId','sceneGithubId','githubSha']) {
+						if ((it as any)[k] && !(prev as any)[k]) (prev as any)[k] = (it as any)[k];
+					}
+					if ((it as any).frame && (prev as any).frame) {
+						const pf = (prev as any).frame;
+						const cf = (it as any).frame;
+						for (const fk of ['driveId','githubId']) if (cf[fk] && !pf[fk]) pf[fk] = cf[fk];
+					}
+				}
+			}
+		}
+		return [...map.values()];
+	}
+
+	union.highlights = unionById(r => r.highlights, (a, b) => {
+		// keep newest's fields but merge drive/github frame ids done in union logic above; notes handled later by mergePageRecord
+		const newer = highlightVersion(a) >= highlightVersion(b) ? a : b;
+		const other = newer === a ? b : a;
+		const merged: any = { ...newer };
+		// if newer lacks frame ids that other has, keep them (for imageEdit diagrams already handled)
+		if (other.frame && !(merged as any).frame) (merged as any).frame = other.frame;
+		if (other.frame && (merged as any).frame) {
+			for (const k of ['driveId','githubId']) if ((other.frame as any)[k] && !(merged.frame as any)[k]) (merged.frame as any)[k] = (other.frame as any)[k];
+		}
+		return merged;
+	});
+	union.drawings = unionById(r => r.drawings);
+	union.videoItems = unionById(r => r.videoItems, (a, b) => {
+		const newer = videoItemVersion(a) >= videoItemVersion(b) ? a : b;
+		const other = newer === a ? b : a;
+		const m: any = { ...newer };
+		if (other.frame && !m.frame) m.frame = other.frame;
+		if (other.frame && m.frame) {
+			for (const k of ['driveId','githubId']) if ((other.frame as any)[k] && !(m.frame as any)[k]) (m.frame as any)[k] = (other.frame as any)[k];
+		}
+		return m;
+	});
+	union.diagrams = unionById(r => r.diagrams, (a, b) => {
+		const newer = diagramVersion(a) >= diagramVersion(b) ? a : b;
+		const other = newer === a ? b : a;
+		const m: any = { ...newer };
+		for (const k of ['driveId','githubId','sceneDriveId','sceneGithubId']) if ((other as any)[k] && !m[k]) m[k] = (other as any)[k];
+		return m;
+	});
+	// Title/videoId: pick first non-empty among remotes (deterministic, local will override if present)
+	union.title = filtered.find(r => r.title)?.title;
+	union.videoId = filtered.find(r => r.videoId)?.videoId;
+
+	// Now standard 3-way with union as the single remote
+	return mergePageRecord(base, local, union, now);
 }
 
 /**

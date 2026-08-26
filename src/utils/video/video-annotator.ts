@@ -9,7 +9,7 @@ import {
 } from './youtube-detect';
 import { captureFrame } from './frame-capture';
 import { saveFrameImage } from './frame-store';
-import { openComments, isCommentsActive } from './video-comments';
+import { openComments, isCommentsActive, appendFrameFromSnapshot } from './video-comments';
 
 // In-page overlay for capturing + marking up a YouTube frame and attaching a
 // chat-style comment thread. Lazy-loaded by content.ts on first use, so none of
@@ -213,7 +213,7 @@ function onPooledMessage(e: MessageEvent) {
 // --- Public entry points -----------------------------------------------------
 
 export async function startCaptureAndDraw(): Promise<void> {
-	if (active || isCommentsActive() || !isYouTubeWatchPage()) return;
+	if (active || !isYouTubeWatchPage()) return;
 	video = getVideoElement();
 	if (!video) return;
 	prepareSession();
@@ -1120,7 +1120,7 @@ async function persist() {
 
 // --- Mode transitions --------------------------------------------------------
 
-function goToComment() {
+async function goToComment() {
 	if (mode === 'comment' || !root || !item) return;
 	// The frame is already persisted by the caller. Tear down the draw overlay
 	// (without resuming — the conversation panel owns playback) and hand off to
@@ -1129,6 +1129,11 @@ function goToComment() {
 	const vid = video;
 	const playing = wasPlaying;
 	const wu = watchUrl, vid2 = videoId, vt = videoTitle;
+	if (isCommentsActive()) {
+		teardown(true, false);
+		await appendFrameFromSnapshot(it);
+		return;
+	}
 	teardown(true, false);
 	openComments({
 		watchUrl: wu, videoId: vid2, videoTitle: vt,
@@ -1238,6 +1243,12 @@ function onKeyDown(e: KeyboardEvent) {
 
 async function saveAndClose() {
 	await persist();
+	const it = item;
+	if (isCommentsActive() && it) {
+		teardown(true, false);
+		await appendFrameFromSnapshot(it);
+		return;
+	}
 	teardown(true);
 }
 

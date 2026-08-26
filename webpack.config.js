@@ -25,9 +25,13 @@ function loadOAuthConfig() {
 		webClientId: process.env.GOOGLE_OAUTH_WEB_CLIENT_ID || file.webClientId || '',
 		nativeClientId: process.env.GOOGLE_OAUTH_NATIVE_CLIENT_ID || file.nativeClientId || '',
 		nativeClientSecret: process.env.GOOGLE_OAUTH_NATIVE_CLIENT_SECRET || file.nativeClientSecret || '',
+		githubClientId: process.env.GITHUB_OAUTH_CLIENT_ID || file.githubClientId || file.githubClientId || '',
 	};
 	if (!config.webClientId || !config.nativeClientId || !config.nativeClientSecret) {
 		console.warn('[build] No Google OAuth config found — Drive sync will be disabled in this build. See oauth.local.example.json.');
+	}
+	if (!config.githubClientId) {
+		console.warn('[build] No GitHub OAuth config found — GitHub sync will be disabled in this build. Add githubClientId to oauth.local.json.');
 	}
 	return config;
 }
@@ -235,7 +239,8 @@ module.exports = (env, argv) => {
 				'DEBUG_MODE': JSON.stringify(!isProduction),
 				'OAUTH_WEB_CLIENT_ID': JSON.stringify(oauth.webClientId),
 				'OAUTH_NATIVE_CLIENT_ID': JSON.stringify(oauth.nativeClientId),
-				'OAUTH_NATIVE_CLIENT_SECRET': JSON.stringify(oauth.nativeClientSecret)
+				'OAUTH_NATIVE_CLIENT_SECRET': JSON.stringify(oauth.nativeClientSecret),
+				'GITHUB_CLIENT_ID': JSON.stringify(oauth.githubClientId)
 			}),
 			...(isProduction ? [
 				new ZipPlugin({
@@ -246,98 +251,5 @@ module.exports = (env, argv) => {
 		]
 	};
 
-	// Android WebView reader bundle: self-contained IIFE (no chunks) emitted to
-	// its own directory and copied into the Android app's assets. Built together
-	// with the extension configs, or alone via:
-	//   npm run build:android-reader   (= webpack --config-name android-reader)
-	const androidReaderConfig = {
-		name: 'android-reader',
-		mode: argv.mode,
-		entry: {
-			'android-reader': './src/android-reader.ts',
-		},
-		output: {
-			path: path.resolve(__dirname, 'dist-android'),
-			filename: '[name].js',
-			globalObject: 'window',
-			module: false,
-		},
-		devtool: isProduction ? false : 'source-map',
-		performance: { hints: false },
-		optimization: {
-			minimize: true,
-			splitChunks: false,
-			runtimeChunk: false,
-			minimizer: [
-				new TerserPlugin({
-					terserOptions: {
-						mangle: false,
-						compress: { defaults: true, ecma: 2020, module: false },
-						format: { ascii_only: true, comments: false },
-						module: false,
-						keep_classnames: true,
-						keep_fnames: true
-					},
-					extractComments: false
-				})
-			],
-		},
-		resolve: {
-			extensions: ['.ts', '.tsx', '.js'],
-		},
-		module: {
-			rules: [
-				{ test: /\.m?js$/, resolve: { fullySpecified: false } },
-				{
-					test: /\.tsx?$/,
-					use: [
-						{
-							loader: 'ts-loader',
-							options: {
-								transpileOnly: true,
-								compilerOptions: { module: 'ES2020' }
-							}
-						}
-					],
-					exclude: /node_modules/,
-				},
-				{
-					test: /\.css$/,
-					use: [
-						MiniCssExtractPlugin.loader,
-						{ loader: 'css-loader', options: { sourceMap: !isProduction } },
-						{ loader: 'postcss-loader', options: { sourceMap: !isProduction } },
-					]
-				},
-			]
-		},
-		plugins: [
-			new MiniCssExtractPlugin({
-				filename: '[name].css'
-			}),
-			new CopyPlugin({
-				patterns: [
-					{ from: 'src/android/test/test.html', to: 'test.html' },
-				],
-			}),
-			{
-				apply: (compiler) => {
-					compiler.hooks.afterEmit.tap('CopyAndroidReaderAssets', () => {
-						const dest = path.resolve(__dirname, 'android/app/src/main/assets/wwwreader');
-						fs.mkdirSync(dest, { recursive: true });
-						for (const file of ['android-reader.js', 'android-reader.css']) {
-							const src = path.resolve(__dirname, 'dist-android', file);
-							if (fs.existsSync(src)) {
-								fs.copyFileSync(src, path.join(dest, file));
-							} else {
-								console.warn(`[build] android asset missing after emit: ${file}`);
-							}
-						}
-					});
-				}
-			},
-		],
-	};
-
-	return [mainConfig, androidReaderConfig];
+	return mainConfig;
 };
