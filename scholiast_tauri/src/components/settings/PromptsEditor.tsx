@@ -8,7 +8,6 @@ interface PromptDefaults {
 }
 
 interface PromptsEditorProps {
-  /** Injectable for tests; defaults to the real IPC command. */
   fetchDefaults?: () => Promise<PromptDefaults>;
 }
 
@@ -80,43 +79,43 @@ export default function PromptsEditor({ fetchDefaults }: PromptsEditorProps) {
 
   return (
     <div className="space-y-4">
-      <label className="block text-sm">
+      <label className="block text-sm text-text-2">
         Add-comment prompt
         <textarea
           data-testid="prompt-add-comment"
-          rows={3}
+          rows={4}
           value={addPrompt}
           onChange={(event) => void save("add", event.target.value)}
           disabled={restoring}
-          className="mt-1 w-full rounded-sm border border-hairline bg-surface px-2 py-1.5 text-sm"
+          className="mt-1 min-h-[140px] w-full rounded-md border border-hairline bg-elevated px-3 py-3 text-sm text-text outline-none focus:border-accent"
         />
         <button
           type="button"
           onClick={() => void restore("add")}
           disabled={restoring}
           data-testid="restore-add-comment"
-          className="mt-1 rounded-sm border border-hairline px-2 py-1 text-xs text-text-2 hover:text-text disabled:opacity-50"
+          className="mt-2 min-h-[48px] rounded-md border border-hairline px-3 py-2 text-xs text-text-2 hover:text-text hover:bg-elevated disabled:opacity-50"
         >
           Restore default
         </button>
       </label>
 
-      <label className="block text-sm">
+      <label className="block text-sm text-text-2">
         Edit-comment prompt
         <textarea
           data-testid="prompt-edit-comment"
-          rows={3}
+          rows={4}
           value={editPrompt}
           onChange={(event) => void save("edit", event.target.value)}
           disabled={restoring}
-          className="mt-1 w-full rounded-sm border border-hairline bg-surface px-2 py-1.5 text-sm"
+          className="mt-1 min-h-[140px] w-full rounded-md border border-hairline bg-elevated px-3 py-3 text-sm text-text outline-none focus:border-accent"
         />
         <button
           type="button"
           onClick={() => void restore("edit")}
           disabled={restoring}
           data-testid="restore-edit-comment"
-          className="mt-1 rounded-sm border border-hairline px-2 py-1 text-xs text-text-2 hover:text-text disabled:opacity-50"
+          className="mt-2 min-h-[48px] rounded-md border border-hairline px-3 py-2 text-xs text-text-2 hover:text-text hover:bg-elevated disabled:opacity-50"
         >
           Restore default
         </button>

@@ -44,6 +44,7 @@ function renderHome() {
         <Routes>
           <Route path="/home" element={<Home />} />
           <Route path="/player" element={<LocationProbe />} />
+          <Route path="/reader" element={<LocationProbe />} />
         </Routes>
       </MemoryRouter>
     </QueryClientProvider>,
@@ -56,6 +57,8 @@ describe("Home", () => {
     invokeMock.mockImplementation(async (command: string) => {
       if (command === "list_recent_videos") return { ok: true, data: recentVideos };
       if (command === "upsert_video") return { ok: true, data: recentVideos[0] };
+      if (command === "get_video_items") return { ok: true, data: [] };
+      if (command === "add_article") return { ok: true, data: { urlHash: "hash-article", title: "Example" } };
       return { ok: true, data: null };
     });
   });
@@ -73,8 +76,8 @@ describe("Home", () => {
         'img[src="https://i.ytimg.com/vi/dQw4w9WgXcQ/mqdefault.jpg"]',
       ),
     ).not.toBeNull();
-    expect(screen.getByText("1h ago")).toBeInTheDocument();
-    expect(screen.getByText("Resume at 2:05")).toBeInTheDocument();
+    expect(screen.getByText(/1h ago/)).toBeInTheDocument();
+    expect(screen.getByText(/2:05/)).toBeInTheDocument();
   });
 
   test("card click navigates with a resume param only when resume data exists", async () => {
@@ -107,8 +110,8 @@ describe("Home", () => {
 
   test("invalid link toasts and stays on home", async () => {
     renderHome();
-    const input = await screen.findByLabelText("YouTube link");
-    fireEvent.change(input, { target: { value: "not a youtube url" } });
+    const input = await screen.findByLabelText("Paste YouTube or URL...");
+    fireEvent.change(input, { target: { value: "https://www.youtube.com/watch?v=bad" } });
     fireEvent.submit(input.closest("form")!);
     expect(
       await screen.findByText("That link isn't a YouTube video URL"),
@@ -118,7 +121,7 @@ describe("Home", () => {
 
   test("valid link upserts the normalized watch url and navigates", async () => {
     renderHome();
-    const input = await screen.findByLabelText("YouTube link");
+    const input = await screen.findByLabelText("Paste YouTube or URL...");
     fireEvent.change(input, { target: { value: "https://youtu.be/dQw4w9WgXcQ" } });
     fireEvent.submit(input.closest("form")!);
     await waitFor(() => {
@@ -132,29 +135,22 @@ describe("Home", () => {
     );
   });
 
-  test("paste fills the field from the clipboard", async () => {
-    Object.defineProperty(navigator, "clipboard", {
-      configurable: true,
-      value: { readText: vi.fn(async () => " https://youtu.be/dQw4w9WgXcQ\n") },
-    });
+  test("single field has clipboard affordance and no mode toggle", async () => {
     renderHome();
-    fireEvent.click(await screen.findByRole("button", { name: "Paste" }));
-    expect(await screen.findByLabelText("YouTube link")).toHaveValue(
-      "https://youtu.be/dQw4w9WgXcQ",
-    );
+    expect(await screen.findByLabelText("Paste YouTube or URL...")).toBeInTheDocument();
+    expect(screen.getByLabelText("Paste from clipboard")).toBeInTheDocument();
+    expect(screen.queryByTestId("mode-video")).not.toBeInTheDocument();
+    expect(screen.queryByTestId("mode-article")).not.toBeInTheDocument();
   });
 
-  test("clipboard failure surfaces a toast instead of throwing", async () => {
-    Object.defineProperty(navigator, "clipboard", {
-      configurable: true,
-      value: {
-        readText: vi.fn(async () => {
-          throw new Error("permission denied");
-        }),
-      },
-    });
+  test("article url navigates to reader", async () => {
     renderHome();
-    fireEvent.click(await screen.findByRole("button", { name: "Paste" }));
-    expect(await screen.findByText(/Clipboard unavailable/)).toBeInTheDocument();
+    const input = await screen.findByLabelText("Paste YouTube or URL...");
+    fireEvent.change(input, { target: { value: "https://example.com/article" } });
+    fireEvent.submit(input.closest("form")!);
+    await waitFor(() => {
+      expect(invokeMock).toHaveBeenCalledWith("add_article", { url: "https://example.com/article" });
+    });
+    expect(screen.getByTestId("probe").textContent).toContain("url=https%3A%2F%2Fexample.com%2Farticle");
   });
 });

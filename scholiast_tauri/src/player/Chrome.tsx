@@ -1,12 +1,13 @@
-import { useEffect, useState, type ReactNode, type RefObject } from "react";
+import { useCallback, useEffect, useRef, useState, type ReactNode, type RefObject } from "react";
+import { RotateCcw, RotateCw } from "lucide-react";
 import {
-  RATE_STEPS,
   commands,
   getPlayerSnapshot,
   usePlayerEvent,
   usePlayerSnapshot,
   YT_STATE,
 } from "./playerBridge";
+import PlaybackSheet from "./PlaybackSheet";
 
 export function formatMss(totalSeconds: number): string {
   const s = Math.max(0, Math.floor(totalSeconds));
@@ -37,17 +38,25 @@ interface ChromeProps {
   stageRef: RefObject<HTMLElement | null>;
   slots?: { capture?: ReactNode; addNote?: ReactNode };
   onCaptureClick?: () => void;
+  collapsed?: boolean;
+  title?: string;
 }
 
-export default function Chrome({ stageRef, slots, onCaptureClick }: ChromeProps) {
+export default function Chrome({ stageRef, slots, onCaptureClick, collapsed = false, title }: ChromeProps) {
   const snap = usePlayerSnapshot();
   const [visible, setVisible] = useState(true);
   const [ready, setReady] = useState(false);
   const [error, setError] = useState<number | null>(null);
   const [fullscreen, setFullscreen] = useState(false);
+  const [sheetOpen, setSheetOpen] = useState(false);
+  const lastTapRef = useRef<{ t: number; x: number } | null>(null);
+  const ytTitleRef = useRef<string>("");
 
   usePlayerEvent("onPlayerReady", () => setReady(true));
   usePlayerEvent("onError", (code) => setError(code));
+  usePlayerEvent("onTitle", (t) => {
+    ytTitleRef.current = t;
+  });
   usePlayerEvent("onStateChange", (state) => {
     if (state === YT_STATE.PLAYING || state === YT_STATE.BUFFERING) {
       setError(null);
@@ -69,7 +78,7 @@ export default function Chrome({ stageRef, slots, onCaptureClick }: ChromeProps)
     }
   };
 
-  const seekBy = (delta: number) => {
+  const seekBy = useCallback((delta: number) => {
     const { time, duration } = getPlayerSnapshot();
     const target =
       delta < 0
@@ -78,14 +87,93 @@ export default function Chrome({ stageRef, slots, onCaptureClick }: ChromeProps)
           ? Math.min(duration - 0.25, time + delta)
           : time + delta;
     commands.seekTo(target);
-  };
+  }, []);
+
+  const handleStageTap = useCallback(
+    (e: React.MouseEvent | React.TouchEvent) => {
+      const rect = (e.currentTarget as HTMLElement).getBoundingClientRect();
+      const clientX =
+        "touches" in e
+          ? (e.touches[0]?.clientX ?? rect.left)
+          : (e as React.MouseEvent).clientX;
+      const now = Date.now();
+      const last = lastTapRef.current;
+      if (last && now - last.t < 320) {
+        const width = rect.width || 1;
+        const relX = clientX - rect.left;
+        if (relX < width * 0.35) {
+          seekBy(-10);
+        } else if (relX > width * 0.65) {
+          seekBy(10);
+        } else {
+          setVisible((v) => !v);
+        }
+        lastTapRef.current = null;
+        return;
+      }
+      lastTapRef.current = { t: now, x: clientX };
+      window.setTimeout(() => {
+        if (lastTapRef.current && Date.now() - lastTapRef.current.t >= 320) {
+          setVisible((v) => !v);
+          lastTapRef.current = null;
+        }
+      }, 330);
+    },
+    [seekBy],
+  );
 
   const hidden = !visible;
 
+  if (collapsed) {
+    return (
+      <div
+        data-testid="chrome-strip"
+        className="sc-strip absolute inset-0 z-10 flex items-center gap-1 bg-surface/95 px-1 text-xs"
+        style={{ height: 44 }}
+      >
+        <button
+          type="button"
+          aria-label={snap.playing ? "Pause" : "Play"}
+          onClick={() => (snap.playing ? commands.pause() : commands.play())}
+          className="sc-hit flex items-center justify-center rounded-full text-text hover:bg-elevated"
+        >
+          {snap.playing ? (
+            <svg viewBox="0 0 24 24" fill="currentColor" className="h-6 w-6">
+              <rect x="6" y="4" width="4" height="16" rx="1" />
+              <rect x="14" y="4" width="4" height="16" rx="1" />
+            </svg>
+          ) : (
+            <svg viewBox="0 0 24 24" fill="currentColor" className="h-6 w-6">
+              <path d="M8 5.5v13a1 1 0 0 0 1.54.84l10-6.5a1 1 0 0 0 0-1.68l-10-6.5A1 1 0 0 0 8 5.5z" />
+            </svg>
+          )}
+        </button>
+        <span className="min-w-[48px] text-center tabular-nums text-text-2">{formatMss(snap.time)}</span>
+        <span className="min-w-0 flex-1 truncate px-1 text-sm font-medium text-text">{title ?? ytTitleRef.current ?? ""}</span>
+        <span className="rounded-md border border-hairline bg-elevated px-2 py-1 tabular-nums text-text-2">{snap.rate}×</span>
+        <button
+          type="button"
+          aria-label="Playback speed"
+          onClick={() => setSheetOpen(true)}
+          className="sc-hit flex items-center justify-center rounded-full text-text-2 hover:bg-elevated hover:text-text"
+        >
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden className="h-6 w-6">
+            <path d="M3 6h18M3 12h18M3 18h18" />
+            <circle cx="9" cy="6" r="2" />
+            <circle cx="15" cy="12" r="2" />
+            <circle cx="9" cy="18" r="2" />
+          </svg>
+        </button>
+        <PlaybackSheet open={sheetOpen} onClose={() => setSheetOpen(false)} />
+      </div>
+    );
+  }
+
   return (
     <div
-      className="absolute inset-0 cursor-pointer select-none"
-      onClick={() => setVisible((v) => !v)}
+      className="absolute inset-0 select-none"
+      onClick={handleStageTap}
+      data-testid="chrome-root"
     >
       {!ready && !error && (
         <div className="pointer-events-none absolute inset-0 flex items-center justify-center">
@@ -101,13 +189,17 @@ export default function Chrome({ stageRef, slots, onCaptureClick }: ChromeProps)
           >
             <p className="text-sm font-medium">{errorMessage(error)}</p>
             {isEmbeddingDisabled(error) && (
-              <p className="mt-1 text-xs text-text-2">
-                Transcript and notes may still be available for this video.
-              </p>
+              <p className="mt-1 text-xs text-text-2">Transcript and notes may still be available for this video.</p>
             )}
           </div>
         </div>
       )}
+
+      <div
+        aria-hidden
+        className="pointer-events-none absolute inset-0 flex items-center justify-between px-2"
+        style={{ opacity: hidden ? 0 : 0 }}
+      />
 
       <button
         type="button"
@@ -135,7 +227,7 @@ export default function Chrome({ stageRef, slots, onCaptureClick }: ChromeProps)
 
       <div
         onClick={(e) => e.stopPropagation()}
-        className={`absolute right-0 bottom-0 left-0 flex flex-col gap-1 bg-gradient-to-t from-black/85 to-transparent px-4 pt-6 pb-3 transition-opacity duration-[var(--sc-dur-fast)] ease-out ${
+        className={`absolute right-0 bottom-0 left-0 flex flex-col gap-1 bg-gradient-to-t from-black/85 to-transparent px-3 pt-6 pb-3 transition-opacity duration-[var(--sc-dur-fast)] ease-out ${
           hidden ? "pointer-events-none opacity-0" : "opacity-100"
         }`}
       >
@@ -151,31 +243,29 @@ export default function Chrome({ stageRef, slots, onCaptureClick }: ChromeProps)
           className="h-1 w-full cursor-pointer appearance-none rounded-full bg-white/25 accent-(--sc-accent)"
           style={{
             backgroundImage: `linear-gradient(var(--sc-accent), var(--sc-accent))`,
-            backgroundSize: `${
-              snap.duration > 0 ? (snap.time / snap.duration) * 100 : 0
-            }% 100%`,
+            backgroundSize: `${snap.duration > 0 ? (snap.time / snap.duration) * 100 : 0}% 100%`,
             backgroundRepeat: "no-repeat",
           }}
         />
         <div className="flex items-center gap-2 text-xs text-text-2 tabular-nums">
           <span aria-label="Current time">{formatMss(snap.time)}</span>
-          <span>/</span>
+          <span aria-hidden>●</span>
           <span aria-label="Duration">{formatMss(snap.duration)}</span>
         </div>
-        <div className="flex flex-wrap items-center gap-1.5">
+        <div className="flex flex-wrap items-center gap-1">
           <button
             type="button"
             aria-label={snap.playing ? "Pause" : "Play"}
             onClick={() => (snap.playing ? commands.pause() : commands.play())}
-            className="rounded-md p-1.5 text-white/90 hover:bg-white/10"
+            className="sc-hit flex items-center justify-center rounded-md p-1.5 text-white/90 hover:bg-white/10"
           >
             {snap.playing ? (
-              <svg viewBox="0 0 24 24" fill="currentColor" className="h-4 w-4">
+              <svg viewBox="0 0 24 24" fill="currentColor" className="h-6 w-6">
                 <rect x="6" y="4" width="4" height="16" rx="1" />
                 <rect x="14" y="4" width="4" height="16" rx="1" />
               </svg>
             ) : (
-              <svg viewBox="0 0 24 24" fill="currentColor" className="h-4 w-4">
+              <svg viewBox="0 0 24 24" fill="currentColor" className="h-6 w-6">
                 <path d="M8 5.5v13a1 1 0 0 0 1.54.84l10-6.5a1 1 0 0 0 0-1.68l-10-6.5A1 1 0 0 0 8 5.5z" />
               </svg>
             )}
@@ -184,44 +274,33 @@ export default function Chrome({ stageRef, slots, onCaptureClick }: ChromeProps)
             type="button"
             aria-label="Back 15 seconds"
             onClick={() => seekBy(-15)}
-            className="rounded-md px-2 py-1.5 text-xs font-medium text-white/90 tabular-nums hover:bg-white/10"
+            className="sc-hit flex items-center justify-center rounded-md text-white/90 hover:bg-white/10"
           >
-            −15s
+            <RotateCcw size={24} strokeWidth={2} aria-hidden />
           </button>
           <button
             type="button"
             aria-label="Forward 15 seconds"
             onClick={() => seekBy(15)}
-            className="rounded-md px-2 py-1.5 text-xs font-medium text-white/90 tabular-nums hover:bg-white/10"
+            className="sc-hit flex items-center justify-center rounded-md text-white/90 hover:bg-white/10"
           >
-            +15s
+            <RotateCw size={24} strokeWidth={2} aria-hidden />
           </button>
 
-          <select
-            aria-label="Playback speed"
-            value={snap.rate}
-            onChange={(e) => commands.setRate(Number(e.target.value))}
-            className="rounded-md bg-black/40 px-1.5 py-1 text-xs text-white/90 outline-none hover:bg-white/10"
-          >
-            {RATE_STEPS.map((r) => (
-              <option key={r} value={r}>
-                {r}×
-              </option>
-            ))}
-          </select>
+          <span className="rounded-md bg-black/40 px-1.5 py-1 text-xs text-white/90 tabular-nums">{snap.rate}×</span>
 
           <button
             type="button"
-            aria-label="Captions"
-            aria-pressed={snap.captionsEnabled}
-            onClick={() => commands.setCaptions(!snap.captionsEnabled)}
-            className={`rounded-md px-2 py-1.5 text-xs font-semibold hover:bg-white/10 ${
-              snap.captionsEnabled
-                ? "text-(--sc-accent)"
-                : "text-white/50 line-through"
-            }`}
+            aria-label="Playback speed"
+            onClick={() => setSheetOpen(true)}
+            className="sc-hit flex items-center justify-center rounded-md text-white/90 hover:bg-white/10"
           >
-            CC
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden className="h-6 w-6">
+              <path d="M3 6h18M3 12h18M3 18h18" />
+              <circle cx="9" cy="6" r="2" />
+              <circle cx="15" cy="12" r="2" />
+              <circle cx="9" cy="18" r="2" />
+            </svg>
           </button>
 
           <input
@@ -232,26 +311,18 @@ export default function Chrome({ stageRef, slots, onCaptureClick }: ChromeProps)
             step={1}
             value={snap.volume}
             onChange={(e) => commands.setVolume(Number(e.target.value))}
-            className="h-1 w-20 cursor-pointer appearance-none rounded-full bg-white/25 accent-(--sc-accent)"
+            className="ml-1 hidden h-1 w-20 cursor-pointer appearance-none rounded-full bg-white/25 accent-(--sc-accent) sm:block"
           />
 
-          <div className="ml-auto flex items-center gap-1.5">
+          <div className="ml-auto flex items-center gap-1">
             {onCaptureClick && (
               <button
                 type="button"
                 aria-label="Capture frame"
                 onClick={onCaptureClick}
-                className="rounded-md p-1.5 text-white/90 hover:bg-white/10"
+                className="sc-hit flex items-center justify-center rounded-md text-white/90 hover:bg-white/10"
               >
-                <svg
-                  viewBox="0 0 24 24"
-                  fill="none"
-                  stroke="currentColor"
-                  strokeWidth="2"
-                  strokeLinecap="round"
-                  strokeLinejoin="round"
-                  className="h-4 w-4"
-                >
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" className="h-6 w-6">
                   <path d="M3 8a2 2 0 0 1 2-2h2l1.5-2h7L17 6h2a2 2 0 0 1 2 2v10a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z" />
                   <circle cx="12" cy="13" r="3.5" />
                 </svg>
@@ -263,17 +334,9 @@ export default function Chrome({ stageRef, slots, onCaptureClick }: ChromeProps)
               type="button"
               aria-label={fullscreen ? "Exit fullscreen" : "Fullscreen"}
               onClick={toggleFullscreen}
-              className="rounded-md p-1.5 text-white/90 hover:bg-white/10"
+              className="sc-hit flex items-center justify-center rounded-md text-white/90 hover:bg-white/10"
             >
-              <svg
-                viewBox="0 0 24 24"
-                fill="none"
-                stroke="currentColor"
-                strokeWidth="2"
-                strokeLinecap="round"
-                strokeLinejoin="round"
-                className="h-4 w-4"
-              >
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" className="h-6 w-6">
                 {fullscreen ? (
                   <>
                     <path d="M8 3v5H3" />
@@ -294,6 +357,9 @@ export default function Chrome({ stageRef, slots, onCaptureClick }: ChromeProps)
           </div>
         </div>
       </div>
+
+      <PlaybackSheet open={sheetOpen} onClose={() => setSheetOpen(false)} />
+      <div aria-hidden className="sc-yt-mask" />
     </div>
   );
 }

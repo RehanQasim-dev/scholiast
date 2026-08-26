@@ -13,10 +13,15 @@ tauri-build = { version = "2", features = [] }
 
 [dependencies]
 base64 = "0.22"
-reqwest = { version = "0.13", default-features = false, features = [
+# reqwest pinned to 0.12: 0.13's only rustls path is rustls-platform-verifier,
+# which cannot initialize on Android without a JNI bridge + a Kotlin AAR in the
+# gradle build, and hangs every HTTPS call without it. 0.12's
+# `rustls-tls-webpki-roots` bundles its roots and works everywhere (same choice
+# tauri-plugin-http makes).
+reqwest = { version = "0.12", default-features = false, features = [
   "charset",
   "multipart",
-  "rustls",
+  "rustls-tls-webpki-roots",
 ] }
 scholiast-core = { path = "../crates/core" }
 serde = { workspace = true }

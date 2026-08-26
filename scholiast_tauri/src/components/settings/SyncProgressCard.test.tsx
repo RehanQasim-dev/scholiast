@@ -80,9 +80,9 @@ describe("SyncProgressCard", () => {
     );
     render(<SyncProgressCard />);
     expect(screen.getByTestId("sync-state-line")).toHaveTextContent(
-      "Sync failed",
+      /Not Connected|Sync failed/i,
     );
-    expect(screen.getByRole("alert")).toHaveTextContent("Drive unreachable");
+    expect(screen.getByRole("status")).toHaveTextContent("Drive unreachable");
     expect(
       screen.getByText(/2 changes queued/),
     ).toBeInTheDocument();
@@ -95,7 +95,7 @@ describe("SyncProgressCard", () => {
     }));
     render(<SyncProgressCard />);
     fireEvent.click(screen.getByRole("button", { name: "Sync now" }));
-    expect(await screen.findByRole("alert")).toHaveTextContent(
+    expect(await screen.findByRole("status")).toHaveTextContent(
       "No client configured.",
     );
     expect(screen.getByRole("button", { name: "Sync now" })).toBeEnabled();

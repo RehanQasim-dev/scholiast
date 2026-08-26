@@ -52,6 +52,31 @@ function classifyError(error: unknown): TranscriptErrorKind | null {
 }
 
 /**
+ * The Rust side has no request timeout, so a hung innertube connection would
+ * leave the query pending forever (panel stuck on the skeleton). Settle it.
+ */
+const FETCH_TIMEOUT_MS = 20_000;
+
+function withTimeout<T>(promise: Promise<T>, ms: number): Promise<T> {
+  return new Promise<T>((resolve, reject) => {
+    const timer = setTimeout(
+      () => reject(new Error("timed out fetching the transcript")),
+      ms,
+    );
+    promise.then(
+      (value) => {
+        clearTimeout(timer);
+        resolve(value);
+      },
+      (error) => {
+        clearTimeout(timer);
+        reject(error);
+      },
+    );
+  });
+}
+
+/**
  * Fetches the transcript for a video via `fetch_transcript`. The session
  * language preference (`transcript.lang.<videoId>`) is sent as `langPref`;
  * `changeLang` stores it and refetches. Query key stays `['transcript', videoId]`.
@@ -68,7 +93,10 @@ export function useTranscript(videoId: string | null) {
   const query = useQuery({
     queryKey: ["transcript", videoId],
     queryFn: () =>
-      invokeCommand<TranscriptData>("fetch_transcript", { videoId, langPref }),
+      withTimeout(
+        invokeCommand<TranscriptData>("fetch_transcript", { videoId, langPref }),
+        FETCH_TIMEOUT_MS,
+      ),
     enabled: Boolean(videoId),
     staleTime: Number.POSITIVE_INFINITY,
     retry: false,
@@ -87,6 +115,7 @@ export function useTranscript(videoId: string | null) {
     isFetching: query.isFetching,
     langPref,
     changeLang,
+    refetch: query.refetch,
     errorKind: classifyError(query.error),
     errorMessage: query.error instanceof Error ? query.error.message : null,
   };

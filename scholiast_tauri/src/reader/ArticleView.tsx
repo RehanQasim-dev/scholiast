@@ -18,6 +18,14 @@ const CAPTURE_PENDING_COPY =
 const NOT_READABLE_COPY = "This page couldn't be extracted as readable text.";
 const IMAGE_FALLBACK_LABEL = "Image unavailable";
 
+function escapeHtml(text: string): string {
+  return text
+    .replaceAll("&", "&amp;")
+    .replaceAll("<", "&lt;")
+    .replaceAll(">", "&gt;")
+    .replaceAll('"', "&quot;");
+}
+
 export interface ArticleViewProps {
   title: string | null;
   byline?: string | null;
@@ -88,14 +96,28 @@ export default function ArticleView({
     const cleanups: (() => void)[] = [];
     const swapToChip = (img: HTMLImageElement) => {
       if (!img.isConnected) return;
-      const chip = document.createElement("span");
-      chip.className = "sc-article-imgchip";
-      chip.setAttribute("data-testid", "broken-image-chip");
-      chip.textContent = img.alt || IMAGE_FALLBACK_LABEL;
-      img.replaceWith(chip);
+      const alt = (img.alt || IMAGE_FALLBACK_LABEL).trim().slice(0, 80);
+      const wrap = document.createElement("div");
+      wrap.className = "sc-article-imgchip";
+      wrap.setAttribute("data-testid", "broken-image-chip");
+      wrap.setAttribute("role", "img");
+      wrap.setAttribute("aria-label", alt);
+      wrap.innerHTML =
+        '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" class="sc-article-imgchip-icon"><rect x="3" y="3" width="18" height="18" rx="3"/><path d="m9 9 6 6"/><path d="M15 9 9 15"/></svg>' +
+        `<span class="sc-article-imgchip-text">${escapeHtml(alt)}</span>`;
+      if (img.parentElement?.tagName === "FIGURE") {
+        const fig = img.parentElement as HTMLElement;
+        if (fig.querySelectorAll("img").length === 1) {
+          img.replaceWith(wrap);
+          return;
+        }
+      }
+      img.replaceWith(wrap);
     };
     root.querySelectorAll("img").forEach((img) => {
-      img.setAttribute("loading", "lazy");
+      if (!img.getAttribute("loading")) img.setAttribute("loading", "lazy");
+      img.setAttribute("decoding", "async");
+      img.setAttribute("referrerpolicy", "no-referrer");
       if (img.complete && img.naturalWidth === 0) {
         swapToChip(img);
         return;

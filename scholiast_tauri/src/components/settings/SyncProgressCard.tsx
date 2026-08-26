@@ -4,7 +4,7 @@ import { useSyncStatus } from "../../hooks/useSyncStatus";
 import { formatRelativeTime } from "../SyncStatusBar";
 
 function stateLine(phase: string | null, error: string | null): string {
-  if (error) return "Sync failed";
+  if (error) return "Not Connected • Tap to Authorize";
   switch (phase) {
     case "discovering":
       return "Discovering changes…";
@@ -28,7 +28,8 @@ export default function SyncProgressCard() {
     try {
       await invokeCommand("sync_now");
     } catch (err) {
-      setManualError(err instanceof Error ? err.message : String(err));
+      const raw = err instanceof Error ? err.message : String(err);
+      setManualError(/not connected|internal:/i.test(raw) ? "Not Connected • Tap to Authorize" : raw);
     } finally {
       setSyncing(false);
     }
@@ -43,9 +44,9 @@ export default function SyncProgressCard() {
   return (
     <section
       aria-label="Sync progress"
-      className="rounded-md border border-hairline bg-surface p-4"
+      className="rounded-lg border border-hairline bg-surface p-4"
     >
-      <h2 className="text-sm font-semibold">Sync progress</h2>
+      <h2 className="text-sm font-semibold text-text">Sync progress</h2>
       <p className="mt-2 text-sm text-text-2" data-testid="sync-state-line">
         {stateLine(status.phase, error)}
         {!running && !error && status.lastSynced !== null && (
@@ -100,7 +101,7 @@ export default function SyncProgressCard() {
       )}
 
       {error && (
-        <p className="mt-2 text-xs text-[var(--sc-danger)]" role="alert">
+        <p className="mt-2 text-xs text-text-2" role="status">
           {error}
         </p>
       )}
@@ -110,7 +111,7 @@ export default function SyncProgressCard() {
           type="button"
           onClick={syncNow}
           disabled={syncing}
-          className="rounded-sm bg-accent px-3 py-1.5 text-sm font-medium text-black disabled:opacity-50"
+          className="min-h-[48px] rounded-md bg-accent px-5 text-sm font-medium text-white hover:opacity-90 disabled:opacity-50"
         >
           {syncing ? "Syncing…" : "Sync now"}
         </button>

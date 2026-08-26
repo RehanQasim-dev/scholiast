@@ -11,6 +11,7 @@ import {
 import KeyboardButton from "./KeyboardButton";
 import TagAutocomplete, { matchTags, type TagMatch } from "./TagAutocomplete";
 import { toast } from "./Toast";
+import useIsNarrow from "../hooks/useIsNarrow";
 import { invokeCommand } from "../lib/ipc";
 import { playerBridge } from "../player/playerBridge";
 import { formatElapsedMs, useVoiceComment } from "../voice/useVoiceComment";
@@ -97,6 +98,7 @@ export default function CommentEditorSheet({
     kind: "add",
     enabled: Boolean(onVoiceDraft),
   });
+  const isNarrow = useIsNarrow();
 
   const tagsQuery = useQuery({
     queryKey: ["tags"],
@@ -380,7 +382,11 @@ export default function CommentEditorSheet({
 
   return (
     <div
-      className="fixed inset-0 z-40 flex items-center justify-center bg-black/60 p-4"
+      className={`fixed inset-0 z-40 flex bg-black/60 ${
+        isNarrow
+          ? "flex-col items-stretch justify-end"
+          : "items-center justify-center p-4"
+      }`}
       data-testid="sheet-backdrop"
       onMouseDown={(e) => {
         if (e.target === e.currentTarget) requestClose();
@@ -390,9 +396,19 @@ export default function CommentEditorSheet({
         role="dialog"
         aria-modal="true"
         aria-label="Add note"
-        className="flex w-[560px] min-h-[240px] flex-col gap-3 rounded-lg border border-hairline bg-elevated p-4 shadow-xl"
+        className={`flex flex-col gap-3 border border-hairline bg-elevated p-4 shadow-xl ${
+          isNarrow
+            ? "max-h-[88dvh] w-full overflow-y-auto rounded-t-xl pb-[calc(1rem+var(--sc-safe-bottom))]"
+            : "w-[560px] min-h-[240px] rounded-lg"
+        }`}
         data-testid="comment-editor-sheet"
       >
+        {isNarrow ? (
+          <div
+            aria-hidden="true"
+            className="-mt-1 mx-auto h-1.5 w-10 shrink-0 rounded-full bg-text-3"
+          />
+        ) : null}
         <textarea
           ref={textareaRef}
           value={draft}
@@ -406,7 +422,9 @@ export default function CommentEditorSheet({
           aria-label="Comment"
           placeholder="Add a note… **bold** · *italic* · #tag"
           disabled={saving}
-          className="w-full resize-y rounded-md border border-hairline bg-surface px-3 py-2 text-sm leading-relaxed text-text outline-none placeholder:text-text-3 focus:border-[color:var(--sc-accent)]"
+          className={`w-full resize-y rounded-md border border-hairline bg-surface px-3 text-sm leading-relaxed text-text outline-none placeholder:text-text-3 focus:border-[color:var(--sc-accent)] ${
+            isNarrow ? "min-h-[72px] py-3 text-base" : "py-2"
+          }`}
         />
 
         <div className="relative">
@@ -420,7 +438,9 @@ export default function CommentEditorSheet({
                 disabled={saving}
                 onMouseDown={(e) => e.preventDefault()}
                 onClick={btn.action}
-                className={`rounded px-2 py-1 text-xs text-text-2 hover:bg-surface hover:text-text disabled:opacity-40 ${btn.className}`}
+                className={`rounded px-2 py-1 text-xs text-text-2 hover:bg-surface hover:text-text disabled:opacity-40 ${
+                  isNarrow ? "min-h-[44px] min-w-[44px] px-2.5 py-2" : ""
+                } ${btn.className}`}
               >
                 {btn.label}
               </button>
@@ -519,7 +539,9 @@ export default function CommentEditorSheet({
               type="button"
               onClick={requestClose}
               disabled={saving}
-              className="rounded-md border border-hairline px-3 py-1.5 text-sm text-text-2 hover:text-text disabled:opacity-40"
+              className={`rounded-md border border-hairline text-sm text-text-2 hover:text-text disabled:opacity-40 ${
+                isNarrow ? "min-h-[48px] px-5 py-2.5" : "px-3 py-1.5"
+              }`}
             >
               Cancel
             </button>
@@ -527,7 +549,9 @@ export default function CommentEditorSheet({
               type="button"
               onClick={() => void save()}
               disabled={saving}
-              className="rounded-md bg-[color:var(--sc-accent)] px-3 py-1.5 text-sm font-medium text-white hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-50"
+              className={`rounded-md bg-[color:var(--sc-accent)] text-sm font-medium text-white hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-50 ${
+                isNarrow ? "min-h-[48px] px-6 py-2.5" : "px-3 py-1.5"
+              }`}
             >
               {saving ? "Saving…" : "Save"}
             </button>

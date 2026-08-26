@@ -21,13 +21,13 @@ export default function PlaybackSection() {
 
   return (
     <div className="grid gap-3 sm:grid-cols-2">
-      <label className="block text-sm">
+      <label className="block text-sm text-text-2">
         Default playback speed
         <select
           value={speed}
           onChange={(event) => setSpeed(event.target.value)}
           data-testid="pref-playback.default_speed"
-          className="mt-1 w-full rounded-sm border border-hairline bg-surface px-2 py-1.5"
+          className="mt-1 h-14 w-full rounded-md border border-hairline bg-elevated px-3 text-sm text-text outline-none focus:border-accent"
         >
           {SPEEDS.map((value) => (
             <option key={value} value={value}>
@@ -36,13 +36,13 @@ export default function PlaybackSection() {
           ))}
         </select>
       </label>
-      <label className="block text-sm">
+      <label className="block text-sm text-text-2">
         Seek step size
         <select
           value={seekStep}
           onChange={(event) => setSeekStep(event.target.value)}
           data-testid="pref-playback.seek_step"
-          className="mt-1 w-full rounded-sm border border-hairline bg-surface px-2 py-1.5"
+          className="mt-1 h-14 w-full rounded-md border border-hairline bg-elevated px-3 text-sm text-text outline-none focus:border-accent"
         >
           {SEEK_STEPS.map(([value, label]) => (
             <option key={value} value={value}>

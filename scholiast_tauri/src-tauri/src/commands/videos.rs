@@ -103,6 +103,46 @@ pub async fn set_resume_at(
     Ok(Reply::new(updated))
 }
 
+#[tauri::command]
+pub async fn add_note(
+    app: AppHandle,
+    state: State<'_, AppState>,
+    url_hash: String,
+    video_time: f64,
+    body: Option<String>,
+) -> Result<Reply<scholiast_core::models::VideoItem>, ScholiastError> {
+    let now = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|d| d.as_millis() as i64)
+        .unwrap_or(0);
+    let text = body.unwrap_or_default().trim().to_string();
+    let note = if text.is_empty() {
+        scholiast_core::models::format_note("", now)
+    } else {
+        scholiast_core::models::format_note(&text, now)
+    };
+    let item = scholiast_core::models::VideoItem {
+        id: scholiast_core::normalize::gen_video_id(),
+        kind: scholiast_core::models::VideoItemKind::Note,
+        video_time,
+        frame: None,
+        markup: None,
+        notes: vec![note],
+        updated_at: Some(now),
+        time_end: None,
+        quote: None,
+        color: None,
+        anchor: None,
+        excalidraw_scene: None,
+        extra: Default::default(),
+    };
+    Store::new(&state.pool)
+        .save_video_item(&url_hash, &item)
+        .await?;
+    emit_changed(&app, "video_items", &url_hash);
+    Ok(Reply::new(item))
+}
+
 // --- tags (#autocomplete index used by the comment editor task) ---------------
 
 #[tauri::command]

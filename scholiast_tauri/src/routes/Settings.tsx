@@ -16,7 +16,24 @@ function Group({
   children: React.ReactNode;
 }) {
   return (
-    <section className="space-y-3">
+    <section className="space-y-3 rounded-lg border border-hairline bg-surface p-4">
+      <h2 className="text-sm font-semibold uppercase tracking-wide text-text-2">
+        {title}
+      </h2>
+      {children}
+    </section>
+  );
+}
+
+function SingleCardGroup({
+  title,
+  children,
+}: {
+  title: string;
+  children: React.ReactNode;
+}) {
+  return (
+    <section className="space-y-3 rounded-lg border border-hairline bg-surface p-4">
       <h2 className="text-sm font-semibold uppercase tracking-wide text-text-2">
         {title}
       </h2>
@@ -27,8 +44,8 @@ function Group({
 
 export default function Settings() {
   return (
-    <div className="mx-auto max-w-3xl space-y-8 p-10">
-      <h1 className="text-2xl font-semibold">Settings</h1>
+    <div className="mx-auto max-w-3xl space-y-6 p-6 sm:p-10 bg-base min-h-full">
+      <h1 className="text-2xl font-semibold text-text">Settings</h1>
 
       <Group title="Speech">
         <SpeechSection />
@@ -40,10 +57,12 @@ export default function Settings() {
         <ModelManagerSection />
       </Group>
 
-      <Group title="Sync">
-        <DriveSection />
-        <SyncProgressCard />
-      </Group>
+      <SingleCardGroup title="Sync">
+        <div className="space-y-3">
+          <DriveSection />
+          <SyncProgressCard />
+        </div>
+      </SingleCardGroup>
 
       <Group title="Playback">
         <PlaybackSection />

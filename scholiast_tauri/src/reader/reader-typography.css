@@ -5,7 +5,9 @@
 
 .sc-article {
   width: min(var(--sc-article-width, 736px), 100%);
+  max-width: 65ch;
   margin-inline: auto;
+  padding-bottom: 5.5rem;
   font-size: calc(1rem + var(--reader-font-step, 0) * 1px);
   color: var(--sc-text);
 }
@@ -136,14 +138,18 @@
 }
 
 .sc-article-imgchip {
-  display: inline-flex;
+  display: flex;
   align-items: center;
-  gap: 0.5ch;
+  justify-content: center;
+  gap: 0.6rem;
+  width: 100%;
   max-width: 100%;
-  padding: 0.4rem 0.75rem;
-  border: 1px dashed var(--sc-hairline);
-  border-radius: var(--sc-radius-sm);
-  background: var(--sc-surface);
+  min-height: 88px;
+  margin: 1rem 0;
+  padding: 0.9rem 1rem;
+  border: 1px solid var(--sc-hairline);
+  border-radius: var(--sc-radius-md);
+  background: var(--sc-elevated);
   color: var(--sc-text-3);
   font-family:
     "Geist",
@@ -154,9 +160,43 @@
     Roboto,
     sans-serif;
   font-size: 0.8125rem;
-  white-space: nowrap;
+  text-align: center;
+  position: relative;
+  overflow: hidden;
+}
+
+.sc-article-imgchip::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(100deg, transparent 20%, rgba(255,255,255,0.04) 40%, transparent 60%);
+  background-size: 200% 100%;
+  animation: sc-shimmer 1.8s ease-in-out infinite;
+  pointer-events: none;
+}
+
+@keyframes sc-shimmer {
+  0% { background-position: 200% 0; }
+  100% { background-position: -200% 0; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .sc-article-imgchip::before { animation: none; }
+}
+
+.sc-article-imgchip-icon {
+  width: 18px;
+  height: 18px;
+  flex-shrink: 0;
+  opacity: 0.7;
+}
+
+.sc-article-imgchip-text {
+  max-width: 22ch;
   overflow: hidden;
   text-overflow: ellipsis;
+  white-space: nowrap;
+  opacity: 0.85;
 }
 
 .sc-article-body code {
@@ -196,6 +236,9 @@
   margin: 1.5em 0;
   border-collapse: collapse;
   font-size: 0.95em;
+  table-layout: fixed;
+  word-wrap: break-word;
+  overflow-wrap: anywhere;
 }
 
 .sc-article-body th,
@@ -204,6 +247,19 @@
   border: 1px solid var(--sc-hairline);
   text-align: left;
   vertical-align: top;
+  word-break: break-word;
+  overflow-wrap: anywhere;
+}
+
+.sc-article-body th[colspan],
+.sc-article-body td[colspan] {
+  word-break: break-word;
+  hyphens: auto;
+  white-space: normal;
+}
+
+.sc-article-body table:has(th[colspan]) {
+  table-layout: auto;
 }
 
 .sc-article-body th {

@@ -75,13 +75,13 @@ export default function ModelManagerSection() {
         return (
           <div
             key={model.id}
-            className="flex items-center justify-between gap-3 rounded-sm border border-hairline bg-elevated px-3 py-2"
+            className="flex items-center justify-between gap-3 rounded-lg border border-hairline bg-elevated px-3 py-2"
           >
             <button
               type="button"
               onClick={() => model.installed && void activate(model.id)}
               disabled={!model.installed || downloadingId !== null}
-              className={`text-left text-sm ${model.installed ? "hover:text-[var(--sc-accent)]" : "cursor-default text-text-2"}`}
+              className={`min-h-[48px] text-left text-sm ${model.installed ? "hover:text-[var(--sc-accent)]" : "cursor-default text-text-2"}`}
               title={model.installed ? "Activate" : undefined}
             >
               {model.label}
@@ -96,7 +96,7 @@ export default function ModelManagerSection() {
                 type="button"
                 onClick={() => void download(model.id)}
                 disabled={downloadingId !== null}
-                className="rounded-sm border border-hairline px-2 py-1 text-xs text-text-2 hover:text-text disabled:opacity-50"
+                className="min-h-[48px] rounded-md border border-hairline px-3 py-1.5 text-xs text-text-2 hover:text-text disabled:opacity-50"
               >
                 {downloadingId === model.id ? "Downloading…" : "Download"}
               </button>

@@ -56,7 +56,7 @@ function ensurePlayer(): Promise<YTPlayerLike> {
         stageDiv = document.createElement("div");
         stageDiv.dataset.scholiastStage = "";
         stageDiv.style.cssText =
-          "position:relative;width:100%;height:100%;background:#000";
+          "position:relative;width:100%;height:100%;background:#000;overflow:hidden";
       }
       const mount = document.createElement("div");
       stageDiv.appendChild(mount);
@@ -112,7 +112,7 @@ export default function PlayerHost() {
     <div
       ref={containerRef}
       aria-hidden="true"
-      className="pointer-events-none absolute inset-0 [&_iframe]:absolute [&_iframe]:inset-0 [&_iframe]:h-full [&_iframe]:w-full"
+      className="pointer-events-none absolute inset-0 overflow-hidden rounded-[inherit] [&_iframe]:absolute [&_iframe]:inset-0 [&_iframe]:h-full [&_iframe]:w-full [&_iframe]:border-0"
     />
   );
 }

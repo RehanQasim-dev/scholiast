@@ -1,6 +1,9 @@
-import { useState } from "react";
+import { useMemo, useState } from "react";
+import { useQuery } from "@tanstack/react-query";
+import { Edit3, FileText } from "lucide-react";
 import { usePlayerEvent } from "../player/playerBridge";
 import TranscriptPanel from "../player/TranscriptPanel";
+import { getVideoItems, upsertVideo } from "../lib/ipc";
 import NotesTab from "./NotesTab";
 
 type Tab = "notes" | "transcript";
@@ -15,39 +18,53 @@ export default function PanelTabs({ url, videoId }: PanelTabsProps) {
   const [captionsAvailable, setCaptionsAvailable] = useState(false);
   usePlayerEvent("onCaptionsAvailable", setCaptionsAvailable);
 
-  const tabClass = (active: boolean) =>
-    `rounded px-1 py-0.5 transition-colors duration-[var(--sc-dur-fast)] ease-out ${
-      active ? "text-text" : "hover:text-text"
-    }`;
+  const videoQuery = useQuery({
+    queryKey: ["video", url],
+    queryFn: () => upsertVideo({ url }),
+    enabled: Boolean(url),
+    staleTime: Infinity,
+  });
+  const urlHash = videoQuery.data?.urlHash;
+  const itemsQuery = useQuery({
+    queryKey: ["videoItems", urlHash],
+    queryFn: async () => getVideoItems({ urlHash: urlHash! }),
+    enabled: Boolean(urlHash),
+  });
+  const notesCount = useMemo(() => (itemsQuery.data ?? []).length, [itemsQuery.data]);
+
+  const segBase =
+    "sc-hit flex flex-1 items-center justify-center gap-1.5 rounded-md text-xs font-medium transition-colors duration-[var(--sc-dur-fast)] ease-out";
+  const segActive = "bg-elevated text-text";
+  const segIdle = "text-text-2 hover:text-text";
 
   return (
     <div className="flex min-h-0 flex-1 flex-col">
-      <div className="flex items-center gap-2 border-b border-hairline px-4 py-3 text-xs font-medium uppercase tracking-wide">
+      <div className="flex items-center gap-1 border-b border-hairline bg-surface px-2 py-2">
         <button
           type="button"
           onClick={() => setTab("notes")}
           aria-current={tab === "notes" ? "page" : undefined}
-          className={tabClass(tab === "notes")}
+          data-testid="panel-tab-notes"
+          className={`${segBase} ${tab === "notes" ? segActive : segIdle}`}
         >
-          Notes
+          <Edit3 size={24} strokeWidth={2} aria-hidden />
+          <span>Notes</span>
+          <span className="ml-0.5 rounded-full bg-accent px-1.5 py-0.5 text-[11px] font-semibold leading-none text-white">
+            {notesCount}
+          </span>
         </button>
-        <span aria-hidden className="text-text-3">
-          ·
-        </span>
         <button
           type="button"
           onClick={() => setTab("transcript")}
           disabled={!captionsAvailable}
           aria-disabled={!captionsAvailable}
           aria-current={tab === "transcript" ? "page" : undefined}
-          title={
-            captionsAvailable
-              ? undefined
-              : "No captions for this video"
-          }
-          className={`${tabClass(tab === "transcript")} disabled:text-text-3 disabled:hover:text-text-3`}
+          data-testid="panel-tab-transcript"
+          title={captionsAvailable ? undefined : "No captions for this video"}
+          className={`${segBase} ${tab === "transcript" ? segActive : segIdle} disabled:opacity-40`}
         >
-          Transcript
+          <FileText size={24} strokeWidth={2} aria-hidden />
+          <span>Transcript</span>
         </button>
       </div>
       {tab === "notes" ? (

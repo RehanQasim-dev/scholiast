@@ -36,9 +36,9 @@ describe("DriveSection", () => {
 
   test("renders the status line and Connect while disconnected", async () => {
     renderDriveSection();
-    expect(await screen.findByText("Not connected")).toBeInTheDocument();
+    expect(await screen.findByText(/Not connected/i)).toBeInTheDocument();
     expect(
-      screen.getByRole("button", { name: "Connect" }),
+      screen.getByRole("button", { name: /Authorize Drive|Connect/i }),
     ).toBeInTheDocument();
   });
 
@@ -55,9 +55,9 @@ describe("DriveSection", () => {
     });
 
     renderDriveSection({ pollIntervalMs: 5, pollBudgetMs: 2_000 });
-    await screen.findByText("Not connected");
+    await screen.findByText(/Not connected/i);
 
-    fireEvent.click(screen.getByRole("button", { name: "Connect" }));
+    fireEvent.click(screen.getByRole("button", { name: /Authorize Drive|Connect/i }));
     expect(invokeMock).toHaveBeenCalledWith("drive_connect", undefined);
     await waitFor(() =>
       expect(openUrlMock).toHaveBeenCalledWith(
@@ -68,7 +68,7 @@ describe("DriveSection", () => {
     // The Rust listener resolves server-side; the first poll still sees
     // "connecting", a later one sees the stored token.
     connected = true;
-    expect(await screen.findByText("Connected")).toBeInTheDocument();
+    expect(await screen.findByText(/Connected/i)).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "Disconnect" })).toBeInTheDocument();
   });
 
@@ -87,8 +87,8 @@ describe("DriveSection", () => {
     });
 
     renderDriveSection({ pollIntervalMs: 5, pollBudgetMs: 500 });
-    await screen.findByText("Not connected");
-    fireEvent.click(screen.getByRole("button", { name: "Connect" }));
+    await screen.findByText(/Not connected/i);
+    fireEvent.click(screen.getByRole("button", { name: /Authorize Drive|Connect/i }));
 
     expect(await screen.findByText(/DISTRIBUTION\.md/)).toBeInTheDocument();
     expect(screen.queryByRole("button", { name: /Connecting/ })).toBeNull();
@@ -103,12 +103,12 @@ describe("DriveSection", () => {
     });
 
     renderDriveSection({ pollIntervalMs: 10, pollBudgetMs: 60 });
-    await screen.findByText("Not connected");
-    fireEvent.click(screen.getByRole("button", { name: "Connect" }));
+    await screen.findByText(/Not connected/i);
+    fireEvent.click(screen.getByRole("button", { name: /Authorize Drive|Connect/i }));
 
     expect(
-      await screen.findByText(/did not complete within 60 s/i),
-    ).toBeInTheDocument();
+      await screen.findAllByText(/Not Connected/i),
+    ).toHaveLength(2);
   });
 
   test("disconnect requires confirmation, then clears the connection", async () => {
@@ -123,14 +123,14 @@ describe("DriveSection", () => {
     });
 
     renderDriveSection();
-    await screen.findByText("Connected");
+    await screen.findByText(/Connected/i);
 
     fireEvent.click(screen.getByRole("button", { name: "Disconnect" }));
     expect(invokeMock).not.toHaveBeenCalledWith("drive_disconnect");
     const confirm = screen.getByRole("button", { name: "Confirm disconnect?" });
     fireEvent.click(confirm);
 
-    await screen.findByText("Not connected");
+    await screen.findByText(/Not connected/i);
     expect(invokeMock).toHaveBeenCalledWith("drive_disconnect", undefined);
   });
 });

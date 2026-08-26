@@ -1,60 +1,20 @@
 import { useEffect, useState } from "react";
-import type { FormEvent } from "react";
-import { useNavigate } from "react-router-dom";
 import { useQueryClient } from "@tanstack/react-query";
 import { listen } from "@tauri-apps/api/event";
+import { Settings } from "lucide-react";
 import OpenLinkField from "../components/OpenLinkField";
 import RecentGrid from "../components/RecentGrid";
-import SyncStatusBar from "../components/SyncStatusBar";
-import { ToastHost, toast } from "../components/Toast";
-import { addArticle } from "../lib/readerIpc";
+import SyncStatusCard from "../components/SyncStatusCard";
+import { ToastHost } from "../components/Toast";
+import { useDeepLinks } from "../lib/deepLink";
+import SettingsPage from "./Settings";
 
 const RECENT_KEY = ["videos", "recent"] as const;
 
-function AddArticleField() {
-  const [value, setValue] = useState("");
-  const navigate = useNavigate();
-
-  const handleSubmit = async (event: FormEvent) => {
-    event.preventDefault();
-    const url = value.trim();
-    if (!url) return;
-    try {
-      const added = await addArticle({ url });
-      navigate(
-        `/reader?url=${encodeURIComponent(url)}&h=${encodeURIComponent(added.urlHash)}`,
-      );
-    } catch {
-      toast("Couldn't add that article");
-    }
-  };
-
-  return (
-    <form
-      onSubmit={(event) => void handleSubmit(event)}
-      className="flex items-center gap-2 rounded-lg border border-hairline bg-surface p-2 transition-colors duration-[var(--sc-dur-fast)] ease-out focus-within:border-accent"
-    >
-      <input
-        aria-label="Article URL"
-        value={value}
-        onChange={(event) => setValue(event.target.value)}
-        placeholder="Paste an article URL to read + annotate"
-        spellCheck={false}
-        autoComplete="off"
-        className="min-w-0 flex-1 bg-transparent px-3 py-3 text-lg text-text outline-none placeholder:text-text-3"
-      />
-      <button
-        type="submit"
-        className="rounded-md border border-hairline px-5 py-3 text-sm font-semibold text-text-2 transition-colors duration-[var(--sc-dur-fast)] ease-out hover:bg-elevated hover:text-text"
-      >
-        Add article
-      </button>
-    </form>
-  );
-}
-
 export default function Home() {
   const queryClient = useQueryClient();
+  const [settingsOpen, setSettingsOpen] = useState(false);
+  useDeepLinks();
 
   useEffect(() => {
     let dispose: (() => void) | undefined;
@@ -80,23 +40,54 @@ export default function Home() {
   }, [queryClient]);
 
   return (
-    <section className="mx-auto flex w-full max-w-3xl flex-col gap-8 px-8 py-12">
+    <section className="mx-auto flex w-full max-w-3xl flex-col gap-6 px-6 py-6">
       <ToastHost />
-      <header className="flex items-start justify-between gap-4">
-        <div className="flex flex-col gap-1">
-          <h1 className="text-2xl font-semibold text-text">Home</h1>
-          <p className="text-sm text-text-2">
-            Open a lecture and take timestamped notes.
-          </p>
-        </div>
-        <SyncStatusBar />
+      <header className="flex items-center justify-between gap-4">
+        <h1 className="text-xl font-semibold tracking-tight text-text">Scholiast</h1>
+        <button
+          type="button"
+          aria-label="Open settings"
+          onClick={() => setSettingsOpen(true)}
+          className="flex h-12 w-12 shrink-0 items-center justify-center rounded-md text-text-2 transition-colors hover:bg-elevated hover:text-text focus-visible:outline-none"
+        >
+          <Settings size={24} strokeWidth={2} style={{ strokeLinecap: "round", strokeLinejoin: "round" } as React.CSSProperties} />
+        </button>
       </header>
       <OpenLinkField />
-      <AddArticleField />
-      <section aria-label="Recent videos" className="flex flex-col gap-3">
-        <h2 className="text-xs font-medium uppercase tracking-wide text-text-3">Recent</h2>
+      <section aria-label="Your library" className="flex flex-col gap-2">
+        <h2 className="text-[11px] font-medium uppercase tracking-wide text-text-3">Your Library</h2>
         <RecentGrid />
       </section>
+      <section aria-label="Sync status" className="flex flex-col gap-2">
+        <h2 className="text-[11px] font-medium uppercase tracking-wide text-text-3">Sync Status</h2>
+        <SyncStatusCard />
+      </section>
+
+      {settingsOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+          <div
+            className="absolute inset-0 bg-black/60 backdrop-blur-sm"
+            onClick={() => setSettingsOpen(false)}
+            aria-hidden="true"
+          />
+          <div
+            role="dialog"
+            aria-modal="true"
+            aria-label="Settings"
+            className="relative max-h-[90vh] w-full max-w-3xl overflow-y-auto rounded-lg border border-hairline bg-surface shadow-xl"
+          >
+            <button
+              type="button"
+              aria-label="Close settings"
+              onClick={() => setSettingsOpen(false)}
+              className="absolute right-3 top-3 flex h-12 w-12 items-center justify-center rounded-md text-text-2 hover:bg-elevated hover:text-text"
+            >
+              <span aria-hidden className="text-xl leading-none">×</span>
+            </button>
+            <SettingsPage />
+          </div>
+        </div>
+      )}
     </section>
   );
 }

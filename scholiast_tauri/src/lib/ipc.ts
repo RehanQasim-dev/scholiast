@@ -97,3 +97,11 @@ export function deleteVideoItem(args: {
 }): Promise<boolean> {
   return invokeCommand<boolean>("delete_video_item", args);
 }
+
+export function addNote(args: {
+  urlHash: string;
+  videoTime: number;
+  body?: string;
+}): Promise<VideoItem> {
+  return invokeCommand<VideoItem>("add_note", args);
+}

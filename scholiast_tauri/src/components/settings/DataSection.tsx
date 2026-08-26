@@ -1,5 +1,5 @@
 import { useQueryClient } from "@tanstack/react-query";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { invokeCommand } from "../../lib/ipc";
 
 interface DataStats {
@@ -46,6 +46,15 @@ export default function DataSection({ fetchStats }: DataSectionProps) {
     setTyped("");
   }
 
+  useEffect(() => {
+    if (dialog === null) return;
+    const onKey = (event: KeyboardEvent) => {
+      if (event.key === "Escape") close();
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [dialog]);
+
   const confirmed = typed.trim().toLowerCase() === CONFIRM_WORD;
 
   async function runWipe() {
@@ -79,14 +88,14 @@ export default function DataSection({ fetchStats }: DataSectionProps) {
         <button
           type="button"
           onClick={() => void open("local")}
-          className="rounded-sm border border-[var(--sc-danger)] px-3 py-1.5 text-sm text-[var(--sc-danger)] hover:bg-elevated"
+          className="min-h-[48px] rounded-md border border-[var(--sc-danger)] px-4 py-2 text-sm text-[var(--sc-danger)] hover:bg-elevated"
         >
           Delete local data…
         </button>
         <button
           type="button"
           onClick={() => void open("drive")}
-          className="rounded-sm border border-hairline px-3 py-1.5 text-sm text-text-2 hover:text-text"
+          className="min-h-[48px] rounded-md border border-hairline px-4 py-2 text-sm text-text-2 hover:text-text hover:bg-elevated"
         >
           Delete all data on Google Drive…
         </button>
@@ -104,62 +113,72 @@ export default function DataSection({ fetchStats }: DataSectionProps) {
       )}
 
       {dialog !== null && (
-        <div
-          role="dialog"
-          aria-modal="true"
-          aria-label={dialog === "local" ? "Delete local data" : "Delete Drive data"}
-          className="rounded-md border border-[var(--sc-danger)] bg-elevated p-4"
-        >
-          {dialog === "local" ? (
-            <>
-              <h4 className="text-sm font-semibold text-[var(--sc-danger)]">
-                Delete all local data?
-              </h4>
-              <p className="mt-2 text-sm text-text-2" data-testid="local-counts">
-                {stats
-                  ? `This permanently removes ${stats.videos} ${stats.videos === 1 ? "video" : "videos"} and ${stats.items} ${stats.items === 1 ? "item" : "items"} plus saved frames and models on this device.`
-                  : "This permanently removes every video, item, frame file and downloaded model on this device."}
-              </p>
-            </>
-          ) : (
-            <>
-              <h4 className="text-sm font-semibold text-[var(--sc-danger)]">
-                Delete all Scholiast data on Google Drive?
-              </h4>
-              <p className="mt-2 text-sm text-text-2">
-                Every file in the hidden app folder is removed from Drive.
-                Local annotations stay; a later sync may push them back.
-              </p>
-            </>
-          )}
-          <p className="mt-2 text-xs text-text-2">
-            Type <span className="font-mono">{CONFIRM_WORD}</span> to confirm.
-          </p>
-          <input
-            value={typed}
-            onChange={(event) => setTyped(event.target.value)}
-            data-testid="wipe-confirm-input"
-            aria-label={`Type ${CONFIRM_WORD} to confirm`}
-            className="mt-2 w-full rounded-sm border border-hairline bg-surface px-2 py-1.5 text-sm"
+        <div className="fixed inset-0 z-40 flex items-end justify-center p-4">
+          <button
+            type="button"
+            aria-label="Close"
+            onClick={close}
+            className="absolute inset-0 bg-black/60 backdrop-blur-sm"
           />
-          <div className="mt-3 flex gap-2">
-            <button
-              type="button"
-              onClick={() => void runWipe()}
-              disabled={!confirmed || busy}
-              data-testid="wipe-confirm-button"
-              className="rounded-sm bg-[var(--sc-danger)] px-3 py-1.5 text-sm font-medium text-black disabled:opacity-40"
-            >
-              {busy ? "Deleting…" : "Delete"}
-            </button>
-            <button
-              type="button"
-              onClick={close}
-              disabled={busy}
-              className="rounded-sm border border-hairline px-3 py-1.5 text-sm text-text-2 hover:text-text disabled:opacity-50"
-            >
-              Cancel
-            </button>
+          <div
+            role="dialog"
+            aria-modal="true"
+            aria-label={dialog === "local" ? "Delete local data" : "Delete Drive data"}
+            className="relative w-full max-w-lg rounded-md border border-hairline bg-elevated p-5 shadow-2xl"
+          >
+            {dialog === "local" ? (
+              <>
+                <h4 className="text-sm font-semibold text-[var(--sc-danger)]">
+                  Delete all local data?
+                </h4>
+                <p className="mt-2 text-sm text-text-2" data-testid="local-counts">
+                  {stats
+                    ? `This permanently removes ${stats.videos} ${stats.videos === 1 ? "video" : "videos"} and ${stats.items} ${stats.items === 1 ? "item" : "items"} plus saved frames and models on this device.`
+                    : "This permanently removes every video, item, frame file and downloaded model on this device."}
+                </p>
+              </>
+            ) : (
+              <>
+                <h4 className="text-sm font-semibold text-[var(--sc-danger)]">
+                  Delete all Scholiast data on Google Drive?
+                </h4>
+                <p className="mt-2 text-sm text-text-2">
+                  Every file in the hidden app folder is removed from Drive.
+                  Local annotations stay; a later sync may push them back.
+                </p>
+              </>
+            )}
+            <p className="mt-3 text-xs text-text-2">
+              Type <span className="font-mono font-semibold">{CONFIRM_WORD}</span> to confirm.
+            </p>
+            <input
+              value={typed}
+              onChange={(event) => setTyped(event.target.value)}
+              data-testid="wipe-confirm-input"
+              aria-label={`Type ${CONFIRM_WORD} to confirm`}
+              placeholder={CONFIRM_WORD}
+              autoFocus
+              className="mt-2 h-14 w-full rounded-md border border-hairline bg-surface px-3 text-sm outline-none focus:border-[var(--sc-danger)]"
+            />
+            <div className="mt-4 flex gap-2">
+              <button
+                type="button"
+                onClick={() => void runWipe()}
+                disabled={!confirmed || busy}
+                data-testid="wipe-confirm-button"
+                className="min-h-[48px] flex-1 rounded-md bg-[var(--sc-danger)] px-4 py-3 text-sm font-semibold text-white disabled:opacity-40"
+              >
+                {busy ? "Deleting…" : "Delete"}
+              </button>
+              <button
+                type="button"
+                onClick={close}
+                disabled={busy}
+                className="min-h-[48px] flex-1 rounded-md border border-hairline px-4 py-3 text-sm text-text-2 hover:text-text disabled:opacity-50"
+              >
+                Cancel
+              </button>
+            </div>
           </div>
         </div>
       )}

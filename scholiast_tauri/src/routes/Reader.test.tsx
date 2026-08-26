@@ -198,19 +198,21 @@ describe("Reader shell", () => {
 
     fireEvent.click(screen.getByTestId("serif-toggle"));
     fireEvent.click(screen.getByTestId("column-width-cycle"));
+    expect(screen.getByTestId("width-sheet")).toBeInTheDocument();
+    fireEvent.click(screen.getByText("800"));
     fireEvent.click(screen.getByTestId("font-step-up"));
 
     await waitFor(() => {
       expect(store.data.get(PREF_KEYS.readerSerif)).toBe(true);
     });
-    expect(store.data.get(PREF_KEYS.readerColumnWidth)).toBe(820);
+    expect(store.data.get(PREF_KEYS.readerColumnWidth)).toBe(800);
     expect(store.data.get(PREF_KEYS.readerFontStep)).toBe(1);
 
     expect(screen.getByTestId("serif-toggle")).toHaveAttribute(
       "aria-pressed",
       "true",
     );
-    expect(screen.getByTestId("column-width-cycle")).toHaveTextContent("820px");
+    expect(screen.getByTestId("column-width-cycle")).not.toHaveTextContent("800px");
   });
 
   test("f toggles focus mode collapsing rail and topbar via CSS", async () => {

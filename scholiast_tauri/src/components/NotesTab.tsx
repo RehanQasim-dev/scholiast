@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { listen } from "@tauri-apps/api/event";
-import { deleteVideoItem, getVideoItems, upsertVideo } from "../lib/ipc";
+import { deleteVideoItem, getVideoItems, upsertVideo, invokeCommand } from "../lib/ipc";
 import NoteCard, { type TimelineItem } from "./NoteCard";
 
 export function orderItems(items: TimelineItem[]): TimelineItem[] {
@@ -26,7 +26,6 @@ export default function NotesTab({ url, deleteGraceMs = 5000 }: NotesTabProps) {
   const [pending, setPending] = useState<PendingDelete | null>(null);
   const pendingRef = useRef<PendingDelete | null>(null);
   const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-
   const videoQuery = useQuery({
     queryKey: ["video", url],
     queryFn: () => upsertVideo({ url }),
@@ -122,6 +121,22 @@ export default function NotesTab({ url, deleteGraceMs = 5000 }: NotesTabProps) {
     }
   };
 
+  const handleEdit = async (item: TimelineItem, body: string) => {
+    if (!urlHash) return;
+    const note = `${body}<!--timestamp:${Date.now()}-->`;
+    const nextNotes = item.notes.length > 0 ? item.notes.map((_, i) => (i === 0 ? note : item.notes[i]!)) : [note];
+    const updated: TimelineItem = { ...item, notes: nextNotes, updatedAt: Date.now() };
+    queryClient.setQueryData<TimelineItem[]>(["videoItems", urlHash], (prev) =>
+      prev ? prev.map((i) => (i.id === item.id ? updated : i)) : prev,
+    );
+    try {
+      await invokeCommand("save_video_item", { urlHash, item: updated });
+      await queryClient.invalidateQueries({ queryKey: ["videoItems", urlHash] });
+    } catch {
+      await queryClient.invalidateQueries({ queryKey: ["videoItems", urlHash] });
+    }
+  };
+
   if (!url || videoQuery.isError) {
     return (
       <p className="p-4 text-sm text-text-2">
@@ -151,7 +166,10 @@ export default function NotesTab({ url, deleteGraceMs = 5000 }: NotesTabProps) {
   const items = itemsQuery.data ?? [];
 
   return (
-    <div className="flex min-h-full flex-col gap-2 p-3">
+    <div
+      className="relative flex min-h-[320px] flex-col gap-2 p-3"
+      style={{ paddingBottom: "calc(5.5rem + var(--sc-safe-bottom) + 24px)" }}
+    >
       {items.length === 0 ? (
         <div className="flex flex-col items-center gap-1 rounded-lg border border-dashed border-hairline px-6 py-12 text-center">
           <p className="text-sm font-medium text-text">No notes yet.</p>
@@ -162,7 +180,7 @@ export default function NotesTab({ url, deleteGraceMs = 5000 }: NotesTabProps) {
         </div>
       ) : (
         items.map((item) => (
-          <NoteCard key={item.id} item={item} onDelete={startDelete} />
+          <NoteCard key={item.id} item={item} onDelete={startDelete} onEdit={handleEdit} />
         ))
       )}
       {pending && (

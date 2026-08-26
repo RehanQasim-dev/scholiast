@@ -35,7 +35,12 @@
     "deep-link": {
       "desktop": {
         "schemes": ["scholiast"]
-      }
+      },
+      "mobile": [
+        {
+          "scheme": ["scholiast"]
+        }
+      ]
     }
   }
 }

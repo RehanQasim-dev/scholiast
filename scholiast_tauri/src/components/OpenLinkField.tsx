@@ -1,7 +1,10 @@
 import { useState } from "react";
 import type { FormEvent } from "react";
 import { useNavigate } from "react-router-dom";
+import { useQueryClient } from "@tanstack/react-query";
+import { Clipboard, Search } from "lucide-react";
 import { upsertVideo } from "../lib/ipc";
+import { addArticle } from "../lib/readerIpc";
 import { extractVideoId } from "../routes/Player";
 import { toast } from "./Toast";
 
@@ -13,63 +16,96 @@ function openPlayerPath(url: string): string {
   return `/player?url=${encodeURIComponent(url)}`;
 }
 
+function isYouTubeInput(input: string): boolean {
+  const v = input.trim();
+  if (!v) return false;
+  if (extractVideoId(v)) return true;
+  return /youtube\.com|youtu\.be|youtube-nocookie\.com/i.test(v);
+}
+
+const RECENT_KEY = ["videos", "recent"] as const;
+
 export default function OpenLinkField() {
   const [value, setValue] = useState("");
   const navigate = useNavigate();
+  const queryClient = useQueryClient();
 
-  const open = () => {
-    const videoId = extractVideoId(value);
-    if (!videoId) {
-      toast("That link isn't a YouTube video URL");
+  const handlePasteFromClipboard = async () => {
+    try {
+      const text = await navigator.clipboard.readText();
+      if (text) setValue(text.trim());
+    } catch {
+      toast("Clipboard unavailable");
+    }
+  };
+
+  const handleSubmit = async (event: FormEvent) => {
+    event.preventDefault();
+    const trimmed = value.trim();
+    if (!trimmed) {
+      toast("Paste a link to add");
       return;
     }
-    const url = canonicalWatchUrl(videoId);
-    void upsertVideo({ url, videoId }).catch(() => {});
-    navigate(openPlayerPath(url));
-  };
-
-  const pasteFromClipboard = async () => {
-    try {
-      const text = (await navigator.clipboard.readText()).trim();
-      if (!text) {
-        toast("Clipboard is empty");
+    const isVideo = isYouTubeInput(trimmed);
+    if (isVideo) {
+      const videoId = extractVideoId(trimmed);
+      if (!videoId) {
+        toast("That link isn't a YouTube video URL");
         return;
       }
-      setValue(text);
-    } catch {
-      toast("Clipboard unavailable — paste into the field instead");
+      const url = canonicalWatchUrl(videoId);
+      try {
+        await upsertVideo({ url, videoId });
+      } catch {
+        /* best-effort; navigation still shows player */
+      }
+      await queryClient.invalidateQueries({ queryKey: RECENT_KEY });
+      navigate(openPlayerPath(url));
+    } else {
+      if (!/^https?:\/\//i.test(trimmed)) {
+        toast("Couldn't add that article");
+        return;
+      }
+      try {
+        const added = await addArticle({ url: trimmed });
+        await queryClient.invalidateQueries({ queryKey: RECENT_KEY });
+        navigate(`/reader?url=${encodeURIComponent(trimmed)}&h=${encodeURIComponent(added.urlHash)}`);
+      } catch {
+        toast("Couldn't add that article");
+      }
     }
-  };
-
-  const handleSubmit = (event: FormEvent) => {
-    event.preventDefault();
-    open();
   };
 
   return (
     <form
-      onSubmit={handleSubmit}
-      className="flex items-center gap-2 rounded-lg border border-hairline bg-surface p-2 transition-colors duration-[var(--sc-dur-fast)] ease-out focus-within:border-accent"
+      onSubmit={(event) => void handleSubmit(event)}
+      aria-label="Open link"
+      className="flex h-12 max-h-12 items-center gap-0 overflow-hidden rounded-md border border-hairline bg-elevated focus-within:border-accent"
     >
+      <span className="flex h-12 w-12 shrink-0 items-center justify-center text-text-3" aria-hidden="true">
+        <Search size={24} strokeWidth={2} style={{ strokeLinecap: "round", strokeLinejoin: "round" } as React.CSSProperties} />
+      </span>
       <input
-        aria-label="YouTube link"
+        aria-label="Paste YouTube or URL..."
         value={value}
         onChange={(event) => setValue(event.target.value)}
-        placeholder="Paste a YouTube link"
+        placeholder="Paste YouTube or URL..."
         spellCheck={false}
         autoComplete="off"
-        className="min-w-0 flex-1 bg-transparent px-3 py-3 text-lg text-text outline-none placeholder:text-text-3"
+        className="min-w-0 flex-1 bg-transparent py-3 text-[15px] leading-none text-text outline-none placeholder:text-text-3"
       />
       <button
         type="button"
-        onClick={() => void pasteFromClipboard()}
-        className="rounded-md px-4 py-3 text-sm font-medium text-text-2 transition-colors duration-[var(--sc-dur-fast)] ease-out hover:bg-elevated hover:text-text"
+        aria-label="Paste from clipboard"
+        onClick={() => void handlePasteFromClipboard()}
+        className="flex h-12 w-12 shrink-0 items-center justify-center text-text-2 transition-colors hover:text-text focus-visible:outline-none"
       >
-        Paste
+        <Clipboard size={24} strokeWidth={2} style={{ strokeLinecap: "round", strokeLinejoin: "round" } as React.CSSProperties} />
       </button>
       <button
         type="submit"
-        className="rounded-md bg-accent px-5 py-3 text-sm font-semibold text-white transition-opacity duration-[var(--sc-dur-fast)] ease-out hover:opacity-90"
+        aria-label="Open"
+        className="mr-1 flex h-10 shrink-0 items-center justify-center rounded-md bg-accent px-4 text-sm font-semibold text-white transition-opacity hover:opacity-90"
       >
         Open
       </button>

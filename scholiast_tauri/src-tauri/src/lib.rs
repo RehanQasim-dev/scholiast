@@ -55,6 +55,7 @@ pub fn run() {
             commands::videos::save_video_item,
             commands::videos::delete_video_item,
             commands::videos::set_resume_at,
+            commands::videos::add_note,
             commands::videos::upsert_tag,
             commands::videos::list_tags,
             stt::recording::voice_begin,

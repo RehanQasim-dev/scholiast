@@ -69,7 +69,6 @@ describe("Chrome", () => {
     expect(screen.getByLabelText("Back 15 seconds")).toBeInTheDocument();
     expect(screen.getByLabelText("Forward 15 seconds")).toBeInTheDocument();
     expect(screen.getByLabelText("Playback speed")).toBeInTheDocument();
-    expect(screen.getByLabelText("Captions")).toBeInTheDocument();
     expect(screen.getByLabelText("Volume")).toBeInTheDocument();
     expect(screen.getByLabelText("Fullscreen")).toBeInTheDocument();
   });
@@ -105,11 +104,13 @@ describe("Chrome", () => {
     playerBridge.attach(player);
     renderChrome();
 
-    fireEvent.change(screen.getByLabelText("Playback speed"), {
-      target: { value: "1.5" },
-    });
+    expect(screen.queryByRole("listbox")).not.toBeInTheDocument();
+    fireEvent.click(screen.getByLabelText("Playback speed"));
+    expect(screen.getByRole("listbox")).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("option", { name: "1.5×" }));
 
     expect(calls).toContain("setPlaybackRate:1.5");
+    expect(screen.queryByRole("listbox")).not.toBeInTheDocument();
   });
 
   it("surfaces embedding-disabled errors as an overlay message", () => {

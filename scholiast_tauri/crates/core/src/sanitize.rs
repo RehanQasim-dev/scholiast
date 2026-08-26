@@ -139,11 +139,48 @@ fn push_allowed_attrs(
 ) {
     match name {
         "img" => {
-            if let Some(src) = element.attr("src").and_then(|raw| resolve_url(base, raw)) {
+            let resolved_src = element
+                .attr("src")
+                .and_then(|raw| resolve_url(base, raw))
+                .or_else(|| {
+                    element
+                        .attr("srcset")
+                        .and_then(first_srcset_url)
+                        .and_then(|raw| resolve_url(base, &raw))
+                })
+                .or_else(|| {
+                    element
+                        .attr("data-src")
+                        .and_then(|raw| resolve_url(base, raw))
+                })
+                .or_else(|| {
+                    element
+                        .attr("data-original-src")
+                        .and_then(|raw| resolve_url(base, raw))
+                })
+                .or_else(|| {
+                    element
+                        .attr("data-srcset")
+                        .and_then(first_srcset_url)
+                        .and_then(|raw| resolve_url(base, &raw))
+                });
+            if let Some(src) = resolved_src {
                 push_attr(out, "src", &src);
             }
             if let Some(alt) = element.attr("alt") {
                 push_attr(out, "alt", alt);
+            }
+            if let Some(w) = element.attr("width").filter(|v| is_positive_int(v)) {
+                push_attr(out, "width", w);
+            }
+            if let Some(h) = element.attr("height").filter(|v| is_positive_int(v)) {
+                push_attr(out, "height", h);
+            }
+            if let Some(loading) = element
+                .attr("loading")
+                .filter(|v| matches!(*v, "lazy" | "eager"))
+            {
+                push_attr(out, "loading", loading);
             }
         }
         "a" => {
@@ -151,8 +188,32 @@ fn push_allowed_attrs(
                 push_attr(out, "href", &href);
             }
         }
+        "td" | "th" => {
+            if let Some(cs) = element.attr("colspan").filter(|v| is_span_value(v)) {
+                push_attr(out, "colspan", cs);
+            }
+            if let Some(rs) = element.attr("rowspan").filter(|v| is_span_value(v)) {
+                push_attr(out, "rowspan", rs);
+            }
+        }
         _ => {}
     }
+}
+
+fn first_srcset_url(srcset: &str) -> Option<String> {
+    srcset
+        .split(',')
+        .next()
+        .and_then(|c| c.trim().split_ascii_whitespace().next())
+        .map(|s| s.to_string())
+}
+
+fn is_span_value(v: &str) -> bool {
+    v.trim().parse::<u32>().is_ok_and(|n| (1..=1000).contains(&n))
+}
+
+fn is_positive_int(v: &str) -> bool {
+    v.trim().parse::<u32>().is_ok_and(|n| n > 0 && n <= 10000)
 }
 
 fn push_attr(out: &mut String, name: &str, value: &str) {
@@ -275,7 +336,7 @@ mod tests {
         );
         assert_eq!(
             out,
-            "<img src=\"https://example.com/img/pic.jpg\" alt=\"A picture\">"
+            "<img src=\"https://example.com/img/pic.jpg\" alt=\"A picture\" loading=\"lazy\">"
         );
     }
 

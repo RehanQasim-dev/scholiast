@@ -44,26 +44,7 @@ const NAV_ITEMS = [
       </>
     ),
   },
-  {
-    to: "/settings",
-    label: "Settings",
-    icon: (
-      <>
-        <path d="M20 7h-9" />
-        <path d="M14 17H5" />
-        <circle cx="17" cy="17" r="3" />
-        <circle cx="7" cy="7" r="3" />
-      </>
-    ),
-  },
 ];
-
-const GEAR_ICON = (
-  <>
-    <path d="M12.22 2h-.44a2 2 0 0 0-2 2v.18a2 2 0 0 1-1 1.73l-.43.25a2 2 0 0 1-2 0l-.15-.08a2 2 0 0 0-2.73.73l-.22.38a2 2 0 0 0 .73 2.73l.15.1a2 2 0 0 1 1 1.72v.51a2 2 0 0 1-1 1.74l-.15.09a2 2 0 0 0-.73 2.73l.22.38a2 2 0 0 0 2.73.73l.15-.08a2 2 0 0 1 2 0l.43.25a2 2 0 0 1 1 1.73V20a2 2 0 0 0 2 2h.44a2 2 0 0 0 2-2v-.18a2 2 0 0 1 1-1.73l.43-.25a2 2 0 0 1 2 0l.15.08a2 2 0 0 0 2.73-.73l.22-.39a2 2 0 0 0-.73-2.73l-.15-.08a2 2 0 0 1-1-1.74v-.5a2 2 0 0 1 1-1.74l.15-.09a2 2 0 0 0 .73-2.73l-.22-.38a2 2 0 0 0-2.73-.73l-.15.08a2 2 0 0 1-2 0l-.43-.25a2 2 0 0 1-1-1.73V4a2 2 0 0 0-2-2z" />
-    <circle cx="12" cy="12" r="3" />
-  </>
-);
 
 const linkClass = ({ isActive }: { isActive: boolean }) =>
   `flex items-center gap-3 rounded-md px-3 py-2 text-sm transition-colors duration-[var(--sc-dur-fast)] ease-out ${
@@ -72,7 +53,7 @@ const linkClass = ({ isActive }: { isActive: boolean }) =>
 
 export default function Sidebar() {
   return (
-    <aside className="flex w-[264px] shrink-0 flex-col justify-between border-r border-hairline bg-surface">
+    <aside className="flex w-[264px] shrink-0 flex-col border-r border-hairline bg-surface">
       <nav aria-label="Primary" className="flex flex-col gap-1 p-3">
         {NAV_ITEMS.map((item) => (
           <NavLink key={item.to} to={item.to} className={linkClass}>
@@ -81,11 +62,6 @@ export default function Sidebar() {
           </NavLink>
         ))}
       </nav>
-      <div className="p-3">
-        <NavLink to="/settings" aria-label="Open settings" title="Settings" className={linkClass}>
-          <NavIcon path={GEAR_ICON} />
-        </NavLink>
-      </div>
     </aside>
   );
 }

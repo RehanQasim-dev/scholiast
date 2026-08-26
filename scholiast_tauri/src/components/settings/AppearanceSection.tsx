@@ -9,13 +9,13 @@ export default function AppearanceSection() {
 
   return (
     <div className="space-y-3">
-      <label className="block text-sm">
+      <label className="block text-sm text-text-2">
         Density
         <select
           value={density}
           onChange={(event) => setDensity(event.target.value)}
           data-testid="pref-appearance.density"
-          className="mt-1 w-full max-w-48 rounded-sm border border-hairline bg-surface px-2 py-1.5"
+          className="mt-1 h-14 w-full max-w-48 rounded-md border border-hairline bg-elevated px-3 text-sm text-text outline-none focus:border-accent"
         >
           <option value="comfortable">Comfortable</option>
           <option value="compact">Compact</option>

@@ -80,11 +80,17 @@ describe("ReaderTopBar", () => {
     );
   });
 
-  test("column width control shows the current value and cycles via callback", () => {
-    const { props } = renderBar({ columnWidth: 820 });
-    expect(screen.getByTestId("column-width-cycle")).toHaveTextContent("820px");
-    fireEvent.click(screen.getByTestId("column-width-cycle"));
-    expect(props.onCycleColumnWidth).toHaveBeenCalledTimes(1);
+  test("column width control is an icon button and reveals value only inside sheet", () => {
+    const { props } = renderBar({ columnWidth: 800 });
+    const btn = screen.getByTestId("column-width-cycle");
+    expect(btn).not.toHaveTextContent("800px");
+    expect(btn).toHaveAttribute("aria-label", expect.stringContaining("800"));
+    fireEvent.click(btn);
+    expect(screen.getByTestId("width-sheet")).toBeInTheDocument();
+    expect(screen.getByTestId("width-sheet")).toHaveTextContent("800px");
+    expect(props.onCycleColumnWidth).not.toHaveBeenCalled();
+    fireEvent.click(screen.getByText("736"));
+    expect(props.onCycleColumnWidth).toHaveBeenCalled();
   });
 
   test("delete requires typing DELETE and then calls onDelete once", async () => {

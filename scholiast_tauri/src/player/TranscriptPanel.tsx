@@ -434,10 +434,21 @@ export default function TranscriptPanel({ url, videoId }: TranscriptPanelProps) 
 
   if (transcript.errorKind === "other" || !transcript.data) {
     return (
-      <p className="p-4 text-sm text-text-2">
-        Couldn't load the transcript
-        {transcript.errorMessage ? `: ${transcript.errorMessage}` : ""}.
-      </p>
+      <div className="flex flex-col items-start gap-3 p-4">
+        <p className="text-sm text-text-2">
+          Couldn't load the transcript
+          {transcript.errorMessage ? `: ${transcript.errorMessage}` : ""}.
+        </p>
+        <button
+          type="button"
+          data-testid="transcript-retry"
+          onClick={() => void transcript.refetch()}
+          disabled={transcript.isFetching}
+          className="rounded-md border border-hairline px-3 py-1.5 text-sm text-text transition-colors duration-[var(--sc-dur-fast)] ease-out hover:bg-elevated disabled:opacity-50"
+        >
+          {transcript.isFetching ? "Retrying…" : "Retry"}
+        </button>
+      </div>
     );
   }
 
