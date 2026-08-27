@@ -135,17 +135,17 @@ jobs:
         run: ./node_modules/.bin/tauri android build
 
       - name: List APKs
-        run: ls -lh scholiast_tauri/src-tauri/gen/android/app/build/outputs/apk/release/
+        run: find scholiast_tauri/src-tauri/gen/android/app/build/outputs/apk -name "*.apk" -exec ls -lh {} \;
 
       - name: Upload APK artifacts
         uses: actions/upload-artifact@v6
         with:
           name: apks
           path: |
-            scholiast_tauri/src-tauri/gen/android/app/build/outputs/apk/release/app-arm64-v8a-release.apk
-            scholiast_tauri/src-tauri/gen/android/app/build/outputs/apk/release/app-armeabi-v7a-release.apk
-            scholiast_tauri/src-tauri/gen/android/app/build/outputs/apk/release/app-x86_64-release.apk
-            scholiast_tauri/src-tauri/gen/android/app/build/outputs/apk/release/app-universal-release.apk
+            scholiast_tauri/src-tauri/gen/android/app/build/outputs/apk/arm64/release/app-arm64-release.apk
+            scholiast_tauri/src-tauri/gen/android/app/build/outputs/apk/arm/release/app-arm-release.apk
+            scholiast_tauri/src-tauri/gen/android/app/build/outputs/apk/x86_64/release/app-x86_64-release.apk
+            scholiast_tauri/src-tauri/gen/android/app/build/outputs/apk/universal/release/app-universal-release.apk
           if-no-files-found: error
 
   release:
