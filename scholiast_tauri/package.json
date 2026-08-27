@@ -1,7 +1,7 @@
 {
   "name": "scholiast",
   "private": true,
-  "version": "0.1.0",
+  "version": "0.3.0",
   "type": "module",
   "scripts": {
     "predev": "cargo sweep --maxsize 10GB . 2>/dev/null || true",
