@@ -132,7 +132,7 @@ jobs:
           ANDROID_SDK_ROOT: ${{ env.ANDROID_HOME }}
           NDK_HOME: ${{ env.ANDROID_HOME }}/ndk/28.2.13676358
           GRADLE_OPTS: "-Xmx4g -Dorg.gradle.daemon=false -Dorg.gradle.workers.max=2"
-        run: ./node_modules/.bin/tauri android build
+        run: ./node_modules/.bin/tauri android build --apk --split-per-abi
 
       - name: List APKs
         run: find scholiast_tauri/src-tauri/gen/android/app/build/outputs/apk -name "*.apk" -exec ls -lh {} \;
@@ -142,10 +142,10 @@ jobs:
         with:
           name: apks
           path: |
-            scholiast_tauri/src-tauri/gen/android/app/build/outputs/apk/arm64/release/app-arm64-release.apk
-            scholiast_tauri/src-tauri/gen/android/app/build/outputs/apk/arm/release/app-arm-release.apk
-            scholiast_tauri/src-tauri/gen/android/app/build/outputs/apk/x86_64/release/app-x86_64-release.apk
-            scholiast_tauri/src-tauri/gen/android/app/build/outputs/apk/universal/release/app-universal-release.apk
+            scholiast_tauri/src-tauri/gen/android/app/build/outputs/apk/arm64/release/app-arm64-release-unsigned.apk
+            scholiast_tauri/src-tauri/gen/android/app/build/outputs/apk/arm/release/app-arm-release-unsigned.apk
+            scholiast_tauri/src-tauri/gen/android/app/build/outputs/apk/x86_64/release/app-x86_64-release-unsigned.apk
+            scholiast_tauri/src-tauri/gen/android/app/build/outputs/apk/universal/release/app-universal-release-unsigned.apk
           if-no-files-found: error
 
   release:
