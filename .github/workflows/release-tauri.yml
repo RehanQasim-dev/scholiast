@@ -132,7 +132,9 @@ jobs:
           ANDROID_SDK_ROOT: ${{ env.ANDROID_HOME }}
           NDK_HOME: ${{ env.ANDROID_HOME }}/ndk/28.2.13676358
           GRADLE_OPTS: "-Xmx4g -Dorg.gradle.daemon=false -Dorg.gradle.workers.max=2"
-        run: ./node_modules/.bin/tauri android build --apk --split-per-abi --target aarch64 armv7 x86_64
+        run: |
+          ./node_modules/.bin/tauri android build --apk --split-per-abi --target aarch64 armv7 x86_64
+          ./node_modules/.bin/tauri android build --apk --target aarch64 armv7 x86_64
 
       - name: List APKs
         run: find scholiast_tauri/src-tauri/gen/android/app/build/outputs/apk -name "*.apk" -exec ls -lh {} \;
