@@ -268,7 +268,7 @@ export default function Reader() {
                 onClick={() =>
                   document.getElementById(ADD_ARTICLE_INPUT_ID)?.focus()
                 }
-                className="mt-3 rounded-md bg-accent px-4 py-2 text-sm font-semibold text-white transition-opacity hover:opacity-90"
+                className="mt-3 rounded-md bg-accent px-4 py-2 text-sm font-semibold text-[var(--sc-accent-text)] transition-opacity hover:opacity-90"
               >
                 Add an article
               </button>

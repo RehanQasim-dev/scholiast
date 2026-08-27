@@ -2,18 +2,21 @@
 
 :root {
   color-scheme: dark;
-  --sc-bg: #070d0a;
-  --sc-surface: #0f1e14;
-  --sc-elevated: #13261b;
-  --sc-overlay: #1a3322;
-  --sc-hairline: rgba(47, 158, 98, 0.16);
-  --sc-text: #d4f0db;
-  --sc-text-2: #8ebf9e;
-  --sc-text-3: #4a705b;
-  --sc-accent: #2f9e62;
-  --sc-accent-press: #38b471;
-  --sc-accent-subtle: rgba(47, 158, 98, 0.14);
-  --sc-accent-timestamp: #6fcf97;
+  /* --- DARK OBSIDIAN & CRISP MINT THEME --- */
+  --sc-bg: #060b08;
+  --sc-surface: #0c140f;
+  --sc-elevated: #121e17;
+  --sc-overlay: #17261e;
+  --sc-hairline: rgba(74, 222, 128, 0.12);
+  --sc-text: #d8fae5;
+  --sc-text-2: #86d1a1;
+  --sc-text-3: #5a9e76;
+  --sc-accent: #10e271;
+  --sc-accent-press: #0eb85b;
+  --sc-accent-subtle: rgba(16, 226, 113, 0.14);
+  --sc-accent-timestamp: #52e096;
+  --sc-accent-text: #041208;
+  --sc-accent-contrast: #041208;
   --sc-amber: #f59e0b;
   --sc-emerald: #2f9e62;
   --sc-rose: #f43f5e;

@@ -157,7 +157,7 @@ function ProviderRow({ name, label, testCommand }: ProviderRowProps) {
             type="button"
             onClick={save}
             disabled={saving || !value.trim()}
-            className="h-12 min-h-[48px] rounded-md bg-accent px-4 text-sm font-medium text-white transition-opacity disabled:opacity-50"
+            className="h-12 min-h-[48px] rounded-md bg-accent px-4 text-sm font-medium text-[var(--sc-accent-text)] transition-opacity disabled:opacity-50"
           >
             {saving ? "Saving…" : "Save"}
           </button>

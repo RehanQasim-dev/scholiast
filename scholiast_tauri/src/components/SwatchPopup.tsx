@@ -278,7 +278,7 @@ export default function SwatchPopup({
             <button
               type="button"
               onClick={handleSaveTextComment}
-              className="inline-flex h-6 items-center gap-1 rounded bg-accent px-2 text-[11px] font-medium text-white shadow-sm hover:bg-accent-press"
+              className="inline-flex h-6 items-center gap-1 rounded bg-accent px-2 text-[11px] font-medium text-[var(--sc-accent-text)] shadow-sm hover:bg-accent-press"
             >
               <Check size={12} strokeWidth={2} />
               <span>Save</span>

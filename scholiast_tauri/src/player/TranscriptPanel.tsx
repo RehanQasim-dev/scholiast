@@ -603,7 +603,7 @@ export default function TranscriptPanel({ url, videoId }: TranscriptPanelProps) 
             <button
               type="button"
               onClick={() => setSheetItem(thread.item)}
-              className="rounded-md bg-[color:var(--sc-accent)] px-2 py-1 text-xs font-medium text-white hover:opacity-90"
+              className="rounded-md bg-[color:var(--sc-accent)] px-2 py-1 text-xs font-medium text-[var(--sc-accent-text)] hover:opacity-90"
             >
               Reply
             </button>

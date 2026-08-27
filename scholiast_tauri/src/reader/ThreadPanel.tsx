@@ -610,7 +610,7 @@ export default function ThreadPanel({ urlHash, selectRequest }: ThreadPanelProps
                 aria-label="Send reply"
                 disabled={sending || !replyDraft.trim()}
                 onClick={() => void sendReply()}
-                className="cursor-pointer rounded-md bg-accent px-3 py-1 text-xs font-medium text-white transition-opacity duration-[var(--sc-dur-fast)] ease-out hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-50"
+                className="cursor-pointer rounded-md bg-accent px-3 py-1 text-xs font-medium text-[var(--sc-accent-text)] transition-opacity duration-[var(--sc-dur-fast)] ease-out hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-50"
               >
                 {sending ? "Saving…" : "Reply"}
               </button>

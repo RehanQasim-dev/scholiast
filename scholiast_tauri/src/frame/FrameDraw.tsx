@@ -317,7 +317,7 @@ export default function FrameDraw() {
             type="button"
             onClick={() => void persistThenComment()}
             disabled={Boolean(savedItem)}
-            className="rounded-md bg-[color:var(--sc-accent)] px-4 py-1.5 text-sm font-medium text-white hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-50"
+            className="rounded-md bg-[color:var(--sc-accent)] px-4 py-1.5 text-sm font-medium text-[var(--sc-accent-text)] hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-50"
             data-testid="frame-save"
           >
             Save

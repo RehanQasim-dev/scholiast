@@ -549,7 +549,7 @@ export default function CommentEditorSheet({
               type="button"
               onClick={() => void save()}
               disabled={saving}
-              className={`rounded-md bg-[color:var(--sc-accent)] text-sm font-medium text-white hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-50 ${
+              className={`rounded-md bg-[color:var(--sc-accent)] text-sm font-medium text-[var(--sc-accent-text)] hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-50 ${
                 isNarrow ? "min-h-[48px] px-6 py-2.5" : "px-3 py-1.5"
               }`}
             >

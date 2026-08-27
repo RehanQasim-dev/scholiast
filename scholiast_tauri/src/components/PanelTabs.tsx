@@ -50,7 +50,7 @@ export default function PanelTabs({ url, videoId, onCaptureFrame }: PanelTabsPro
         >
           <Edit3 size={24} strokeWidth={2} aria-hidden />
           <span>Notes</span>
-          <span className="ml-0.5 rounded-full bg-accent px-1.5 py-0.5 text-[11px] font-semibold leading-none text-white">
+          <span className="ml-0.5 rounded-full bg-accent px-1.5 py-0.5 text-[11px] font-semibold leading-none text-[var(--sc-accent-text)]">
             {notesCount}
           </span>
         </button>

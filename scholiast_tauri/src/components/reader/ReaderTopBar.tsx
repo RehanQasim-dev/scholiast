@@ -253,7 +253,7 @@ export default function ReaderTopBar({
                           type="button"
                           onClick={() => serif && onToggleSerif()}
                           className={`flex-1 rounded py-1 text-xs font-medium transition-colors ${
-                            !serif ? "bg-accent text-white" : "text-text-2 hover:text-text"
+                            !serif ? "bg-accent text-[var(--sc-accent-text)]" : "text-text-2 hover:text-text"
                           }`}
                         >
                           Sans
@@ -262,7 +262,7 @@ export default function ReaderTopBar({
                           type="button"
                           onClick={() => !serif && onToggleSerif()}
                           className={`flex-1 rounded py-1 font-serif text-xs font-medium transition-colors ${
-                            serif ? "bg-accent text-white" : "text-text-2 hover:text-text"
+                            serif ? "bg-accent text-[var(--sc-accent-text)]" : "text-text-2 hover:text-text"
                           }`}
                         >
                           Serif
@@ -282,7 +282,7 @@ export default function ReaderTopBar({
                               if (columnWidth !== w) onCycleColumnWidth();
                             }}
                             className={`flex-1 rounded py-1 text-xs font-medium transition-colors ${
-                              columnWidth === w ? "bg-accent text-white" : "text-text-2 hover:text-text"
+                              columnWidth === w ? "bg-accent text-[var(--sc-accent-text)]" : "text-text-2 hover:text-text"
                             }`}
                           >
                             {w === 700 ? "Narrow" : w === 736 ? "Default" : "Wide"}
@@ -318,7 +318,7 @@ export default function ReaderTopBar({
                 onClick={onToggleAnnotations}
                 className={`flex h-9 items-center gap-1.5 rounded-md px-2.5 text-xs font-medium transition-colors ${
                   annotationsOpen
-                    ? "bg-accent text-white"
+                    ? "bg-accent text-[var(--sc-accent-text)]"
                     : "text-text-2 hover:bg-elevated hover:text-text"
                 }`}
               >

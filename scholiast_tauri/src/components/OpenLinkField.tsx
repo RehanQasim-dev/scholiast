@@ -105,7 +105,7 @@ export default function OpenLinkField() {
       <button
         type="submit"
         aria-label="Open"
-        className="mr-1 flex h-10 shrink-0 items-center justify-center rounded-md bg-accent px-4 text-sm font-semibold text-white transition-opacity hover:opacity-90"
+        className="mr-1 flex h-10 shrink-0 items-center justify-center rounded-md bg-accent px-4 text-sm font-semibold text-[var(--sc-accent-text)] transition-opacity hover:opacity-90"
       >
         Open
       </button>

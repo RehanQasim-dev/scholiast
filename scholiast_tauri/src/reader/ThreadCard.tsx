@@ -247,7 +247,7 @@ export default function ThreadCard({
                             onEditComment(comment, body);
                             cancelEdit();
                           }}
-                          className="cursor-pointer rounded bg-accent px-2 py-1 text-xs font-medium text-white hover:opacity-90"
+                          className="cursor-pointer rounded bg-accent px-2 py-1 text-xs font-medium text-[var(--sc-accent-text)] hover:opacity-90"
                         >
                           Save
                         </button>

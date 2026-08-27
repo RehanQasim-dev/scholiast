@@ -25,7 +25,7 @@ export default function AppearanceSection() {
               onClick={() => void setDensity(item.id)}
               className={`rounded-md px-4 py-2 text-xs font-medium transition-all ${
                 density === item.id
-                  ? "bg-accent text-white shadow-sm"
+                  ? "bg-accent text-[var(--sc-accent-text)] shadow-sm"
                   : "text-text-2 hover:text-text hover:bg-elevated/60"
               }`}
             >

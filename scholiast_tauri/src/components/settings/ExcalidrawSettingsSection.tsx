@@ -61,7 +61,7 @@ export default function ExcalidrawSettingsSection() {
               onClick={() => void updateRoughness(item.val)}
               className={`flex-1 rounded-md py-1.5 text-xs font-medium transition-colors ${
                 roughness === item.val
-                  ? "bg-accent text-white shadow-sm"
+                  ? "bg-accent text-[var(--sc-accent-text)] shadow-sm"
                   : "text-text-2 hover:bg-elevated hover:text-text"
               }`}
             >
@@ -91,7 +91,7 @@ export default function ExcalidrawSettingsSection() {
               onClick={() => void updatePenCurve(item.val)}
               className={`flex-1 rounded-md py-1.5 text-xs font-medium transition-colors ${
                 penCurve === item.val
-                  ? "bg-accent text-white shadow-sm"
+                  ? "bg-accent text-[var(--sc-accent-text)] shadow-sm"
                   : "text-text-2 hover:bg-elevated hover:text-text"
               }`}
             >
@@ -121,7 +121,7 @@ export default function ExcalidrawSettingsSection() {
               onClick={() => void updateGrid(item.val)}
               className={`flex-1 rounded-md py-1.5 text-xs font-medium transition-colors ${
                 grid === item.val
-                  ? "bg-accent text-white shadow-sm"
+                  ? "bg-accent text-[var(--sc-accent-text)] shadow-sm"
                   : "text-text-2 hover:bg-elevated hover:text-text"
               }`}
             >
@@ -151,7 +151,7 @@ export default function ExcalidrawSettingsSection() {
               onClick={() => void updateExportScale(item.val)}
               className={`flex-1 rounded-md py-1.5 text-xs font-medium transition-colors ${
                 exportScale === item.val
-                  ? "bg-accent text-white shadow-sm"
+                  ? "bg-accent text-[var(--sc-accent-text)] shadow-sm"
                   : "text-text-2 hover:bg-elevated hover:text-text"
               }`}
             >

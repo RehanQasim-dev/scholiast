@@ -198,7 +198,7 @@ export default function CloudSyncModal({
                   }
                 }}
                 disabled={syncing}
-                className="flex-1 inline-flex h-9 items-center justify-center gap-2 rounded-lg bg-accent text-white font-medium text-xs shadow-sm hover:bg-accent-press transition-colors disabled:opacity-50"
+                className="flex-1 inline-flex h-9 items-center justify-center gap-2 rounded-lg bg-accent text-[var(--sc-accent-text)] font-medium text-xs shadow-sm hover:bg-accent-press transition-colors disabled:opacity-50"
               >
                 <RefreshCw size={14} className={syncing ? "animate-spin" : ""} />
                 {syncing ? "Syncing..." : "Sync Now"}
@@ -216,7 +216,7 @@ export default function CloudSyncModal({
               type="button"
               onClick={handleConnect}
               disabled={connecting}
-              className="w-full inline-flex h-9 items-center justify-center gap-2 rounded-lg bg-accent text-white font-medium text-xs shadow-sm hover:bg-accent-press transition-colors disabled:opacity-50"
+              className="w-full inline-flex h-9 items-center justify-center gap-2 rounded-lg bg-accent text-[var(--sc-accent-text)] font-medium text-xs shadow-sm hover:bg-accent-press transition-colors disabled:opacity-50"
             >
               {connecting ? (
                 <>

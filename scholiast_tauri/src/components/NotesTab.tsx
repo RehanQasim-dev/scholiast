@@ -448,7 +448,7 @@ export default function NotesTab({
               title="Save note"
               onClick={() => void handleSend()}
               disabled={submitting || (!draft.trim() && !capturedFrame)}
-              className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-accent text-white shadow-sm shadow-accent/20 transition-all hover:opacity-90 active:scale-95 disabled:opacity-30 disabled:shadow-none"
+              className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-accent text-[var(--sc-accent-text)] shadow-sm shadow-accent/20 transition-all hover:opacity-90 active:scale-95 disabled:opacity-30 disabled:shadow-none"
             >
               <Send size={16} strokeWidth={2} />
             </button>

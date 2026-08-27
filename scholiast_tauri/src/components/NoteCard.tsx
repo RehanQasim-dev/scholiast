@@ -261,7 +261,7 @@ export default function NoteCard({ item, onDelete, onEdit }: NoteCardProps) {
                   type="button"
                   onClick={() => void handleSave()}
                   disabled={saving || !draft.trim()}
-                  className="h-8 rounded-md bg-accent px-3 text-xs font-medium text-white transition-opacity hover:opacity-90 disabled:opacity-50"
+                  className="h-8 rounded-md bg-accent px-3 text-xs font-medium text-[var(--sc-accent-text)] transition-opacity hover:opacity-90 disabled:opacity-50"
                 >
                   {saving ? "Saving…" : "Save"}
                 </button>

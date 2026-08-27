@@ -155,7 +155,7 @@ export default function DriveSection({
             type="button"
             onClick={connect}
             disabled={connecting}
-            className="min-h-[48px] rounded-md bg-accent px-5 text-sm font-medium text-white hover:opacity-90 disabled:opacity-50"
+            className="min-h-[48px] rounded-md bg-accent px-5 text-sm font-medium text-[var(--sc-accent-text)] hover:opacity-90 disabled:opacity-50"
           >
             {connecting ? "Connecting…" : "Authorize Drive"}
           </button>

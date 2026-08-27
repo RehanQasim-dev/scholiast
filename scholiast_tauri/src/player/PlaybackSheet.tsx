@@ -70,7 +70,7 @@ export default function PlaybackSheet({ open, onClose }: PlaybackSheetProps) {
                 }}
                 className={`sc-hit rounded-lg border text-sm font-medium tabular-nums transition-colors ${
                   r === snap.rate
-                    ? "border-[color:var(--sc-accent)] bg-[color:var(--sc-accent)] text-white"
+                    ? "border-[color:var(--sc-accent)] bg-[color:var(--sc-accent)] text-[var(--sc-accent-text)]"
                     : "border-hairline bg-surface text-text-2 hover:text-text"
                 }`}
               >
@@ -89,7 +89,7 @@ export default function PlaybackSheet({ open, onClose }: PlaybackSheetProps) {
               onClick={() => commands.setCaptions(!snap.captionsEnabled)}
               className={`sc-hit flex flex-1 items-center justify-center gap-2 rounded-lg border text-sm font-medium transition-colors ${
                 snap.captionsEnabled
-                  ? "border-[color:var(--sc-accent)] bg-[color:var(--sc-accent)] text-white"
+                  ? "border-[color:var(--sc-accent)] bg-[color:var(--sc-accent)] text-[var(--sc-accent-text)]"
                   : "border-hairline bg-surface text-text-2"
               }`}
             >

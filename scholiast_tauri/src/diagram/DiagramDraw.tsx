@@ -216,7 +216,7 @@ export default function DiagramDraw() {
             type="button"
             onClick={handleSave}
             disabled={saving}
-            className="flex h-8 items-center gap-1.5 rounded-full bg-accent px-3.5 text-xs font-semibold text-white shadow-md transition-opacity hover:opacity-90 disabled:opacity-50"
+            className="flex h-8 items-center gap-1.5 rounded-full bg-accent px-3.5 text-xs font-semibold text-[var(--sc-accent-text)] shadow-md transition-opacity hover:opacity-90 disabled:opacity-50"
           >
             <Check size={14} strokeWidth={2.5} />
             <span>{saving ? "Saving…" : "Save Diagram"}</span>
@@ -264,7 +264,7 @@ export default function DiagramDraw() {
                   onClick={() => selectTool(tool.id)}
                   className={`flex h-9 w-9 items-center justify-center rounded-full transition-colors ${
                     active
-                      ? "bg-accent text-white shadow-sm"
+                      ? "bg-accent text-[var(--sc-accent-text)] shadow-sm"
                       : "text-text-2 hover:bg-elevated hover:text-text"
                   }`}
                 >
@@ -346,7 +346,7 @@ export default function DiagramDraw() {
                 type="button"
                 onClick={insertMathFormula}
                 disabled={!mathFormula.trim()}
-                className="rounded-md bg-accent px-4 py-1.5 text-xs font-semibold text-white transition-opacity hover:opacity-90 disabled:opacity-40"
+                className="rounded-md bg-accent px-4 py-1.5 text-xs font-semibold text-[var(--sc-accent-text)] transition-opacity hover:opacity-90 disabled:opacity-40"
               >
                 Insert on Canvas
               </button>
