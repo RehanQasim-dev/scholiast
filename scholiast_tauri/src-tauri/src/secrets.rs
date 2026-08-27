@@ -13,6 +13,7 @@ use keyring::Entry;
 
 use crate::drive::DriveError;
 
+#[cfg(not(target_os = "android"))]
 pub const SERVICE: &str = "scholiast";
 
 /// The named entries Scholiast keeps in the secret store.

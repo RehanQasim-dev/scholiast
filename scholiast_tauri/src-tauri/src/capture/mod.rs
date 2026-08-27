@@ -162,6 +162,7 @@ pub async fn capture_frame(
     _url: String,
     _rect: CaptureRect,
 ) -> Result<Reply<CaptureOut>, ScholiastError> {
+    let _ = (_rect.x, _rect.y, _rect.w, _rect.h);
     Err(unsupported())
 }
 
@@ -188,6 +189,7 @@ pub async fn cleanup_capture(app: AppHandle, path: String) -> Result<bool, Strin
 }
 
 /// Convenience for tests + temp filenames: unix millis.
+#[cfg(target_os = "linux")]
 pub(crate) fn now_stamp() -> u128 {
     std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)

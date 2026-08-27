@@ -3,6 +3,7 @@
 //! pixel row/column, count samples whose r,g,b are all < 16, and declare the
 //! frame black when >98% of samples qualify.
 
+#[cfg(target_os = "linux")]
 pub(crate) fn is_black_frame(rgba: &[u8], w: u32, h: u32) -> bool {
     if w == 0 || h == 0 {
         return true;
