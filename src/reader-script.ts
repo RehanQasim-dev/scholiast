@@ -12,7 +12,7 @@ import browser from './utils/browser-polyfill';
 	(window as any).obsidianReaderInitialized = true;
 
 	// Listen for messages from the content script
-	browser.runtime.onMessage.addListener((request: any, sender: browser.Runtime.MessageSender, sendResponse: (response?: any) => void) => {
+	browser.runtime.onMessage.addListener((request: any, _sender: browser.Runtime.MessageSender, sendResponse: (response?: any) => void) => {
 		if (request.action === "toggleReaderMode") {
 			// When deactivating, respond before restore triggers a page reload
 			if (document.documentElement.classList.contains('obsidian-reader-active')) {

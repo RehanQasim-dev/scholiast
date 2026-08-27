@@ -42,11 +42,10 @@ export default function SyncProgressCard() {
     status.total > 0 ? Math.round((status.done / status.total) * 100) : 0;
 
   return (
-    <section
+    <div
       aria-label="Sync progress"
-      className="rounded-lg border border-hairline bg-surface p-4"
     >
-      <h2 className="text-sm font-semibold text-text">Sync progress</h2>
+      <h3 className="text-sm font-medium text-text">Sync progress</h3>
       <p className="mt-2 text-sm text-text-2" data-testid="sync-state-line">
         {stateLine(status.phase, error)}
         {!running && !error && status.lastSynced !== null && (
@@ -116,6 +115,6 @@ export default function SyncProgressCard() {
           {syncing ? "Syncing…" : "Sync now"}
         </button>
       </div>
-    </section>
+    </div>
   );
 }

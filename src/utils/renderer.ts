@@ -934,7 +934,7 @@ export function createSelectorResolver(
 	tabId: number,
 	sendMessage: (tabId: number, message: any) => Promise<any>
 ): AsyncResolver {
-	return async (name: string, context: RenderContext): Promise<any> => {
+	return async (name: string, _context: RenderContext): Promise<any> => {
 		const extractHtml = name.startsWith('selectorHtml:');
 		const prefix = extractHtml ? 'selectorHtml:' : 'selector:';
 		const selectorPart = name.slice(prefix.length);

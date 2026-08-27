@@ -9,15 +9,39 @@
  */
 
 ::highlight(sc-hl-yellow) {
-  background-color: var(--sc-hl-yellow);
+  background-color: var(--sc-hl-yellow-fill, rgba(210, 150, 0, 0.5));
 }
 
 ::highlight(sc-hl-red) {
-  background-color: var(--sc-hl-red);
+  background-color: var(--sc-hl-red-fill, rgba(220, 60, 90, 0.5));
 }
 
 ::highlight(sc-hl-green) {
-  background-color: var(--sc-hl-green);
+  background-color: var(--sc-hl-green-fill, rgba(45, 160, 95, 0.5));
+}
+
+::highlight(sc-hl-active-yellow) {
+  background-color: transparent;
+  text-decoration: underline;
+  text-decoration-color: #d29600;
+  text-decoration-thickness: 2px;
+  text-underline-offset: 1px;
+}
+
+::highlight(sc-hl-active-red) {
+  background-color: transparent;
+  text-decoration: underline;
+  text-decoration-color: #dc3c5a;
+  text-decoration-thickness: 2px;
+  text-underline-offset: 1px;
+}
+
+::highlight(sc-hl-active-green) {
+  background-color: transparent;
+  text-decoration: underline;
+  text-decoration-color: #2da05f;
+  text-decoration-thickness: 2px;
+  text-underline-offset: 1px;
 }
 
 mark.sc-hl {
@@ -27,15 +51,15 @@ mark.sc-hl {
 }
 
 mark.sc-hl-yellow {
-  background-color: var(--sc-hl-yellow);
+  background-color: var(--sc-hl-yellow-fill, rgba(210, 150, 0, 0.5));
 }
 
 mark.sc-hl-red {
-  background-color: var(--sc-hl-red);
+  background-color: var(--sc-hl-red-fill, rgba(220, 60, 90, 0.5));
 }
 
 mark.sc-hl-green {
-  background-color: var(--sc-hl-green);
+  background-color: var(--sc-hl-green-fill, rgba(45, 160, 95, 0.5));
 }
 
 /* Dismissible notice for highlights whose anchors no longer resolve. */

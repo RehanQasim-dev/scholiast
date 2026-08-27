@@ -33,8 +33,8 @@ export const strip_tags = (html: string, keepTags: string = ''): string => {
 		.replace(/&mdash;/g, '—')
 		.replace(/&ndash;/g, '–')
 		.replace(/&hellip;/g, '…')
-		.replace(/&#(\d+);/g, (match, dec) => String.fromCharCode(Number(dec)))
-		.replace(/&#x([0-9A-Fa-f]+);/g, (match, hex) => String.fromCharCode(parseInt(hex, 16)));
+		.replace(/&#(\d+);/g, (_, dec) => String.fromCharCode(Number(dec)))
+		.replace(/&#x([0-9A-Fa-f]+);/g, (_, hex) => String.fromCharCode(parseInt(hex, 16)));
 
 	// Remove excess newlines (more than two consecutive newlines)
 	result = result.replace(/\n{3,}/g, '\n\n');

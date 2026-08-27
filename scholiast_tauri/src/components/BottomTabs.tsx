@@ -30,17 +30,11 @@ const TABS = [
     ),
   },
   {
-    to: "/player",
-    label: "Player",
-    icon: <path d="m6 3 14 9-14 9z" />,
-  },
-  {
-    to: "/reader",
-    label: "Reader",
+    to: "/library",
+    label: "Library",
     icon: (
       <>
-        <path d="M2 4h6a4 4 0 0 1 4 4v13a3 3 0 0 0-3-3H2z" />
-        <path d="M22 4h-6a4 4 0 0 0-4 4v13a3 3 0 0 1 3-3h7z" />
+        <path d="m16 6 4 14M12 6v14M8 8v12M4 4v16" />
       </>
     ),
   },

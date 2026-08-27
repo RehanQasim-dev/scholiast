@@ -26,7 +26,7 @@ async function openViaObsidianCli(
 	path: string,
 	vault: string,
 	behavior: Template['behavior'],
-	silent: boolean
+	_silent: boolean
 ): Promise<string> {
 	const isDailyNote = behavior === 'append-daily' || behavior === 'prepend-daily';
 	const vaultArgs = vault ? [`vault=${vault}`] : [];

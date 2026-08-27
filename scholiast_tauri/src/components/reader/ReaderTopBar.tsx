@@ -1,94 +1,83 @@
 import { useEffect, useRef, useState } from "react";
 import { Link } from "react-router-dom";
 import {
-  AlignLeft,
   ArrowLeft,
-  BookmarkPlus,
-  ChevronLeft,
-  SlidersHorizontal,
+  FileText,
+  Globe,
+  PanelLeft,
+  Trash2,
+  Type,
+  X,
 } from "lucide-react";
 
 export const COLUMN_WIDTHS = [700, 736, 800] as const;
 const CONFIRM_WORD = "DELETE";
 
+export type ReaderTheme = "oled" | "sepia" | "slate" | "light";
+export type ReaderViewMode = "web" | "reader";
+
 export interface ReaderTopBarProps {
   title: string | null;
   hasArticle: boolean;
+  viewMode?: ReaderViewMode;
+  onToggleViewMode?: () => void;
   fontStep: number;
   serif: boolean;
   columnWidth: number;
+  theme?: ReaderTheme;
+  onThemeChange?: (theme: ReaderTheme) => void;
   onFontStep: (delta: number) => void;
   onToggleSerif: () => void;
   onCycleColumnWidth: () => void;
   onDelete: () => Promise<void> | void;
   showLibraryToggle?: boolean;
   onLibraryToggle?: () => void;
-}
-
-function TopBarIcon({ path }: { path: string }) {
-  return (
-    <svg
-      viewBox="0 0 24 24"
-      fill="none"
-      stroke="currentColor"
-      strokeWidth="2"
-      strokeLinecap="round"
-      strokeLinejoin="round"
-      aria-hidden="true"
-      className="h-6 w-6 shrink-0"
-    >
-      <path d={path} />
-    </svg>
-  );
+  annotationsCount?: number;
+  annotationsOpen?: boolean;
+  onToggleAnnotations?: () => void;
 }
 
 export default function ReaderTopBar({
   title,
   hasArticle,
+  viewMode = "web",
+  onToggleViewMode,
   fontStep,
   serif,
   columnWidth,
+  theme = "oled",
+  onThemeChange,
   onFontStep,
   onToggleSerif,
   onCycleColumnWidth,
   onDelete,
   showLibraryToggle,
   onLibraryToggle,
+  annotationsCount = 0,
+  annotationsOpen = false,
+  onToggleAnnotations,
 }: ReaderTopBarProps) {
+  const [popoverOpen, setPopoverOpen] = useState(false);
   const [dialogOpen, setDialogOpen] = useState(false);
   const [typed, setTyped] = useState("");
   const [busy, setBusy] = useState(false);
-  const [widthSheetOpen, setWidthSheetOpen] = useState(false);
   const inputRef = useRef<HTMLInputElement>(null);
-  const widthSheetRef = useRef<HTMLDivElement>(null);
+  const popoverRef = useRef<HTMLDivElement>(null);
 
-  const onCycleColumnWidthTo = (next: number) => {
-    const idx = COLUMN_WIDTHS.indexOf(next as (typeof COLUMN_WIDTHS)[number]);
-    const curIdx = COLUMN_WIDTHS.indexOf(
-      columnWidth as (typeof COLUMN_WIDTHS)[number],
-    );
-    if (idx === -1 || idx === curIdx) return;
-    const steps = (idx - curIdx + COLUMN_WIDTHS.length) % COLUMN_WIDTHS.length;
-    for (let i = 0; i < steps; i++) onCycleColumnWidth();
-    setWidthSheetOpen(false);
-  };
+  const fontPx = 16 + fontStep;
 
+  // Close formatting popover on click away
   useEffect(() => {
-    if (!widthSheetOpen) return;
+    if (!popoverOpen) return;
     const onDown = (e: MouseEvent) => {
       const target = e.target as Node | null;
-      if (
-        target &&
-        widthSheetRef.current &&
-        !widthSheetRef.current.contains(target) &&
-        !(target as HTMLElement)?.closest?.('[data-testid="column-width-cycle"]')
-      ) {
-        setWidthSheetOpen(false);
+      if (target && popoverRef.current && !popoverRef.current.contains(target)) {
+        setPopoverOpen(false);
       }
     };
     document.addEventListener("mousedown", onDown);
     return () => document.removeEventListener("mousedown", onDown);
-  }, [widthSheetOpen]);
+  }, [popoverOpen]);
 
   useEffect(() => {
     if (dialogOpen) {
@@ -115,259 +104,295 @@ export default function ReaderTopBar({
     }
   };
 
-  const fontPx = 16 + fontStep;
-
   return (
-    <div className="flex h-[52px] shrink-0 items-center justify-between gap-3 border-b border-hairline bg-surface px-3">
+    <div className="relative flex h-[50px] shrink-0 items-center justify-between gap-3 border-b border-hairline bg-surface px-3">
+      {/* Left side: Back to Library */}
       <div className="flex min-w-0 items-center gap-2">
-        {!showLibraryToggle ? (
-          <Link
-            to="/home"
-            data-testid="reader-back"
-            aria-label="Back"
-            className="flex h-12 w-12 shrink-0 items-center justify-center rounded-md text-text-2 hover:bg-elevated hover:text-text"
-            style={{ minWidth: 48, minHeight: 48 }}
-          >
-            <ArrowLeft size={24} strokeWidth={2} aria-hidden />
-          </Link>
-        ) : null}
+        <Link
+          to="/home"
+          data-testid="reader-back"
+          aria-label="Back to Library"
+          className="flex h-9 w-9 shrink-0 items-center justify-center rounded-md text-text-2 transition-colors hover:bg-elevated hover:text-text"
+        >
+          <ArrowLeft size={18} strokeWidth={2} aria-hidden />
+        </Link>
+
         {showLibraryToggle && onLibraryToggle ? (
           <button
             type="button"
             data-testid="library-drawer-toggle"
             aria-label="Open library"
             onClick={onLibraryToggle}
-            className="flex h-12 w-12 shrink-0 items-center justify-center rounded-md text-text-2 hover:bg-elevated hover:text-text"
-            style={{ minWidth: 48, minHeight: 48 }}
+            className="flex h-9 w-9 shrink-0 items-center justify-center rounded-md text-text-2 hover:bg-elevated hover:text-text"
           >
-            <ChevronLeft size={24} strokeWidth={2} aria-hidden />
+            <PanelLeft size={18} strokeWidth={2} aria-hidden />
           </button>
         ) : null}
-        <nav aria-label="Breadcrumb" className="flex min-w-0 items-center gap-2 text-sm">
-          <Link
-            to="/reader"
-            data-testid="breadcrumb-library"
-            className="shrink-0 text-text-2 transition-colors duration-[var(--sc-dur-fast)] ease-out hover:text-text"
-          >
-            Library
-          </Link>
-          {title ? (
-            <>
-              <span aria-hidden="true" className="text-text-3">/</span>
-              <span className="truncate font-medium text-text">{title}</span>
-            </>
-          ) : null}
-        </nav>
+
+        {title ? (
+          <h1 className="truncate text-sm font-medium text-text max-w-[200px] sm:max-w-xs md:max-w-md">
+            {title}
+          </h1>
+        ) : (
+          <span className="text-xs text-text-3">Reader</span>
+        )}
       </div>
 
-      <div className="flex shrink-0 items-center gap-1">
-        {hasArticle ? (
-          <button
-            type="button"
-            data-testid="delete-article-button"
-            aria-label="Delete article"
-            onClick={() => setDialogOpen(true)}
-            className="flex h-12 w-12 items-center justify-center rounded-md text-text-2 hover:text-[color:var(--sc-danger)]"
-            style={{ minWidth: 48, minHeight: 48 }}
-          >
-            <TopBarIcon path="M3 6h18M8 6V4h8v2m-9 0 1 14h8l1-14" />
-          </button>
-        ) : null}
-        <span
-          data-testid="sync-chip"
-          title="Sync status (coming soon)"
-          className="hidden h-8 items-center rounded-full border border-hairline px-2.5 text-xs text-text-3 tabular-nums sm:inline-flex"
-        >
-          Sync
-        </span>
-
-        <div className="ml-1 flex items-center gap-1 rounded-full border border-hairline bg-[#11141A] px-1 py-1">
-          <button
-            type="button"
-            data-testid="font-step-down"
-            aria-label="Smaller text"
-            onClick={() => onFontStep(-1)}
-            disabled={fontStep <= -2}
-            className="inline-flex h-10 min-w-10 items-center justify-center rounded-full px-3 text-xs font-medium text-text-2 hover:bg-elevated hover:text-text disabled:opacity-40"
-            style={{ minWidth: 48, minHeight: 48 }}
-          >
-            A−
-          </button>
-          <span className="px-1 font-mono text-[11px] tabular-nums text-text-3">Aa {fontPx}px</span>
-          <button
-            type="button"
-            data-testid="font-step-up"
-            aria-label="Larger text"
-            onClick={() => onFontStep(1)}
-            disabled={fontStep >= 4}
-            className="inline-flex h-10 min-w-10 items-center justify-center rounded-full px-3 text-xs font-medium text-text-2 hover:bg-elevated hover:text-text disabled:opacity-40"
-            style={{ minWidth: 48, minHeight: 48 }}
-          >
-            A+
-          </button>
-          <span className="mx-1 h-4 w-px bg-hairline" aria-hidden />
-          <button
-            type="button"
-            data-testid="serif-toggle"
-            aria-label="Toggle serif typeface"
-            aria-pressed={serif}
-            onClick={onToggleSerif}
-            className={`inline-flex h-10 items-center justify-center rounded-full px-3 text-xs font-semibold transition-colors ${
-              serif
-                ? "bg-accent text-white"
-                : "text-text-2 hover:bg-elevated hover:text-text"
-            }`}
-            style={{ minWidth: 48, minHeight: 48 }}
-          >
-            Serif
-          </button>
-          <span className="mx-1 h-4 w-px bg-hairline" aria-hidden />
-          <button
-            type="button"
-            data-testid="align-toggle"
-            aria-label="Text alignment left"
-            title="Align left 100%"
-            className="flex h-10 w-10 items-center justify-center rounded-full text-text hover:bg-elevated"
-            style={{ minWidth: 48, minHeight: 48 }}
-          >
-            <AlignLeft size={24} strokeWidth={2} />
-          </button>
-          <div className="relative">
-            <button
-              type="button"
-              data-testid="column-width-cycle"
-              aria-label={`Reading width ${columnWidth} pixels — tap to change`}
-              aria-expanded={widthSheetOpen}
-              aria-haspopup="dialog"
-              onClick={() => setWidthSheetOpen((v) => !v)}
-              className="flex h-10 w-10 items-center justify-center rounded-full text-text-2 hover:bg-elevated hover:text-text"
-              style={{ minWidth: 48, minHeight: 48 }}
-              title="Reading width 100%"
-            >
-              <SlidersHorizontal size={24} strokeWidth={2} />
-            </button>
-            {widthSheetOpen ? (
-              <div
-                ref={widthSheetRef}
-                role="dialog"
-                aria-label="Reading column width"
-                data-testid="width-sheet"
-                className="absolute right-0 top-10 z-30 w-64 rounded-lg border border-hairline bg-elevated p-4 shadow-xl"
-                onKeyDown={(e) => {
-                  if (e.key === "Escape") setWidthSheetOpen(false);
-                }}
+      {/* Right side: Clean [aA] popover toggle + Annotations toggle */}
+      <div className="flex shrink-0 items-center gap-1.5">
+        {hasArticle && (
+          <>
+            {/* Authentic Web vs Clean Reader Toggle */}
+            {onToggleViewMode && (
+              <button
+                type="button"
+                aria-label={viewMode === "web" ? "Switch to clean reader" : "Switch to authentic webview"}
+                title={viewMode === "web" ? "Authentic Web (Click for Clean Reader)" : "Clean Reader (Click for Authentic Web)"}
+                onClick={onToggleViewMode}
+                className={`flex h-9 items-center gap-1.5 rounded-md px-2.5 text-xs font-semibold transition-colors ${
+                  viewMode === "web"
+                    ? "bg-elevated text-accent border border-accent/40"
+                    : "text-text-2 hover:bg-elevated hover:text-text border border-hairline"
+                }`}
               >
-                <div className="mb-3 flex items-center justify-between">
-                  <span className="text-xs font-medium text-text-2">Width</span>
-                  <span className="rounded bg-surface px-2 py-0.5 font-mono text-xs tabular-nums text-text-3">
-                    {columnWidth}px
+                {viewMode === "web" ? (
+                  <>
+                    <Globe size={14} strokeWidth={2} />
+                    <span>Web</span>
+                  </>
+                ) : (
+                  <>
+                    <FileText size={14} strokeWidth={2} />
+                    <span>Reader</span>
+                  </>
+                )}
+              </button>
+            )}
+
+            {/* aA Reading Settings Toggle */}
+            <div className="relative" ref={popoverRef}>
+              <button
+                type="button"
+                aria-label="Reading appearance settings"
+                aria-expanded={popoverOpen}
+                onClick={() => setPopoverOpen((v) => !v)}
+                className={`flex h-9 items-center gap-1 rounded-md px-2.5 text-xs font-semibold transition-colors ${
+                  popoverOpen ? "bg-elevated text-accent" : "text-text-2 hover:bg-elevated hover:text-text"
+                }`}
+              >
+                <Type size={16} strokeWidth={2} />
+                <span className="font-mono text-[11px]">aA</span>
+              </button>
+
+              {/* Formatting Popover */}
+              {popoverOpen && (
+                <div
+                  role="dialog"
+                  aria-label="Reading settings"
+                  className="absolute right-0 top-full mt-1.5 z-40 w-72 rounded-lg border border-hairline bg-surface p-3 shadow-xl backdrop-blur-md"
+                >
+                  <div className="space-y-3">
+                    {/* Font size stepper */}
+                    <div>
+                      <span className="text-[11px] font-medium uppercase tracking-wide text-text-3">Text Size</span>
+                      <div className="mt-1 flex items-center justify-between rounded-md border border-hairline bg-base p-1">
+                        <button
+                          type="button"
+                          onClick={() => onFontStep(-1)}
+                          disabled={fontStep <= -2}
+                          className="h-8 w-10 rounded text-xs font-semibold text-text-2 hover:bg-elevated hover:text-text disabled:opacity-30"
+                        >
+                          A−
+                        </button>
+                        <span className="font-mono text-xs tabular-nums text-text">{fontPx}px</span>
+                        <button
+                          type="button"
+                          onClick={() => onFontStep(1)}
+                          disabled={fontStep >= 4}
+                          className="h-8 w-10 rounded text-xs font-semibold text-text-2 hover:bg-elevated hover:text-text disabled:opacity-30"
+                        >
+                          A+
+                        </button>
+                      </div>
+                    </div>
+
+                    {/* Theme Presets */}
+                    <div>
+                      <span className="text-[11px] font-medium uppercase tracking-wide text-text-3">Theme</span>
+                      <div className="mt-1 flex items-center gap-1.5 rounded-md border border-hairline bg-base p-1.5">
+                        {[
+                          { id: "oled", label: "OLED", bg: "#000000", border: "#27272a" },
+                          { id: "sepia", label: "Sepia", bg: "#1c1815", border: "#443428" },
+                          { id: "slate", label: "Slate", bg: "#0f172a", border: "#334155" },
+                          { id: "light", label: "Light", bg: "#fbfbfa", border: "#d4d4d8" },
+                        ].map((t) => (
+                          <button
+                            key={t.id}
+                            type="button"
+                            title={t.label}
+                            onClick={() => onThemeChange?.(t.id as ReaderTheme)}
+                            className={`flex-1 flex flex-col items-center gap-1 rounded py-1 transition-all cursor-pointer ${
+                              theme === t.id ? "ring-2 ring-accent" : "opacity-70 hover:opacity-100"
+                            }`}
+                          >
+                            <span
+                              className="h-4 w-full rounded border shadow-sm"
+                              style={{ backgroundColor: t.bg, borderColor: t.border }}
+                            />
+                            <span className="text-[10px] font-medium text-text-2">{t.label}</span>
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+
+                    {/* Typeface Toggle */}
+                    <div>
+                      <span className="text-[11px] font-medium uppercase tracking-wide text-text-3">Typeface</span>
+                      <div className="mt-1 flex rounded-md border border-hairline bg-base p-1">
+                        <button
+                          type="button"
+                          onClick={() => serif && onToggleSerif()}
+                          className={`flex-1 rounded py-1 text-xs font-medium transition-colors ${
+                            !serif ? "bg-accent text-white" : "text-text-2 hover:text-text"
+                          }`}
+                        >
+                          Sans
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => !serif && onToggleSerif()}
+                          className={`flex-1 rounded py-1 font-serif text-xs font-medium transition-colors ${
+                            serif ? "bg-accent text-white" : "text-text-2 hover:text-text"
+                          }`}
+                        >
+                          Serif
+                        </button>
+                      </div>
+                    </div>
+
+                    {/* Column Width Cycle */}
+                    <div>
+                      <span className="text-[11px] font-medium uppercase tracking-wide text-text-3">Column Width</span>
+                      <div className="mt-1 flex rounded-md border border-hairline bg-base p-1">
+                        {COLUMN_WIDTHS.map((w) => (
+                          <button
+                            key={w}
+                            type="button"
+                            onClick={() => {
+                              if (columnWidth !== w) onCycleColumnWidth();
+                            }}
+                            className={`flex-1 rounded py-1 text-xs font-medium transition-colors ${
+                              columnWidth === w ? "bg-accent text-white" : "text-text-2 hover:text-text"
+                            }`}
+                          >
+                            {w === 700 ? "Narrow" : w === 736 ? "Default" : "Wide"}
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+
+                    {/* Delete Article */}
+                    <div className="border-t border-hairline pt-2">
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setPopoverOpen(false);
+                          setDialogOpen(true);
+                        }}
+                        className="flex w-full items-center justify-between rounded px-2 py-1.5 text-xs text-[color:var(--sc-danger)] hover:bg-elevated"
+                      >
+                        <span>Delete Article</span>
+                        <Trash2 size={14} />
+                      </button>
+                    </div>
+                  </div>
+                </div>
+              )}
+            </div>
+
+            {/* Annotations Panel Toggle */}
+            {onToggleAnnotations && (
+              <button
+                type="button"
+                aria-label="Toggle annotations panel"
+                onClick={onToggleAnnotations}
+                className={`flex h-9 items-center gap-1.5 rounded-md px-2.5 text-xs font-medium transition-colors ${
+                  annotationsOpen
+                    ? "bg-accent text-white"
+                    : "text-text-2 hover:bg-elevated hover:text-text"
+                }`}
+              >
+                <FileText size={15} strokeWidth={2} />
+                <span>Notes</span>
+                {annotationsCount > 0 && (
+                  <span
+                    className={`rounded-full px-1.5 py-0.2 font-mono text-[10px] font-semibold leading-none ${
+                      annotationsOpen ? "bg-white text-accent" : "bg-elevated text-text"
+                    }`}
+                  >
+                    {annotationsCount}
                   </span>
-                </div>
-                <input
-                  type="range"
-                  min={0}
-                  max={COLUMN_WIDTHS.length - 1}
-                  step={1}
-                  value={COLUMN_WIDTHS.indexOf(
-                    columnWidth as (typeof COLUMN_WIDTHS)[number],
-                  )}
-                  onChange={(e) => {
-                    const next = COLUMN_WIDTHS[Number(e.target.value)];
-                    if (next !== columnWidth) onCycleColumnWidthTo(next);
-                  }}
-                  aria-label="Column width"
-                  className="w-full accent-accent"
-                />
-                <div className="mt-2 flex justify-between text-[10px] text-text-3">
-                  <span>Narrow</span>
-                  <span>Wide</span>
-                </div>
-                <div className="mt-3 flex gap-1.5">
-                  {COLUMN_WIDTHS.map((w) => (
-                    <button
-                      key={w}
-                      type="button"
-                      onClick={() => onCycleColumnWidthTo(w)}
-                      aria-pressed={w === columnWidth}
-                      className={`flex-1 rounded-md border px-2 py-1.5 text-xs font-medium tabular-nums transition-colors ${
-                        w === columnWidth
-                          ? "border-accent bg-accent/15 text-accent"
-                          : "border-hairline text-text-3 hover:text-text"
-                      }`}
-                    >
-                      {w}
-                    </button>
-                  ))}
-                </div>
-              </div>
-            ) : null}
-          </div>
-        </div>
-        <button
-          type="button"
-          data-testid="bookmark-plus"
-          aria-label="Bookmark"
-          title="Bookmark"
-          className="flex h-12 w-12 shrink-0 items-center justify-center rounded-md text-text-2 hover:bg-elevated hover:text-text"
-          style={{ minWidth: 48, minHeight: 48 }}
-        >
-          <BookmarkPlus size={24} strokeWidth={2} aria-hidden />
-        </button>
+                )}
+              </button>
+            )}
+          </>
+        )}
       </div>
 
-      {dialogOpen ? (
-        <div
-          className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4"
-          onKeyDown={(event) => {
-            if (event.key === "Escape") closeDialog();
-          }}
-        >
+      {/* Delete Confirmation Modal */}
+      {dialogOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
           <div
-            role="dialog"
+            className="absolute inset-0 bg-black/60 backdrop-blur-sm"
+            onClick={closeDialog}
+            aria-hidden="true"
+          />
+          <div
+            role="alertdialog"
             aria-modal="true"
-            aria-labelledby="delete-article-title"
-            className="w-full max-w-md rounded-lg border border-hairline bg-elevated p-5 shadow-xl"
+            aria-label="Confirm deletion"
+            className="relative w-full max-w-sm rounded-lg border border-hairline bg-surface p-4 shadow-xl"
           >
-            <h2 id="delete-article-title" className="text-base font-semibold text-text">
-              Delete this article?
-            </h2>
-            <p className="mt-2 text-sm text-text-2">
-              {title ? `“${title}”` : "This article"} and its annotations will be
-              removed from this device. Type{" "}
-              <span className="font-mono text-text">{CONFIRM_WORD}</span> to confirm.
+            <div className="flex items-center justify-between">
+              <h3 className="text-sm font-semibold text-text">Delete article?</h3>
+              <button
+                type="button"
+                onClick={closeDialog}
+                className="flex h-7 w-7 items-center justify-center rounded text-text-3 hover:bg-elevated hover:text-text"
+              >
+                <X size={16} />
+              </button>
+            </div>
+            <p className="mt-2 text-xs text-text-2">
+              This will permanently delete <strong className="text-text">{title ?? "this article"}</strong> and its annotations. Type <strong className="font-mono text-accent">DELETE</strong> to confirm.
             </p>
             <input
               ref={inputRef}
-              data-testid="delete-confirm-input"
-              aria-label={`Type ${CONFIRM_WORD} to confirm`}
               value={typed}
-              onChange={(event) => setTyped(event.target.value)}
-              spellCheck={false}
-              autoComplete="off"
-              className="mt-3 h-14 w-full rounded-md border border-hairline bg-transparent px-3 text-sm text-text outline-none focus:border-accent"
+              onChange={(e) => setTyped(e.target.value)}
+              placeholder="DELETE"
+              className="mt-3 w-full rounded-md border border-hairline bg-base px-3 py-1.5 font-mono text-sm text-text outline-none focus:border-[color:var(--sc-danger)]"
             />
-            <div className="mt-4 flex items-center justify-end gap-2">
+            <div className="mt-4 flex justify-end gap-2">
               <button
                 type="button"
-                data-testid="delete-cancel-button"
                 onClick={closeDialog}
-                className="min-h-[48px] rounded-md border border-hairline px-4 py-2 text-sm font-medium text-text-2 hover:bg-elevated hover:text-text"
+                className="h-8 rounded-md border border-hairline px-3 text-xs font-medium text-text-2 hover:bg-elevated hover:text-text"
               >
                 Cancel
               </button>
               <button
                 type="button"
-                data-testid="delete-confirm-button"
                 disabled={!confirmed || busy}
                 onClick={() => void handleDelete()}
-                className="min-h-[48px] rounded-md border border-hl-red px-4 py-2 text-sm font-semibold text-hl-red hover:bg-hl-red/10 disabled:opacity-40"
+                className="h-8 rounded-md bg-[color:var(--sc-danger)] px-3 text-xs font-medium text-white transition-opacity hover:opacity-90 disabled:opacity-40"
               >
-                Delete
+                {busy ? "Deleting…" : "Delete"}
               </button>
             </div>
           </div>
         </div>
-      ) : null}
+      )}
     </div>
   );
 }

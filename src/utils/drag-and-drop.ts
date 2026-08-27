@@ -1,5 +1,5 @@
 import { Template, Property } from '../types/types';
-import { templates, getTemplates, saveTemplateSettings, getEditingTemplateIndex } from '../managers/template-manager';
+import { getTemplates, saveTemplateSettings, getEditingTemplateIndex } from '../managers/template-manager';
 import { updateTemplateList } from '../managers/template-ui';
 import { updateVaultList } from '../managers/general-settings';
 import { generalSettings, saveSettings } from './storage-utils';

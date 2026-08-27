@@ -37,34 +37,38 @@
 			z-index: 20;
 		}
 		
-		/* Action buttons at top right */
+		/* Action buttons at top right — aligned with top toolbar */
 		.top-right-bar {
 			position: absolute;
-			top: 10px;
+			top: 6px;
 			right: 10px;
+			height: 30px;
 			display: flex;
 			align-items: center;
-			gap: 6px;
+			gap: 4px;
 			pointer-events: auto;
 			z-index: 30;
+			margin: 0;
+			padding: 0;
 		}
 		
 		.action-btn {
 			display: inline-flex;
 			align-items: center;
-			gap: 5px;
-			height: 26px;
-			padding: 0 10px;
-			border-radius: 6px;
+			gap: 4px;
+			height: 30px;
+			padding: 0 8px;
+			border-radius: 8px;
+			box-sizing: border-box;
 			font-family: 'JetBrains Mono', ui-monospace, monospace;
-			font-size: 11px;
+			font-size: 10.5px;
 			font-weight: 600;
-			letter-spacing: 0.02em;
+			letter-spacing: 0.01em;
 			cursor: pointer;
 			border: 1px solid transparent;
 			outline: none;
-			backdrop-filter: blur(12px);
-			-webkit-backdrop-filter: blur(12px);
+			backdrop-filter: blur(16px);
+			-webkit-backdrop-filter: blur(16px);
 			transition: background 0.14s ease-out, border-color 0.14s ease-out, transform 0.1s ease-out, box-shadow 0.14s ease-out;
 		}
 		
@@ -77,12 +81,12 @@
 			align-items: center;
 			justify-content: center;
 			font-family: 'JetBrains Mono', monospace;
-			font-size: 10px;
+			font-size: 9px;
 			font-weight: 700;
-			padding: 0 4px;
-			min-width: 18px;
-			height: 16px;
-			border-radius: 4px;
+			padding: 0 3px;
+			min-width: 14px;
+			height: 14px;
+			border-radius: 3px;
 			line-height: 1;
 			background: rgba(255, 255, 255, 0.14);
 			color: currentColor;
@@ -94,21 +98,21 @@
 			border-color: rgba(255, 255, 255, 0.2);
 		}
 		.btn-kbd-lg {
-			font-size: 15px;
-			min-width: 22px;
-			height: 18px;
+			font-size: 12px;
+			min-width: 14px;
+			height: 14px;
 			font-weight: 800;
 		}
 
 		/* Cancel: Neutral ghost style */
 		.action-btn-cancel {
-			background: rgba(7, 13, 10, 0.85);
+			background: rgba(10, 16, 13, 0.92);
 			color: #d1d5db;
-			border-color: rgba(255, 255, 255, 0.14);
-			box-shadow: 0 2px 8px rgba(0, 0, 0, 0.3);
+			border: 1px solid rgba(255, 255, 255, 0.1);
+			box-shadow: 0 8px 30px rgba(0, 0, 0, 0.55), inset 0 1px 0 rgba(255, 255, 255, 0.08);
 		}
 		.action-btn-cancel:hover {
-			background: rgba(37, 43, 58, 0.95);
+			background: rgba(19, 38, 27, 0.95);
 			color: #ffffff;
 			border-color: rgba(255, 255, 255, 0.22);
 		}
@@ -117,8 +121,8 @@
 		.action-btn-comment {
 			background: rgba(47, 158, 98, 0.18);
 			color: #a8d5b5;
-			border-color: rgba(47, 158, 98, 0.35);
-			box-shadow: 0 2px 8px rgba(0, 0, 0, 0.3);
+			border: 1px solid rgba(47, 158, 98, 0.35);
+			box-shadow: 0 8px 30px rgba(0, 0, 0, 0.55), inset 0 1px 0 rgba(255, 255, 255, 0.08);
 		}
 		.action-btn-comment:hover {
 			background: rgba(47, 158, 98, 0.28);
@@ -130,94 +134,155 @@
 		.action-btn-save {
 			background: #2f9e62;
 			color: #ffffff;
-			border-color: rgba(255, 255, 255, 0.18);
+			border: 1px solid rgba(255, 255, 255, 0.18);
 			font-weight: 600;
-			box-shadow: 0 2px 10px rgba(47, 158, 98, 0.45);
+			box-shadow: 0 4px 14px rgba(47, 158, 98, 0.45);
 		}
 		.action-btn-save:hover {
 			background: #278a54;
-			box-shadow: 0 4px 14px rgba(47, 158, 98, 0.6);
+			box-shadow: 0 4px 18px rgba(47, 158, 98, 0.6);
 		}
 
-		/* Bottom options bar — terminal green glass */
+		/* Bottom options bar — sleek terminal dock (30px height, consistent with all docks) */
 		.bottom-options-bar {
 			position: absolute;
-			bottom: 4px;
+			bottom: 6px;
 			left: 50%;
 			transform: translateX(-50%);
 			display: flex;
-			gap: 12px;
-			background: rgba(7, 13, 10, 0.92);
-			backdrop-filter: blur(12px);
-			-webkit-backdrop-filter: blur(12px);
-			border-radius: 18px;
-			padding: 3px 14px;
-			border: 1px solid rgba(47, 158, 98, 0.18);
+			gap: 2px;
+			height: 30px;
+			background: rgba(10, 16, 13, 0.92);
+			backdrop-filter: blur(16px);
+			-webkit-backdrop-filter: blur(16px);
+			border-radius: 8px;
+			padding: 0 4px;
+			border: 1px solid rgba(255, 255, 255, 0.1);
 			pointer-events: auto;
 			align-items: center;
-			box-shadow: 0 6px 20px rgba(0, 0, 0, 0.5);
+			box-shadow: 0 8px 30px rgba(0, 0, 0, 0.55), inset 0 1px 0 rgba(255, 255, 255, 0.08);
+			z-index: 40;
+			box-sizing: border-box;
+		}
+
+		.bar-divider {
+			width: 1px;
+			height: 14px;
+			background: rgba(255, 255, 255, 0.12);
+			margin: 0 1px;
+			flex-shrink: 0;
 		}
 
 		.option-group {
 			position: relative;
 			display: flex;
-			flex-direction: column;
 			align-items: center;
+			justify-content: center;
 		}
 
-		/* Vertical strip shown on hover */
+		/* Horizontal popup bar shown on hover or open */
 		.option-popup {
 			position: absolute;
-			bottom: 100%;
+			bottom: calc(100% + 6px);
 			left: 50%;
 			transform: translateX(-50%);
 			background: transparent;
-			padding-bottom: 8px; /* Transparent padding bridges the gap */
+			padding-bottom: 5px;
 			display: none;
-			flex-direction: column;
+			z-index: 100;
 		}
 
 		.option-popup-inner {
-			background: rgba(7, 13, 10, 0.95);
-			backdrop-filter: blur(12px);
-			-webkit-backdrop-filter: blur(12px);
-			border-radius: 12px;
-			padding: 8px;
+			background: rgba(12, 18, 15, 0.96);
+			backdrop-filter: blur(16px);
+			-webkit-backdrop-filter: blur(16px);
+			border-radius: 7px;
+			padding: 3px 4px;
 			display: flex;
-			flex-direction: column;
-			gap: 8px;
+			flex-direction: row;
+			align-items: center;
+			gap: 2px;
 			border: 1px solid rgba(255, 255, 255, 0.12);
-			box-shadow: 0 8px 24px rgba(0, 0, 0, 0.5);
+			box-shadow: 0 10px 28px rgba(0, 0, 0, 0.65), inset 0 1px 0 rgba(255, 255, 255, 0.08);
+			animation: popupFadeIn 0.12s cubic-bezier(0.23, 1, 0.32, 1);
+		}
+
+		@keyframes popupFadeIn {
+			from { opacity: 0; transform: translateY(3px) scale(0.97); }
+			to { opacity: 1; transform: translateY(0) scale(1); }
 		}
 
 		.option-group:hover .option-popup { display: flex; }
 
 		.option-btn {
-			width: 24px; height: 24px;
-			border-radius: 6px;
+			width: 24px;
+			height: 24px;
+			border-radius: 5px;
 			background: transparent;
 			border: 1px solid transparent;
-			color: white;
+			color: #d1d5db;
 			display: flex;
 			align-items: center;
 			justify-content: center;
 			cursor: pointer;
 			font-size: 10px;
-			transition: background 0.12s ease-out, transform 0.1s ease-out;
+			font-weight: 600;
+			font-family: 'JetBrains Mono', monospace;
+			transition: background 0.12s ease-out, border-color 0.12s ease-out, color 0.12s ease-out, transform 0.1s ease-out;
 		}
-		.option-btn:hover { background: rgba(255, 255, 255, 0.12); }
-		.option-btn:active { transform: scale(0.95); }
-		.option-btn.active { border-color: rgba(255, 255, 255, 0.4); background: rgba(255, 255, 255, 0.2); }
+		.option-btn:hover {
+			background: rgba(255, 255, 255, 0.1);
+			color: #ffffff;
+		}
+		.option-btn:active {
+			transform: scale(0.94);
+		}
+		.option-btn.active {
+			background: rgba(47, 158, 98, 0.22);
+			border-color: rgba(47, 158, 98, 0.45);
+			color: #a8d5b5;
+		}
 		
-		/* SVGs inside option-btn */
+		/* SVGs inside option-btn — 12px */
 		.option-btn svg {
-			width: 18px; height: 18px;
+			width: 12px;
+			height: 12px;
 			display: block;
 		}
 		
 		/* Color swatch specific */
-		.color-swatch { width: 18px; height: 18px; border-radius: 50%; cursor: pointer; border: 2px solid transparent; }
-		.color-swatch.active { border-color: white; box-shadow: 0 0 0 1px #000; }
+		.color-swatch-wrap {
+			width: 24px;
+			height: 24px;
+			border-radius: 5px;
+			display: flex;
+			align-items: center;
+			justify-content: center;
+			cursor: pointer;
+			border: 1px solid transparent;
+			transition: background 0.12s ease-out, transform 0.1s ease-out;
+		}
+		.color-swatch-wrap:hover {
+			background: rgba(255, 255, 255, 0.1);
+		}
+		.color-swatch-wrap:active {
+			transform: scale(0.94);
+		}
+		.color-swatch-dot {
+			width: 13px;
+			height: 13px;
+			border-radius: 50%;
+			box-shadow: inset 0 0 0 1px rgba(0, 0, 0, 0.25);
+			transition: transform 0.1s ease-out;
+		}
+		.color-swatch-wrap.active .color-swatch-dot {
+			box-shadow: 0 0 0 1.5px #070d0a, 0 0 0 2.5px #2f9e62, inset 0 0 0 1px rgba(0, 0, 0, 0.2);
+		}
+		.color-swatch-wrap svg {
+			width: 13px;
+			height: 13px;
+			display: block;
+		}
 
 		/* 1. HIDE TOP-LEFT HAMBURGER MENU (≡) AND NATIVE HELP/PROPERTIES */
 		.layer-ui__wrapper .main-menu-trigger,
@@ -232,22 +297,18 @@
 			display: none !important;
 		}
 
-		/* 2. REMOVE THE WHITE BOX BEHIND OUR SAVE BUTTONS.
-		      The real container is `.layer-ui__wrapper__top-right` (the library /
-		      collaborator island) — the FixedSideContainer_* names below never existed
-		      in this version, which is why the box was still there. */
+		/* 2. REMOVE THE WHITE BOX BEHIND OUR SAVE BUTTONS */
 		.excalidraw .layer-ui__wrapper__top-right,
 		.layer-ui__wrapper .UserList,
 		.layer-ui__wrapper .zen-mode-btn {
 			display: none !important;
 		}
 
-		/* Any island Excalidraw does still draw gets the dark glass treatment.
-		   (The class is `Island`, capitalised — `.island` matched nothing.) */
+		/* Any island Excalidraw does still draw gets the dark glass treatment */
 		.excalidraw .Island {
-			background: rgba(7, 13, 10, 0.9) !important;
-			border: 1px solid rgba(47, 158, 98, 0.18) !important;
-			box-shadow: 0 4px 16px rgba(0, 0, 0, 0.4) !important;
+			background: rgba(10, 16, 13, 0.92) !important;
+			border: 1px solid rgba(47, 158, 98, 0.25) !important;
+			box-shadow: 0 6px 20px rgba(0, 0, 0, 0.5) !important;
 		}
 
 		/* 3. REMOVE ZOOM BUTTON (BOTTOM LEFT) */
@@ -257,11 +318,32 @@
 			display: none !important;
 		}
 
-		/* 4. REPOSITION UNDO/REDO TO BOTTOM-LEFT CORNER AND MAKE IT COMPACT & SMALLER */
-		.layer-ui__wrapper .FixedSideContainer_side_bottom-left,
-		.layer-ui__wrapper .FixedSideContainer_side_bottomLeft {
-			bottom: 4px !important;
+		/* 4. REPOSITION UNDO/REDO TO BOTTOM-LEFT CORNER AND MAKE IT INLINE WITH PROPERTIES PANEL */
+		.layer-ui__wrapper .App-menu_bottom,
+		.layer-ui__wrapper footer.layer-ui__wrapper__footer {
+			position: absolute !important;
+			bottom: 6px !important;
 			left: 10px !important;
+			right: auto !important;
+			top: auto !important;
+			margin: 0 !important;
+			padding: 0 !important;
+			height: 30px !important;
+			display: flex !important;
+			align-items: center !important;
+			pointer-events: none !important;
+			z-index: 40 !important;
+		}
+
+		.layer-ui__wrapper .layer-ui__wrapper__footer-left {
+			margin: 0 !important;
+			padding: 0 !important;
+			height: 30px !important;
+			display: flex !important;
+			align-items: center !important;
+		}
+
+		.layer-ui__wrapper .layer-ui__wrapper__footer-left section {
 			margin: 0 !important;
 			padding: 0 !important;
 			display: flex !important;
@@ -271,39 +353,39 @@
 		.layer-ui__wrapper .undo-redo-actions {
 			margin: 0 !important;
 			padding: 0 !important;
-		}
-
-		.layer-ui__wrapper .FixedSideContainer_side_bottom-left .island,
-		.layer-ui__wrapper .FixedSideContainer_side_bottomLeft .island,
-		.layer-ui__wrapper .undo-redo-actions .island,
-		.layer-ui__wrapper .undo-redo-buttons {
-			background: rgba(7, 13, 10, 0.9) !important;
-			backdrop-filter: blur(12px) !important;
-			-webkit-backdrop-filter: blur(12px) !important;
-			border: 1px solid rgba(47, 158, 98, 0.18) !important;
-			border-radius: 6px !important;
-			padding: 0 2px !important;
-			box-shadow: 0 4px 14px rgba(0, 0, 0, 0.4) !important;
-			box-sizing: border-box !important;
-			height: 22px !important;
-			min-height: 22px !important;
-			max-height: 22px !important;
+			height: 30px !important;
 			display: flex !important;
 			align-items: center !important;
-			gap: 1px !important;
+		}
+
+		.layer-ui__wrapper .undo-redo-buttons {
+			background: rgba(10, 16, 13, 0.92) !important;
+			backdrop-filter: blur(16px) !important;
+			-webkit-backdrop-filter: blur(16px) !important;
+			border: 1px solid rgba(255, 255, 255, 0.1) !important;
+			border-radius: 8px !important;
+			padding: 0 3px !important;
+			box-shadow: 0 8px 30px rgba(0, 0, 0, 0.55), inset 0 1px 0 rgba(255, 255, 255, 0.08) !important;
+			box-sizing: border-box !important;
+			height: 30px !important;
+			min-height: 30px !important;
+			max-height: 30px !important;
+			display: flex !important;
+			align-items: center !important;
+			gap: 2px !important;
+			pointer-events: auto !important;
+			margin: 0 !important;
 		}
 
 		.layer-ui__wrapper .undo-redo-actions button,
-		.layer-ui__wrapper .undo-redo-buttons button,
-		.layer-ui__wrapper .FixedSideContainer_side_bottom-left button,
-		.layer-ui__wrapper .FixedSideContainer_side_bottomLeft button {
-			width: 22px !important;
-			height: 18px !important;
-			min-width: 22px !important;
-			min-height: 18px !important;
+		.layer-ui__wrapper .undo-redo-buttons button {
+			width: 24px !important;
+			height: 24px !important;
+			min-width: 24px !important;
+			min-height: 24px !important;
 			padding: 0 !important;
-			border-radius: 4px !important;
-			color: #e7eaf1 !important;
+			border-radius: 5px !important;
+			color: #e3e3e8 !important;
 			background: transparent !important;
 			display: flex !important;
 			align-items: center !important;
@@ -312,44 +394,176 @@
 		}
 
 		.layer-ui__wrapper .undo-redo-actions button:hover,
-		.layer-ui__wrapper .undo-redo-buttons button:hover,
-		.layer-ui__wrapper .FixedSideContainer_side_bottom-left button:hover,
-		.layer-ui__wrapper .FixedSideContainer_side_bottomLeft button:hover {
-			background: rgba(255, 255, 255, 0.14) !important;
+		.layer-ui__wrapper .undo-redo-buttons button:hover {
+			background: rgba(255, 255, 255, 0.12) !important;
 			color: #ffffff !important;
 		}
 
 		.layer-ui__wrapper .undo-redo-actions button:active,
-		.layer-ui__wrapper .undo-redo-buttons button:active,
-		.layer-ui__wrapper .FixedSideContainer_side_bottom-left button:active,
-		.layer-ui__wrapper .FixedSideContainer_side_bottomLeft button:active {
-			transform: scale(0.92) !important;
+		.layer-ui__wrapper .undo-redo-buttons button:active {
+			transform: scale(0.94) !important;
 		}
 
 		.layer-ui__wrapper .undo-redo-actions button svg,
-		.layer-ui__wrapper .undo-redo-buttons button svg,
-		.layer-ui__wrapper .FixedSideContainer_side_bottom-left button svg,
-		.layer-ui__wrapper .FixedSideContainer_side_bottomLeft button svg {
+		.layer-ui__wrapper .undo-redo-buttons button svg {
 			width: 12px !important;
 			height: 12px !important;
+			color: #e3e3e8 !important;
+			fill: currentColor !important;
 		}
 
-		/* 5. TOP TOOLBAR: Terminal sized, not shrunken */
-		.excalidraw { --editor-container-padding: 0 !important; }
+		/* 5. TOP TOOLBAR: 30px height dock, 100% aligned with top-right action buttons */
+		.excalidraw {
+			--editor-container-padding: 0 !important;
+			--color-on-surface: #e3e3e8 !important;
+			--icon-fill-color: #e3e3e8 !important;
+			--color-primary: #2f9e62 !important;
+			--color-primary-darker: #278a54 !important;
+			--color-primary-light: rgba(47, 158, 98, 0.25) !important;
+			--color-primary-contrast: #ffffff !important;
+			--color-brand-default: #2f9e62 !important;
+			--color-brand-hover: #38b471 !important;
+			--color-brand-active: #278a54 !important;
+			--color-surface-primary-container: rgba(47, 158, 98, 0.28) !important;
+			--color-on-primary-container: #6fcf97 !important;
+			--keybinding-color: #868e96 !important;
+			--button-hover-bg: rgba(255, 255, 255, 0.12) !important;
+			--island-bg-color: rgba(10, 16, 13, 0.92) !important;
+			--lg-button-size: 24px !important;
+			--lg-icon-size: 12px !important;
+		}
 
-		.layer-ui__wrapper .App-toolbar {
-			transform: scale(0.92) !important;
-			transform-origin: top center !important;
-			margin-top: 4px !important;
+		.layer-ui__wrapper .App-top-bar {
+			position: absolute !important;
+			top: 6px !important;
+			left: 0 !important;
+			right: 0 !important;
+			bottom: auto !important;
+			height: 30px !important;
+			display: flex !important;
+			justify-content: center !important;
+			align-items: center !important;
+			pointer-events: none !important;
+			z-index: 30 !important;
+			margin: 0 !important;
+			padding: 0 !important;
 		}
-		.layer-ui__wrapper .App-toolbar .ToolIcon_type_button,
-		.layer-ui__wrapper .App-toolbar .App-toolbar__extra-tools-trigger {
-			width: 36px !important;
-			height: 36px !important;
+
+		.layer-ui__wrapper .shapes-section {
+			height: 30px !important;
+			margin: 0 !important;
+			padding: 0 !important;
+			display: flex !important;
+			align-items: center !important;
+			justify-content: center !important;
 		}
+
+		.layer-ui__wrapper .shapes-section > div {
+			height: 30px !important;
+			margin: 0 !important;
+			padding: 0 !important;
+			display: flex !important;
+			align-items: center !important;
+			gap: 0 !important;
+		}
+
+		.layer-ui__wrapper .App-toolbar-container {
+			height: 30px !important;
+			margin: 0 !important;
+			padding: 0 !important;
+			display: flex !important;
+			align-items: center !important;
+		}
+
+		.layer-ui__wrapper .App-toolbar,
+		.layer-ui__wrapper .App-toolbar.Island {
+			height: 30px !important;
+			min-height: 30px !important;
+			max-height: 30px !important;
+			margin: 0 !important;
+			padding: 0 4px !important;
+			border-radius: 8px !important;
+			box-sizing: border-box !important;
+			display: flex !important;
+			align-items: center !important;
+			background: rgba(10, 16, 13, 0.92) !important;
+			backdrop-filter: blur(16px) !important;
+			-webkit-backdrop-filter: blur(16px) !important;
+			border: 1px solid rgba(255, 255, 255, 0.1) !important;
+			box-shadow: 0 8px 30px rgba(0, 0, 0, 0.55), inset 0 1px 0 rgba(255, 255, 255, 0.08) !important;
+			pointer-events: auto !important;
+			transform: none !important;
+		}
+
+		.layer-ui__wrapper .App-toolbar-content {
+			height: 24px !important;
+			padding: 0 !important;
+			margin: 0 !important;
+			display: flex !important;
+			align-items: center !important;
+			gap: 2px !important;
+		}
+
+		.layer-ui__wrapper .App-toolbar .ToolIcon {
+			margin: 0 !important;
+		}
+
 		.layer-ui__wrapper .App-toolbar .ToolIcon__icon {
-			width: 20px !important;
-			height: 20px !important;
+			width: 24px !important;
+			height: 24px !important;
+			min-width: 24px !important;
+			min-height: 24px !important;
+			border-radius: 5px !important;
+			padding: 0 !important;
+		}
+
+		.layer-ui__wrapper .App-toolbar .ToolIcon__icon svg,
+		.layer-ui__wrapper .App-toolbar .ToolIcon__icon,
+		.layer-ui__wrapper .App-toolbar svg {
+			width: 12px !important;
+			height: 12px !important;
+			color: #e3e3e8 !important;
+		}
+
+		.layer-ui__wrapper .App-toolbar .ToolIcon__keybinding {
+			bottom: 1px !important;
+			right: 2px !important;
+			font-size: 7.5px !important;
+			line-height: 1 !important;
+			color: #868e96 !important;
+		}
+
+		.layer-ui__wrapper .App-toolbar__divider {
+			height: 14px !important;
+			margin: 0 2px !important;
+			background-color: rgba(255, 255, 255, 0.12) !important;
+		}
+
+		.layer-ui__wrapper .App-toolbar .ToolIcon:hover .ToolIcon__icon {
+			background: rgba(255, 255, 255, 0.12) !important;
+		}
+
+		.layer-ui__wrapper .App-toolbar .ToolIcon_type_radio:checked + .ToolIcon__icon,
+		.layer-ui__wrapper .App-toolbar .ToolIcon_type_checkbox:checked + .ToolIcon__icon,
+		.layer-ui__wrapper .App-toolbar .ToolIcon__icon.active,
+		.layer-ui__wrapper .App-toolbar .ToolIcon_type_radio:checked,
+		.layer-ui__wrapper .App-toolbar [aria-selected="true"],
+		.layer-ui__wrapper .App-toolbar .ToolIcon:has(input:checked) .ToolIcon__icon {
+			background: rgba(47, 158, 98, 0.28) !important;
+			border: 1px solid rgba(47, 158, 98, 0.5) !important;
+		}
+
+		.layer-ui__wrapper .App-toolbar .ToolIcon_type_radio:checked + .ToolIcon__icon svg,
+		.layer-ui__wrapper .App-toolbar .ToolIcon_type_checkbox:checked + .ToolIcon__icon svg,
+		.layer-ui__wrapper .App-toolbar .ToolIcon__icon.active svg,
+		.layer-ui__wrapper .App-toolbar .ToolIcon:has(input:checked) .ToolIcon__icon svg {
+			color: #6fcf97 !important;
+		}
+
+		.layer-ui__wrapper .App-toolbar .ToolIcon_type_radio:checked + .ToolIcon__icon .ToolIcon__keybinding,
+		.layer-ui__wrapper .App-toolbar .ToolIcon_type_checkbox:checked + .ToolIcon__icon .ToolIcon__keybinding,
+		.layer-ui__wrapper .App-toolbar .ToolIcon:has(input:checked) .ToolIcon__keybinding {
+			color: #a8d5b5 !important;
 		}
 	</style>
 </head>

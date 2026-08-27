@@ -24,6 +24,17 @@ export const PREF_KEYS = {
   readerFontStep: "reader.font_step",
   readerSerif: "reader.serif",
   readerColumnWidth: "reader.column_width",
+  playerSplitRatio: "layout.player_split_ratio",
+  readerSplitRatio: "layout.reader_split_ratio",
+  syncAutoInterval: "sync.auto_interval",
+  syncOnExit: "sync.on_exit",
+  readerTheme: "reader.theme",
+  readerMode: "reader.mode",
+  excalidrawRoughness: "excalidraw.roughness",
+  excalidrawGrid: "excalidraw.grid",
+  excalidrawPenCurve: "excalidraw.pen_curve",
+  excalidrawExportScale: "excalidraw.export_scale",
+  excalidrawMathFont: "excalidraw.math_font",
 } as const;
 
 export const PREF_DEFAULTS = {
@@ -34,7 +45,18 @@ export const PREF_DEFAULTS = {
   [PREF_KEYS.seekStep]: 10,
   [PREF_KEYS.density]: "comfortable",
   [PREF_KEYS.readerColumnWidth]: 736,
-} as Record<string, string | number>;
+  [PREF_KEYS.playerSplitRatio]: 0.6,
+  [PREF_KEYS.readerSplitRatio]: 0.6,
+  [PREF_KEYS.syncAutoInterval]: true,
+  [PREF_KEYS.syncOnExit]: true,
+  [PREF_KEYS.readerTheme]: "oled",
+  [PREF_KEYS.readerMode]: "web",
+  [PREF_KEYS.excalidrawRoughness]: 1,
+  [PREF_KEYS.excalidrawGrid]: "dots",
+  [PREF_KEYS.excalidrawPenCurve]: "soft",
+  [PREF_KEYS.excalidrawExportScale]: 2,
+  [PREF_KEYS.excalidrawMathFont]: "latinmodern",
+} as Record<string, string | number | boolean>;
 
 type StoreLoader = () => Promise<Store>;
 

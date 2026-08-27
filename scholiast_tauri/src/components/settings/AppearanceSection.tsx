@@ -8,20 +8,33 @@ export default function AppearanceSection() {
   );
 
   return (
-    <div className="space-y-3">
-      <label className="block text-sm text-text-2">
-        Density
-        <select
-          value={density}
-          onChange={(event) => setDensity(event.target.value)}
-          data-testid="pref-appearance.density"
-          className="mt-1 h-14 w-full max-w-48 rounded-md border border-hairline bg-elevated px-3 text-sm text-text outline-none focus:border-accent"
-        >
-          <option value="comfortable">Comfortable</option>
-          <option value="compact">Compact</option>
-        </select>
-      </label>
-      <p className="text-xs text-text-2">Scholiast is dark-only for now.</p>
+    <div className="space-y-4">
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+        <div>
+          <div className="text-sm font-medium text-text">Display Density</div>
+          <div className="text-xs text-text-3 mt-0.5">Controls UI spacing, list density, and card padding</div>
+        </div>
+        <div className="flex items-center rounded-lg border border-hairline bg-base p-1 gap-1 self-start sm:self-auto">
+          {[
+            { id: "comfortable", label: "Comfortable" },
+            { id: "compact", label: "Compact" },
+          ].map((item) => (
+            <button
+              key={item.id}
+              type="button"
+              onClick={() => void setDensity(item.id)}
+              className={`rounded-md px-4 py-2 text-xs font-medium transition-all ${
+                density === item.id
+                  ? "bg-accent text-white shadow-sm"
+                  : "text-text-2 hover:text-text hover:bg-elevated/60"
+              }`}
+            >
+              {item.label}
+            </button>
+          ))}
+        </div>
+      </div>
+      <p className="text-xs text-text-3">Scholiast uses an OLED Pitch Black theme by default.</p>
     </div>
   );
 }

@@ -14,7 +14,7 @@ let lastRequestTime = 0;
 // Store event listeners for cleanup
 const eventListeners = new WeakMap<HTMLElement, { [key: string]: EventListener }>();
 
-export async function sendToLLM(promptContext: string, content: string, promptVariables: PromptVariable[], model: ModelConfig): Promise<{ promptResponses: any[] }> {
+export async function sendToLLM(promptContext: string, _content: string, promptVariables: PromptVariable[], model: ModelConfig): Promise<{ promptResponses: any[] }> {
 	debugLog('Interpreter', 'Sending request to LLM...');
 	
 	// Find the provider for this model
@@ -302,7 +302,7 @@ function parseLLMResponse(responseContent: string, promptVariables: PromptVariab
 					const prompts_responses: { [key: string]: string } = {};
 					
 					// Extract each prompt response separately
-					promptVariables.forEach((variable, index) => {
+					promptVariables.forEach((_variable, index) => {
 						const promptKey = `prompt_${index + 1}`;
 						const promptRegex = new RegExp(`"${promptKey}"\\s*:\\s*"([^]*?)(?:"\\s*,|"\\s*})`, 'g');
 						const match = promptRegex.exec(jsonMatch[0]);
@@ -509,8 +509,8 @@ export async function initializeInterpreter(template: Template, variables: { [ke
 export async function handleInterpreterUI(
 	template: Template,
 	variables: { [key: string]: string },
-	tabId: number,
-	currentUrl: string,
+	_tabId: number,
+	_currentUrl: string,
 	modelConfig: ModelConfig
 ): Promise<void> {
 	const interpreterContainer = document.getElementById('interpreter');

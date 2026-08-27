@@ -16,17 +16,25 @@ use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::sync::mpsc;
 use std::sync::{Arc, LazyLock, Mutex};
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
+use std::fs;
+#[cfg(feature = "local-stt")]
 use std::{fs::File, io::Read, io::Seek, io::SeekFrom};
 use tauri::Manager;
+#[cfg(feature = "local-stt")]
 use whisper_rs::{
     FullParams, SamplingStrategy, SegmentCallbackData, WhisperContext, WhisperContextParameters,
 };
 
+#[cfg(feature = "local-stt")]
 const SAMPLE_RATE_HZ: u32 = 16_000;
+#[cfg(feature = "local-stt")]
 const NO_TIMESTAMPS_MAX_SECS: f32 = 25.0;
+#[cfg(feature = "local-stt")]
 const MIN_THREADS: i32 = 2;
+#[cfg(feature = "local-stt")]
 const MAX_THREADS: i32 = 16;
 
+#[cfg(feature = "local-stt")]
 fn clamp_threads(requested: Option<i32>) -> i32 {
     let detected = std::thread::available_parallelism().map_or(MIN_THREADS, |n| n.get() as i32);
     requested.unwrap_or(detected).clamp(MIN_THREADS, MAX_THREADS)
@@ -37,12 +45,14 @@ fn clamp_threads(requested: Option<i32>) -> i32 {
 // this parser accepts exactly that shape and rejects anything else loudly).
 // ---------------------------------------------------------------------------
 
+#[cfg(feature = "local-stt")]
 #[derive(Debug)]
 pub struct WavPcm {
     pub sample_rate: u32,
     pub samples: Vec<f32>,
 }
 
+#[cfg(feature = "local-stt")]
 pub fn parse_wav_pcm16(path: &Path) -> Result<WavPcm, String> {
     let mut file = File::open(path).map_err(|err| format!("open {}: {err}", path.display()))?;
 
@@ -120,6 +130,7 @@ pub fn parse_wav_pcm16(path: &Path) -> Result<WavPcm, String> {
 // this local seam keeps the engine swappable for tests (and sherpa-onnx later).
 // ---------------------------------------------------------------------------
 
+#[cfg(feature = "local-stt")]
 pub struct TranscribeRequest<'a> {
     pub pcm: &'a [f32],
     #[allow(dead_code)]
@@ -128,8 +139,10 @@ pub struct TranscribeRequest<'a> {
     pub no_timestamps: bool,
 }
 
+#[cfg(feature = "local-stt")]
 pub type PartialHook = Box<dyn FnMut(String)>;
 
+#[cfg(feature = "local-stt")]
 pub trait InferenceBackend: Send + Sync {
     fn transcribe(
         &self,
@@ -139,6 +152,7 @@ pub trait InferenceBackend: Send + Sync {
     ) -> Result<String, String>;
 }
 
+#[cfg(feature = "local-stt")]
 pub fn transcribe_with_backend(
     backend: &dyn InferenceBackend,
     wav_path: &Path,
@@ -160,11 +174,13 @@ pub fn transcribe_with_backend(
 /// Real backend: one `WhisperContext` per model file is created once and reused across jobs
 /// (FUTO `WhisperGGML` keeps a single context too); each job gets its own cheap `WhisperState`
 /// because states own callbacks and cannot be shared concurrently.
+#[cfg(feature = "local-stt")]
 pub struct WhisperBackend {
     model_path: PathBuf,
     threads: i32,
 }
 
+#[cfg(feature = "local-stt")]
 impl WhisperBackend {
     pub fn new(model_path: PathBuf, requested_threads: Option<i32>) -> Self {
         Self {
@@ -174,10 +190,13 @@ impl WhisperBackend {
     }
 }
 
+#[cfg(feature = "local-stt")]
 type CachedContext = (PathBuf, Arc<WhisperContext>);
 
+#[cfg(feature = "local-stt")]
 static CONTEXT_CACHE: LazyLock<Mutex<Option<CachedContext>>> = LazyLock::new(|| Mutex::new(None));
 
+#[cfg(feature = "local-stt")]
 fn context_for(model_path: &Path) -> Result<Arc<WhisperContext>, String> {
     let mut cache = CONTEXT_CACHE
         .lock()
@@ -197,6 +216,7 @@ fn context_for(model_path: &Path) -> Result<Arc<WhisperContext>, String> {
     Ok(ctx)
 }
 
+#[cfg(feature = "local-stt")]
 impl InferenceBackend for WhisperBackend {
     fn transcribe(
         &self,
@@ -221,7 +241,8 @@ impl InferenceBackend for WhisperBackend {
             }
         });
 
-        let abort_flag = Arc::clone(cancel);        params.set_abort_callback_safe(move || abort_flag.load(Ordering::Relaxed));
+        let abort_flag = Arc::clone(cancel);
+        params.set_abort_callback_safe(move || abort_flag.load(Ordering::Relaxed));
 
         state.full(params, req.pcm).map_err(|err| err.to_string())?;
 
@@ -238,8 +259,8 @@ impl InferenceBackend for WhisperBackend {
 // Worker thread + job queue (one inference at a time, FUTO-style).
 // ---------------------------------------------------------------------------
 
+#[allow(dead_code)]
 pub struct Job {
-    #[allow(dead_code)]
     pub session_id: String,
     pub model_path: PathBuf,
     pub wav_path: PathBuf,
@@ -282,20 +303,25 @@ fn worker_loop(receiver: mpsc::Receiver<WorkerMsg>) {
             let _ = job.reply.send(Err("cancelled".into()));
             continue;
         }
-        let backend = WhisperBackend::new(job.model_path.clone(), job.requested_threads);
-        let partial_tx = job.partial_tx.clone();
-        let result = transcribe_with_backend(
-            &backend,
-            &job.wav_path,
-            job.language.as_deref(),
-            &job.cancel,
-            move |text| match partial_tx.as_ref() {
-                Some(tx) => {
-                    let _ = tx.send(text);
-                }
-                None => eprintln!("stt://partial {}", text.trim()),
-            },
-        );
+        #[cfg(feature = "local-stt")]
+        let result = {
+            let backend = WhisperBackend::new(job.model_path.clone(), job.requested_threads);
+            let partial_tx = job.partial_tx.clone();
+            transcribe_with_backend(
+                &backend,
+                &job.wav_path,
+                job.language.as_deref(),
+                &job.cancel,
+                move |text| match partial_tx.as_ref() {
+                    Some(tx) => {
+                        let _ = tx.send(text);
+                    }
+                    None => eprintln!("stt://partial {}", text.trim()),
+                },
+            )
+        };
+        #[cfg(not(feature = "local-stt"))]
+        let result = Err("local-stt inference engine is not enabled in this build".into());
         let _ = job.reply.send(result);
     }
 }
@@ -362,11 +388,14 @@ fn resolve_model(models_dir: &Path, explicit_path: Option<&str>) -> Result<PathB
         if path.is_file() {
             return Ok(path);
         }
+        let in_dir = models_dir.join(explicit);
+        if in_dir.is_file() {
+            return Ok(in_dir);
+        }
         return Err(format!("model not found: {explicit}"));
     }
-    models::first_installed_model(models_dir)
-        .map(|spec| models::model_path(models_dir, spec))
-        .ok_or_else(|| "no local STT model installed; download one first".to_string())
+    models::first_installed_model_path(models_dir)
+        .ok_or_else(|| "no local STT model installed; download or import one first".to_string())
 }
 
 #[tauri::command]
@@ -450,6 +479,65 @@ pub async fn download_stt_model(
         .into_iter()
         .find(|entry| entry.id == spec.id)
         .expect("entry exists"))
+}
+
+#[tauri::command]
+#[allow(dead_code)]
+pub async fn import_stt_model_chunk(
+    app_handle: tauri::AppHandle,
+    file_name: String,
+    chunk_base64: String,
+    append: bool,
+) -> Result<bool, String> {
+    use base64::Engine;
+    use std::io::Write;
+
+    let dir = models_dir(&app_handle)?;
+    fs::create_dir_all(&dir).map_err(|e| e.to_string())?;
+
+    let clean_name = Path::new(&file_name)
+        .file_name()
+        .ok_or_else(|| "invalid file name".to_string())?
+        .to_string_lossy()
+        .into_owned();
+
+    let target_path = dir.join(&clean_name);
+    let bytes = base64::engine::general_purpose::STANDARD
+        .decode(&chunk_base64)
+        .map_err(|e| format!("decode base64: {e}"))?;
+
+    let mut options = fs::OpenOptions::new();
+    options.create(true).write(true);
+    if append {
+        options.append(true);
+    } else {
+        options.truncate(true);
+    }
+
+    let mut file = options
+        .open(&target_path)
+        .map_err(|e| format!("open {}: {e}", target_path.display()))?;
+    file.write_all(&bytes)
+        .map_err(|e| format!("write {}: {e}", target_path.display()))?;
+
+    Ok(true)
+}
+
+#[tauri::command]
+#[allow(dead_code)]
+pub async fn delete_stt_model(app_handle: tauri::AppHandle, id: String) -> Result<bool, String> {
+    let dir = models_dir(&app_handle)?;
+    // If id is a catalog model, find spec file_name
+    let file_name = if let Some(spec) = models::find_model(&id) {
+        spec.file_name.to_string()
+    } else {
+        id
+    };
+    let path = dir.join(file_name);
+    if path.is_file() {
+        let _ = fs::remove_file(path);
+    }
+    Ok(true)
 }
 
 async fn download_and_install(

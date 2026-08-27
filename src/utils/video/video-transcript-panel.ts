@@ -25,7 +25,6 @@ let session = 0;
 
 let video: HTMLVideoElement | null = null;
 let wasPlaying = false;
-let openedFullscreen = false;
 let watchUrl = '';
 let videoId = '';
 let videoTitle = '';
@@ -57,8 +56,8 @@ export function isTranscriptPanelActive(): boolean {
 }
 
 // Close the panel programmatically (e.g. to switch to another panel).
-export function closeTranscriptPanel(): void {
-	if (active) teardown();
+export function closeTranscriptPanel(immediate = false): void {
+	if (active) teardown(immediate);
 }
 
 export async function startTranscriptAnnotate(): Promise<void> {
@@ -79,7 +78,6 @@ export async function startTranscriptAnnotate(): Promise<void> {
 	videoTitle = getVideoTitle();
 	videoTime = video.currentTime;
 	wasPlaying = !video.paused;
-	openedFullscreen = !!document.fullscreenElement;
 
 	transcript = await loadTranscript(videoId, getSessionLang(videoId));
 	if (my !== session) return; // cancelled mid-fetch
@@ -141,6 +139,9 @@ function build() {
 	window.addEventListener('keydown', onKeyDown, true);
 	window.addEventListener('keyup', onKeyUpShield, true);
 	window.addEventListener('keypress', onKeyUpShield, true);
+	window.addEventListener('__obVpsEscPressed', onEscBridge);
+	window.addEventListener('message', onEscMessage);
+
 	// Follow the live player: poll currentTime on a short interval (robust — the
 	// `timeupdate` event can be throttled when the scaled player isn't focused, or
 	// while another panel is layered over it) plus `seeked` for an instant response
@@ -480,10 +481,22 @@ function toast(msg: string) {
 	setTimeout(() => el.remove(), 2200);
 }
 
-function teardown() {
+function onEscMessage(e: MessageEvent) {
+	if (e.data?.type === '__obVpsEscPressed') onEscBridge();
+}
+
+function onEscBridge() {
+	markPanelEsc();
+	if (popupEl) removePopup();
+	else teardown();
+}
+
+function teardown(immediate = false) {
 	window.removeEventListener('keydown', onKeyDown, true);
 	window.removeEventListener('keyup', onKeyUpShield, true);
 	window.removeEventListener('keypress', onKeyUpShield, true);
+	window.removeEventListener('__obVpsEscPressed', onEscBridge);
+	window.removeEventListener('message', onEscMessage);
 	if (followTimer != null) { clearInterval(followTimer); followTimer = null; }
 	navUnsub?.(); navUnsub = null;
 	video?.removeEventListener('seeked', onPlayback);
@@ -491,7 +504,7 @@ function teardown() {
 	removePopup();
 
 	if (root) unmountHost(root);
-	disengagePlayerStage();
+	disengagePlayerStage(immediate);
 	root = listEl = null;
 	pendingSel = null;
 

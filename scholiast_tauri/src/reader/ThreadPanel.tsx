@@ -76,7 +76,7 @@ function prefersReducedMotion(): boolean {
 
 /** Scrolls the painted range to the viewport center, briefly retrying while
  * the painter settles (fresh page load, sync pull, just-created highlight). */
-export function scrollToHighlight(highlightId: string): void {
+function scrollToHighlight(highlightId: string): void {
   let tries = 0;
   const attempt = () => {
     const range = findHighlightRange(highlightId);

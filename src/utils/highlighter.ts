@@ -17,8 +17,8 @@ import { addBrowserClassToHtml } from './browser-detection';
 import dayjs from 'dayjs';
 import { generalSettings, loadSettings } from './storage-utils';
 import { applyImageEdits } from './image-edit';
-import { renderCommentBoxes, clearCommentBoxes, resumePendingDiagrams } from './comment-overlays';
-import { pushUndo, undoLast, redoLast } from './undo-manager';
+import { renderCommentBoxes, resumePendingDiagrams } from './comment-overlays';
+import { pushUndo } from './undo-manager';
 
 export type AnyHighlightData = TextHighlightData | ElementHighlightData;
 
@@ -174,7 +174,6 @@ export interface StoredData {
 	title?: string;
 }
 
-type HighlightsStorage = Record<string, StoredData>;
 export let currentHighlightColor: 'yellow' | 'red' | 'green' = 'yellow';
 
 export function updateHighlights(newHighlights: AnyHighlightData[]) {
@@ -1153,7 +1152,7 @@ function handleKeyDown(event: KeyboardEvent) {
 }
 
 
-function addToHistory(type: 'add' | 'remove', oldHighlights: AnyHighlightData[], newHighlights: AnyHighlightData[]) {
+function addToHistory(_type: 'add' | 'remove', oldHighlights: AnyHighlightData[], newHighlights: AnyHighlightData[]) {
 	// Push onto the shared cross-tool stack. Snapshots are the arrays captured
 	// before/after the change; callers create new highlight objects on mutation
 	// (rather than mutating in place) so these snapshots stay valid for undo.

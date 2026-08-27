@@ -139,18 +139,28 @@ fn push_allowed_attrs(
 ) {
     match name {
         "img" => {
-            let resolved_src = element
+            let is_placeholder = |url_str: &str| -> bool {
+                let lower = url_str.to_ascii_lowercase();
+                lower.ends_with("/spacer.gif")
+                    || lower.ends_with("/blank.gif")
+                    || lower.ends_with("/placeholder.png")
+                    || lower.contains("1x1")
+                    || lower.contains("transparent")
+            };
+            let direct_src = element
                 .attr("src")
                 .and_then(|raw| resolve_url(base, raw))
-                .or_else(|| {
-                    element
-                        .attr("srcset")
-                        .and_then(first_srcset_url)
-                        .and_then(|raw| resolve_url(base, &raw))
-                })
+                .filter(|resolved| !is_placeholder(resolved));
+
+            let resolved_src = direct_src
                 .or_else(|| {
                     element
                         .attr("data-src")
+                        .and_then(|raw| resolve_url(base, raw))
+                })
+                .or_else(|| {
+                    element
+                        .attr("data-original")
                         .and_then(|raw| resolve_url(base, raw))
                 })
                 .or_else(|| {
@@ -160,12 +170,32 @@ fn push_allowed_attrs(
                 })
                 .or_else(|| {
                     element
+                        .attr("data-lazy-src")
+                        .and_then(|raw| resolve_url(base, raw))
+                })
+                .or_else(|| {
+                    element
+                        .attr("data-actualsrc")
+                        .and_then(|raw| resolve_url(base, raw))
+                })
+                .or_else(|| {
+                    element
+                        .attr("srcset")
+                        .and_then(first_srcset_url)
+                        .and_then(|raw| resolve_url(base, &raw))
+                })
+                .or_else(|| {
+                    element
                         .attr("data-srcset")
                         .and_then(first_srcset_url)
                         .and_then(|raw| resolve_url(base, &raw))
+                })
+                .or_else(|| {
+                    element.attr("src").and_then(|raw| resolve_url(base, raw))
                 });
             if let Some(src) = resolved_src {
                 push_attr(out, "src", &src);
+                push_attr(out, "referrerpolicy", "no-referrer");
             }
             if let Some(alt) = element.attr("alt") {
                 push_attr(out, "alt", alt);

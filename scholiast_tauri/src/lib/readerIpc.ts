@@ -62,6 +62,10 @@ export function getPage(args: { urlHash: string }): Promise<PageView | null> {
   return invokeCommand<PageView | null>("get_page", args);
 }
 
+export function getAuthenticHtml(args: { url: string }): Promise<string> {
+  return invokeCommand<string>("get_authentic_html", args);
+}
+
 export function deleteArticle(args: { urlHash: string }): Promise<boolean> {
   return invokeCommand<boolean>("delete_article", args);
 }
@@ -102,4 +106,31 @@ export function listComments(args: { highlightId: string }): Promise<CommentView
 
 export function deleteComment(args: { commentId: string }): Promise<boolean> {
   return invokeCommand<boolean>("delete_comment", args);
+}
+
+export interface SaveDiagramInput {
+  id?: string;
+  pageUrlHash?: string;
+  highlightId?: string;
+  sceneJson: string;
+  pngBase64: string;
+}
+
+export interface SaveDiagramOutput {
+  id: string;
+}
+
+export interface DiagramItemOut {
+  id: string;
+  pageUrlHash: string | null;
+  sceneJson: string | null;
+  pngPath: string | null;
+}
+
+export function saveDiagramItem(input: SaveDiagramInput): Promise<SaveDiagramOutput> {
+  return invokeCommand<SaveDiagramOutput>("save_diagram_item", { input });
+}
+
+export function getDiagramItem(args: { id: string }): Promise<DiagramItemOut | null> {
+  return invokeCommand<DiagramItemOut | null>("get_diagram_item", args);
 }

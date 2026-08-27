@@ -98,7 +98,7 @@ export const replace = (str: string, param?: string): string => {
 };
 
 function processEscapedCharacters(str: string): string {
-	return str.replace(/\\([nrt]|[^nrt])/g, (match, char) => {
+	return str.replace(/\\([nrt]|[^nrt])/g, (_, char) => {
 		switch (char) {
 			case 'n': return '\n';
 			case 'r': return '\r';

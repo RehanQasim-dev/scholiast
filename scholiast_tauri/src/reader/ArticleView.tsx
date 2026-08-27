@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import type { CSSProperties, ReactNode, RefObject } from "react";
+import { useNavigate } from "react-router-dom";
 import SwatchPopup from "../components/SwatchPopup";
 import type { HighlightColor } from "../components/SwatchPopup";
 import {
@@ -10,6 +11,7 @@ import {
 } from "./highlightPaint";
 import type { HighlightForPaint, PaintStats } from "./highlightPaint";
 import { useHighlights } from "./useHighlights";
+import { saveComment } from "../lib/readerIpc";
 import "./reader-typography.css";
 import "./highlight-overlays.css";
 
@@ -118,10 +120,6 @@ export default function ArticleView({
       if (!img.getAttribute("loading")) img.setAttribute("loading", "lazy");
       img.setAttribute("decoding", "async");
       img.setAttribute("referrerpolicy", "no-referrer");
-      if (img.complete && img.naturalWidth === 0) {
-        swapToChip(img);
-        return;
-      }
       const onError = () => swapToChip(img);
       img.addEventListener("error", onError);
       cleanups.push(() => img.removeEventListener("error", onError));
@@ -199,6 +197,7 @@ function HighlightsLayer({
   onHighlightClick,
   onHighlightCreated,
 }: HighlightsLayerProps) {
+  const navigate = useNavigate();
   const { highlights, paintRootRef, createFromSelection } = useHighlights(urlHash);
   const [popupAnchor, setPopupAnchor] = useState<{
     top: number;
@@ -287,6 +286,20 @@ function HighlightsLayer({
   // (keyboard selections included); mouseup opens it immediately.
   useEffect(() => {
     const clearShowTimer = () => window.clearTimeout(showTimer.current);
+    let lastPointerType = "mouse";
+    let touchMoved = false;
+
+    const onPointerDown = (e: PointerEvent) => {
+      lastPointerType = e.pointerType;
+      touchMoved = false;
+    };
+
+    const onPointerMove = (e: PointerEvent) => {
+      if (e.pointerType === "touch") {
+        touchMoved = true;
+      }
+    };
+
     const onSelectionChange = () => {
       clearShowTimer();
       if (window.getSelection()?.isCollapsed !== false) {
@@ -295,21 +308,38 @@ function HighlightsLayer({
         return;
       }
       setPopupAnchor(null);
-      showTimer.current = window.setTimeout(showPopupForSelection, 300);
+      // S-Pen / Stylus: instant precision selection (50ms)
+      // Mouse/Touch: standard settled delay (300ms)
+      const delay = lastPointerType === "pen" ? 50 : 300;
+      showTimer.current = window.setTimeout(showPopupForSelection, delay);
     };
+
     const onMouseUp = () => {
       clearShowTimer();
+      // If finger was scrolling the page, avoid popping up swatch accidentally
+      if (lastPointerType === "touch" && touchMoved) {
+        return;
+      }
       if (selectionInRange()) showPopupForSelection();
     };
+
     const dismiss = () => setPopupAnchor(null);
+
+    document.addEventListener("pointerdown", onPointerDown, { passive: true });
+    document.addEventListener("pointermove", onPointerMove, { passive: true });
     document.addEventListener("selectionchange", onSelectionChange);
     document.addEventListener("mouseup", onMouseUp);
+    document.addEventListener("touchend", onMouseUp);
     window.addEventListener("scroll", dismiss, true);
     window.addEventListener("resize", dismiss);
+
     return () => {
       clearShowTimer();
+      document.removeEventListener("pointerdown", onPointerDown);
+      document.removeEventListener("pointermove", onPointerMove);
       document.removeEventListener("selectionchange", onSelectionChange);
       document.removeEventListener("mouseup", onMouseUp);
+      document.removeEventListener("touchend", onMouseUp);
       window.removeEventListener("scroll", dismiss, true);
       window.removeEventListener("resize", dismiss);
     };
@@ -333,6 +363,29 @@ function HighlightsLayer({
     setPopupAnchor(null);
   }, []);
 
+  const handleSaveComment = useCallback(
+    (color: HighlightColor, commentText: string) => {
+      setPopupAnchor(null);
+      const range = pendingRange.current;
+      pendingRange.current = null;
+      if (!range) return;
+      void createFromSelection(range, color).then(async (id) => {
+        if (!id) return;
+        window.getSelection()?.removeAllRanges();
+        if (commentText.trim()) {
+          const note = `${commentText.trim()}<!--timestamp:${Date.now()}-->`;
+          try {
+            await saveComment({ highlightId: id, note });
+          } catch {
+            /* ignore */
+          }
+        }
+        onHighlightCreated?.(id);
+      });
+    },
+    [createFromSelection, onHighlightCreated],
+  );
+
   // 💬 on a selection: create the highlight (yellow default) and hand the
   // representative id up so Reader opens its thread with the reply focused.
   const handleComment = useCallback(() => {
@@ -346,6 +399,21 @@ function HighlightsLayer({
       onHighlightCreated?.(id);
     });
   }, [createFromSelection, onHighlightCreated]);
+
+  const handleOpenDiagram = useCallback(
+    (color: HighlightColor) => {
+      setPopupAnchor(null);
+      const range = pendingRange.current;
+      pendingRange.current = null;
+      if (!range) return;
+      void createFromSelection(range, color).then((id) => {
+        if (!id) return;
+        window.getSelection()?.removeAllRanges();
+        navigate("/diagram", { state: { urlHash, highlightId: id } });
+      });
+    },
+    [createFromSelection, navigate, urlHash],
+  );
 
   // Click on a painted range → onHighlightClick. Fallback marks answer
   // directly; native registries are hit-tested through static ranges using
@@ -409,6 +477,8 @@ function HighlightsLayer({
         <SwatchPopup
           anchor={popupAnchor}
           onPickColor={handlePickColor}
+          onSaveComment={handleSaveComment}
+          onOpenDiagram={handleOpenDiagram}
           onComment={handleComment}
           onClose={handleClosePopup}
         />

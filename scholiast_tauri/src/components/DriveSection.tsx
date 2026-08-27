@@ -20,7 +20,7 @@ function sleep(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
-export async function waitForConnected(
+async function waitForConnected(
   intervalMs: number,
   budgetMs: number,
 ): Promise<boolean> {
@@ -128,11 +128,11 @@ export default function DriveSection({
         : "Not Connected • Tap to Authorize";
 
   return (
-    <section
+    <div
       aria-label="Google Drive sync"
-      className={`rounded-lg border border-hairline bg-surface p-4 ${offline ? "opacity-60" : ""}`}
+      className={offline ? "opacity-60" : ""}
     >
-      <h2 className="text-sm font-semibold text-text">Google Drive sync</h2>
+      <h3 className="text-sm font-medium text-text">Google Drive sync</h3>
       <p className="mt-2 text-sm tabular-nums" data-testid="drive-status-line">
         <span className={connected ? "text-[var(--sc-success)]" : "text-text-2"}>{statusLine}</span>
         {connected && <span className="ml-2 inline-block h-2 w-2 rounded-full bg-[var(--sc-success)]" aria-hidden />}
@@ -177,6 +177,6 @@ export default function DriveSection({
           </button>
         )}
       </div>
-    </section>
+    </div>
   );
 }

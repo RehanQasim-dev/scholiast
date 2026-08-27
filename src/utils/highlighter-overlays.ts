@@ -2,7 +2,6 @@ import {
 	handleTextSelection,
 	highlightElement,
 	AnyHighlightData,
-	BLOCK_HIGHLIGHT_TAGS,
 	highlights,
 	isApplyingHighlights,
 	sortHighlights,
@@ -12,7 +11,7 @@ import {
 	updateHighlightColor,
 	repositionHighlights,
 } from './highlighter';
-import { clearCommentBoxes, startAddingComment, emphasizeCommentBox, hasUnsavedCommentText } from './comment-overlays';
+import { startAddingComment, emphasizeCommentBox, hasUnsavedCommentText } from './comment-overlays';
 import { isImageHighlight, openImageEditor, restoreEditedImage } from './image-edit';
 import { throttle } from './throttle';
 import { getElementByXPath, isDarkColor, setElementHTML, isEditableContext } from './dom-utils';
@@ -37,7 +36,6 @@ const IGNORED_BOUNDARY_SELECTOR =
 // Requires CSS Custom Highlight API: Chrome 105+, Safari 17.2+, Firefox 140+.
 // If unavailable the renderer silently no-ops.
 
-const USER_HIGHLIGHT_NAME = 'obsidian-highlight';
 // Priority below transcript-playback (default 0) so audio playback highlights
 // paint on top inside transcripts.
 const USER_HIGHLIGHT_PRIORITY = -1;
@@ -330,7 +328,6 @@ function findTextHighlightAtPoint(x: number, y: number): string | null {
 
 let highlightActionMenu: HTMLDivElement | null = null;
 let currentActionTargetId: string | null = null;
-let actionMenuShownViaAlt = false;
 
 // Dwell-gating for switching the action menu between highlights. Moving the
 // cursor from a highlight up to its floating menu can briefly cross a
@@ -539,7 +536,6 @@ export let actionMenuHideTimeout: number | null = null;
 export function hideHighlightActionMenu(): void {
 	if (highlightActionMenu) highlightActionMenu.style.display = 'none';
 	currentActionTargetId = null;
-	actionMenuShownViaAlt = false;
 	clearPendingSwitch();
 	if (actionMenuHideTimeout) {
 		clearTimeout(actionMenuHideTimeout);
@@ -976,7 +972,7 @@ let lastCursor = '';
 function handleHighlightHover(event: MouseEvent) {
 	if (hoverRafPending) return;
 	// Capture values synchronously — the event object is reused.
-	const { clientX, clientY, altKey } = event;
+	const { clientX, clientY } = event;
 	const target = event.target as Element | null;
 	hoverRafPending = true;
 	requestAnimationFrame(() => {

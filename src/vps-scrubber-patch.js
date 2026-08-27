@@ -67,10 +67,43 @@
 	// navigator.keyboard may be undefined, so Esc to exit fullscreen cannot be
 	// prevented there. The page world *does* have it. Listen for lock/unlock
 	// requests from the content script.
-	window.addEventListener('__obVpsLock', function () {
-		try { if (navigator.keyboard && navigator.keyboard.lock) navigator.keyboard.lock(['Escape']).catch(function () {}); } catch (e) {}
+	function doLock() {
+		try {
+			if (navigator.keyboard && navigator.keyboard.lock && document.fullscreenElement) {
+				navigator.keyboard.lock(['Escape']).catch(function () {});
+			}
+		} catch (e) {}
+	}
+	function doUnlock() {
+		try {
+			if (navigator.keyboard && navigator.keyboard.unlock) {
+				navigator.keyboard.unlock();
+			}
+		} catch (e) {}
+	}
+
+	window.addEventListener('__obVpsLock', doLock);
+	window.addEventListener('__obVpsUnlock', doUnlock);
+	window.addEventListener('message', function (e) {
+		if (e.data?.type === '__obVpsLock') doLock();
+		else if (e.data?.type === '__obVpsUnlock') doUnlock();
 	});
-	window.addEventListener('__obVpsUnlock', function () {
-		try { if (navigator.keyboard && navigator.keyboard.unlock) navigator.keyboard.unlock(); } catch (e) {}
+
+	// In fullscreen with a side panel OR snapshot annotator open, intercept Escape
+	// in the main page world so the overlay closes and the browser does NOT drop fullscreen!
+	window.addEventListener('keydown', function (e) {
+		if (e.key === 'Escape' && document.body && (document.body.dataset.obVpsScale || document.body.dataset.obVidAnnotatorActive)) {
+			e.preventDefault();
+			e.stopPropagation();
+			e.stopImmediatePropagation();
+			try { window.dispatchEvent(new CustomEvent('__obVpsEscPressed')); } catch (err) {}
+			window.postMessage({ type: '__obVpsEscPressed' }, '*');
+		}
+	}, true);
+
+	document.addEventListener('fullscreenchange', function () {
+		if (document.body && (document.body.dataset.obVpsScale || document.body.dataset.obVidAnnotatorActive)) {
+			doLock();
+		}
 	});
 })();

@@ -39,12 +39,19 @@ export const StrokeWidthExtraBoldIcon = () => (
 export const StrokeStyleSolidIcon = () => (
   <svg viewBox="0 0 20 20" fill="none" stroke="currentColor" strokeWidth="1.25" strokeLinecap="round" strokeLinejoin="round" style={{ width: '100%', height: '100%' }}>
     <path
-      d="M6 10H34"
+      d="M4 10h12"
       stroke={"currentColor"}
       strokeWidth={2}
       fill="none"
       strokeLinecap="round"
     />
+  </svg>
+);
+
+export const TransparentIcon = () => (
+  <svg viewBox="0 0 20 20" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" style={{ width: '100%', height: '100%' }}>
+    <circle cx="10" cy="10" r="7" stroke="rgba(255,255,255,0.4)" strokeWidth="1.5" />
+    <line x1="5" y1="15" x2="15" y2="5" stroke="#ef4444" strokeWidth="1.75" />
   </svg>
 );
 

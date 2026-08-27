@@ -333,9 +333,9 @@
 	--text-muted: #5c5c5c;
 	--text-faint: #ababab;
 	--text-accent: #111111;
-	--text-accent-hover: #8a5cf5;
+	--text-accent-hover: #278a54;
 	--background-modifier-border: #e0e0e0;
-	--text-selection: #E8DFFD;
+	--text-selection: rgba(47, 158, 98, 0.2);
 	--shadow-s:
 		0px 1px 2px rgba(0, 0, 0, .028),
 		0px 3.4px 6.7px rgba(0, 0, 0, .042),
@@ -348,25 +348,23 @@
 	--color-green: #08b94e;
 	--color-cyan: #00bfbc;
 	--color-blue: #086ddd;
-	--color-purple: #7852ee;
+	--color-purple: #2f9e62;
 	--color-pink: #d53984;
 	--dropdown-background-position: right .5em top 50%, 0 0;
 	--dropdown-background-size: 1em auto, 100%;
 
 	&.theme-dark {
 		color-scheme: dark;
-		// Blue-slate to match the global theme. This default dark reader theme is
-		// also applied to the highlights dashboard's content, so without this the
-		// reading column would fall back to neutral #1e1e1e black inside slate.
-		--background-primary: #1b2030;
-		--background-primary-alt: #1d2334;
-		--text-normal: #dfe5f0;
-		--text-muted: #aab3c8;
-		--text-faint: #6b7489;
-		--text-accent: #dfe5f0;
+		// Terminal green-black to match the global theme.
+		--background-primary: #070d0a;
+		--background-primary-alt: #0f1e14;
+		--text-normal: #d4f0db;
+		--text-muted: #a8d5b5;
+		--text-faint: #6e9a7e;
+		--text-accent: #d4f0db;
 		--text-accent-hover: #6fcf97;
-		--background-modifier-border: #2c3346;
-		--text-selection: #2f3a57;
+		--background-modifier-border: #1a3322;
+		--text-selection: rgba(47, 158, 98, 0.35);
 		--shadow-s:
 			0px 1px 2px rgba(0, 0, 0, 0.121),
 			0px 3.4px 6.7px rgba(0, 0, 0, 0.179),
@@ -378,7 +376,7 @@
 		--color-green: #44cf6e;
 		--color-cyan: #53dfdd;
 		--color-blue: #54b3ff;
-		--color-purple: #a882ff;
+		--color-purple: #38b471;
 		--color-pink: #fa99cd;
 	}
 

@@ -1,10 +1,9 @@
 import { ExtractedContent } from '../types/types';
 import { createMarkdownContent } from 'defuddle/full';
 import { sanitizeFileName } from './string-utils';
-import { buildVariables, addSchemaOrgDataToVariables } from './shared';
+import { buildVariables } from './shared';
 import browser from './browser-polyfill';
 import { debugLog } from './debug';
-import dayjs from 'dayjs';
 import { AnyHighlightData, TextHighlightData, HighlightData, collapseGroupsForExport } from './highlighter';
 import { generalSettings } from './storage-utils';
 import {

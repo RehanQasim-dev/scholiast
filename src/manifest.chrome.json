@@ -44,6 +44,12 @@
 	},
 	"content_scripts": [
 		{
+			"matches": ["*://*.youtube.com/*"],
+			"js": ["vps-scrubber-patch.js"],
+			"world": "MAIN",
+			"run_at": "document_start"
+		},
+		{
 			"matches": ["http://*/*", "https://*/*"],
 			"js": ["browser-polyfill.min.js", "content.js"]
 		}

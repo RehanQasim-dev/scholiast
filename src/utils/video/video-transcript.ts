@@ -188,46 +188,9 @@ export function pickTrack(tracks: TranscriptTrack[], videoId: string): Transcrip
 	return tracks.find(t => !t.isASR) || tracks[0];
 }
 
-// --- Cue fetching & parsing --------------------------------------------------
 
-function decodeEntities(text: string): string {
-	return text
-		.replace(/&amp;/g, '&').replace(/&lt;/g, '<').replace(/&gt;/g, '>')
-		.replace(/&quot;/g, '"').replace(/&#39;/g, "'").replace(/&apos;/g, "'")
-		.replace(/&#x([0-9a-fA-F]+);/g, (_, h) => String.fromCodePoint(parseInt(h, 16)))
-		.replace(/&#(\d+);/g, (_, d) => String.fromCodePoint(parseInt(d, 10)));
-}
 
-// Parse YouTube's caption XML. Default format is <text start="s" dur="s">…</text>;
-// srv3 is <p t="ms" d="ms"><s>word</s>…</p>. One line = one cue.
-function parseCuesXml(xml: string): TranscriptCue[] {
-	const cues: TranscriptCue[] = [];
-	let m: RegExpExecArray | null;
 
-	const pRe = /<p\s+t="(\d+)"(?:[^>]*?\sd="(\d+)")?[^>]*>([\s\S]*?)<\/p>/g;
-	while ((m = pRe.exec(xml)) !== null) {
-		const start = parseInt(m[1], 10) / 1000;
-		const dur = m[2] ? parseInt(m[2], 10) / 1000 : 0;
-		const inner = m[3];
-		let text = '';
-		const sRe = /<s[^>]*>([^<]*)<\/s>/g;
-		let s: RegExpExecArray | null;
-		while ((s = sRe.exec(inner)) !== null) text += s[1];
-		if (!text) text = inner.replace(/<[^>]+>/g, '');
-		text = decodeEntities(text.replace(/\n/g, ' ').replace(/\s{2,}/g, ' ')).trim();
-		if (text) cues.push({ index: cues.length, start, end: start + dur, text });
-	}
-	if (cues.length) return cues;
-
-	const tRe = /<text\s+start="([^"]*)"(?:[^>]*?\sdur="([^"]*)")?[^>]*>([\s\S]*?)<\/text>/g;
-	while ((m = tRe.exec(xml)) !== null) {
-		const start = parseFloat(m[1]) || 0;
-		const dur = m[2] ? (parseFloat(m[2]) || 0) : 0;
-		const text = decodeEntities(m[3].replace(/<[^>]+>/g, '').replace(/\n/g, ' ').replace(/\s{2,}/g, ' ')).trim();
-		if (text) cues.push({ index: cues.length, start, end: start + dur, text });
-	}
-	return cues;
-}
 
 
 // Semantic chunker for the transcript panel. Operates on raw XML caption cues
@@ -391,35 +354,7 @@ function buildAlignedParagraphs(defuddlePs: DefuddlePara[], cues: TranscriptCue[
 // readable paragraph blocks.
 
 // YouTube cues are time-windowed, not sentence-windowed: a single cue can carry
-// the tail of one sentence and the start of the next (e.g. "...compiler. And
-// neither..."). Phase 1 of the chunker can only see cue boundaries, so we
-// pre-split such cues at internal sentence ends. Both halves keep the original
-// cue's start (timestamps within a split cue resolve to the same second — fine
-// granularity loss for highlighting; the chunk boundary is what we care about).
-function splitOnInternalSentences(cues: TranscriptCue[]): TranscriptCue[] {
-	// sentence-end punct + optional closing quote/bracket + whitespace + an
-	// uppercase letter / opening quote. CJK punctuation doesn't need the
-	// capital-letter lookahead since the absence of inter-word spaces makes
-	// `.X` itself diagnostic.
-	const RE = /([.!?。！？]["')\]’”]?)\s+(?=[A-Z“"‘'])/g;
-	const out: TranscriptCue[] = [];
-	for (const c of cues) {
-		RE.lastIndex = 0;
-		const positions: number[] = [];
-		let m: RegExpExecArray | null;
-		while ((m = RE.exec(c.text)) !== null) positions.push(m.index + m[1].length);
-		if (positions.length === 0) { out.push({ ...c, index: out.length }); continue; }
-		let prev = 0;
-		for (const pos of positions) {
-			const piece = c.text.slice(prev, pos).trim();
-			if (piece) out.push({ index: out.length, start: c.start, end: c.end, text: piece });
-			prev = pos;
-		}
-		const tail = c.text.slice(prev).trim();
-		if (tail) out.push({ index: out.length, start: c.start, end: c.end, text: tail });
-	}
-	return out;
-}
+
 
 // Group cues into paragraphs using Defuddle's `groupBySentence` algorithm,
 // adapted to operate on our cue objects (preserving cue references rather

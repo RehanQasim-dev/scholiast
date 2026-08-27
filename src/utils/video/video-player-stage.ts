@@ -40,6 +40,7 @@ try {
 
 let lastPanelEsc = 0;
 let lastPlayerForRestore: HTMLElement | null = null;
+let lastFsElement: HTMLElement | null = null;
 export function markPanelEsc(): void { lastPanelEsc = Date.now(); }
 
 export function setCustomPanelWidth(w: number) {
@@ -58,6 +59,9 @@ function injectPatchScript() {
 	const s = document.createElement('script');
 	s.id = 'ob-vps-patch';
 	s.src = browser.runtime.getURL('vps-scrubber-patch.js');
+	s.onload = () => {
+		lockEscape();
+	};
 	(document.head || document.documentElement).appendChild(s);
 }
 
@@ -177,6 +181,7 @@ export function engagePlayerStage(): void {
 		player = getPlayerContainer();
 		if (!player) return;
 		lastPlayerForRestore = player;
+		lastFsElement = fsElement();
 		saved = {
 			transform: player.style.transform,
 			transformOrigin: player.style.transformOrigin,
@@ -246,13 +251,18 @@ export function unmountHost(host: HTMLElement): void {
 	host.remove();
 }
 
-export function disengagePlayerStage(): void {
+export function disengagePlayerStage(immediate = false): void {
 	refCount = Math.max(0, refCount - 1);
 	if (refCount === 0) {
 		if (player && saved) {
+			if (immediate) {
+				player.style.transition = 'none';
+			}
 			player.style.transform = saved.transform;
 			player.style.transformOrigin = saved.transformOrigin;
-			player.style.transition = saved.transition;
+			if (!immediate) {
+				player.style.transition = saved.transition;
+			}
 		}
 		dim?.remove();
 		dim = null;
@@ -312,11 +322,14 @@ function onFsChange() {
 	// Fallback: if fullscreen exited right after a panel Esc, the browser
 	// ignored keyboard.lock and exited anyway. Re-enter so first Esc only
 	// closes the panel and stays fullscreen; second Esc then exits normally.
-	if (wasFs && !nowFs && Date.now() - lastPanelEsc < 700) {
-		const restoreTarget = lastPlayerForRestore || document.querySelector('#movie_player') as HTMLElement | null;
+	if (wasFs && !nowFs && Date.now() - lastPanelEsc < 1200) {
+		const restoreTarget = lastFsElement || lastPlayerForRestore || document.querySelector('#movie_player') as HTMLElement | null;
 		if (restoreTarget && restoreTarget.requestFullscreen) {
 			// Still within transient activation, so this succeeds
-			restoreTarget.requestFullscreen().catch(() => {});
+			restoreTarget.requestFullscreen().catch(() => {
+				const moviePlayer = document.querySelector('#movie_player') as HTMLElement | null;
+				moviePlayer?.requestFullscreen?.().catch(() => {});
+			});
 		}
 		// Even if re-enter fails, don't let a half-torn host linger windowed
 	}

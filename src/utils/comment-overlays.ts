@@ -1483,7 +1483,7 @@ function taskItemTextStart(ta: HTMLElement): { li: HTMLLIElement; checkSpan: Ele
 	return { li, checkSpan, atStart };
 }
 
-function placeCaretAtTaskTextStart(li: HTMLLIElement, checkSpan: Element): void {
+function placeCaretAtTaskTextStart(_li: HTMLLIElement, checkSpan: Element): void {
 	const sel = window.getSelection();
 	if (!sel) return;
 	const range = document.createRange();

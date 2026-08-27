@@ -6,13 +6,14 @@
 //! sanitize) before storing. Signature stays `add_article(url) ->
 //! { urlHash, title }`.
 
+use base64::Engine as _;
 use scholiast_core::error::{Reply, ScholiastError};
-use scholiast_core::models::{CommentData, HighlightData};
+use scholiast_core::models::{CommentData, DiagramMeta, HighlightData};
 use serde::Serialize;
 use serde_json::json;
-use tauri::{AppHandle, Emitter, State};
+use tauri::{AppHandle, Emitter, Manager, State};
 
-use crate::store::highlights::{AnnotationRepo, HighlightsRepo, PagesRepo};
+use crate::store::highlights::{AnnotationRepo, DiagramsRepo, HighlightsRepo, PagesRepo};
 use crate::store::pages::{ArticleSummary, ArticlesRepo};
 // task-27: every reader mutation marks its page dirty for the sync scheduler.
 use crate::store::sync_meta::SyncQueueRepo;
@@ -155,6 +156,15 @@ pub async fn get_page(
 }
 
 #[tauri::command]
+pub async fn get_authentic_html(
+    url: String,
+) -> Result<Reply<String>, ScholiastError> {
+    let raw = crate::reader::extract::fetch_html(&url).await?;
+    let authentic = crate::reader::extract::prepare_authentic_html(&raw, &url);
+    Ok(Reply::new(authentic))
+}
+
+#[tauri::command]
 pub async fn delete_article(
     app: AppHandle,
     state: State<'_, AppState>,
@@ -273,6 +283,112 @@ pub async fn delete_comment(
         Store::new(&state.pool).enqueue(&hash).await?;
     }
     Ok(Reply::new(deleted))
+}
+
+#[derive(Debug, serde::Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SaveDiagramInput {
+    pub id: Option<String>,
+    pub page_url_hash: Option<String>,
+    pub highlight_id: Option<String>,
+    pub scene_json: String,
+    pub png_base64: String,
+}
+
+#[derive(Debug, serde::Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SaveDiagramOutput {
+    pub id: String,
+}
+
+#[derive(Debug, serde::Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct DiagramItemOut {
+    pub id: String,
+    pub page_url_hash: Option<String>,
+    pub scene_json: Option<String>,
+    pub png_path: Option<String>,
+}
+
+#[tauri::command]
+pub async fn save_diagram_item(
+    app: AppHandle,
+    state: State<'_, AppState>,
+    input: SaveDiagramInput,
+) -> Result<Reply<SaveDiagramOutput>, ScholiastError> {
+    let id = input
+        .id
+        .filter(|s| !s.trim().is_empty())
+        .unwrap_or_else(|| format!("diag_{}", now_ms()));
+
+    let png_bytes = base64::engine::general_purpose::STANDARD
+        .decode(input.png_base64.as_bytes())
+        .map_err(|e| ScholiastError::InvalidInput(format!("diagram PNG is not valid base64: {e}")))?;
+
+    let app_data = app.path().app_data_dir().map_err(crate::store::internal)?;
+    let diagrams_dir = app_data.join("diagrams");
+    tokio::fs::create_dir_all(&diagrams_dir)
+        .await
+        .map_err(|e| ScholiastError::Io(e.to_string()))?;
+
+    let png_path = diagrams_dir.join(format!("{id}.png"));
+    tokio::fs::write(&png_path, &png_bytes)
+        .await
+        .map_err(|e| ScholiastError::Io(e.to_string()))?;
+
+    let scene_val: serde_json::Value = serde_json::from_str(&input.scene_json)
+        .unwrap_or(serde_json::Value::Null);
+
+    let meta = DiagramMeta {
+        id: id.clone(),
+        scene_data: Some(scene_val),
+        updated_at: Some(now_ms()),
+        drive_id: None,
+        scene_drive_id: None,
+        pasted: false,
+        image_for_highlight: input.highlight_id.clone(),
+        page_url: None,
+        extra: Default::default(),
+    };
+
+    Store::new(&state.pool)
+        .save_diagram(input.page_url_hash.as_deref(), &meta)
+        .await?;
+
+    if let Some(ref hl_id) = input.highlight_id {
+        let note = format!("![Diagram](diagrams/{id}.png)");
+        let _ = Store::new(&state.pool).save_comment(hl_id, &note).await;
+        emit_changed(&app, "comments", hl_id);
+    }
+
+    emit_changed(&app, "diagrams", &id);
+    if let Some(ref hash) = input.page_url_hash {
+        emit_changed(&app, "pages", hash);
+        Store::new(&state.pool).enqueue(hash).await?;
+    }
+
+    Ok(Reply::new(SaveDiagramOutput { id }))
+}
+
+#[tauri::command]
+pub async fn get_diagram_item(
+    state: State<'_, AppState>,
+    id: String,
+) -> Result<Reply<Option<DiagramItemOut>>, ScholiastError> {
+    let row = sqlx::query_as::<_, (String, Option<String>, Option<String>, Option<String>)>(
+        "SELECT id, page_url_hash, scene_json, png_path FROM diagrams WHERE id = ?",
+    )
+    .bind(&id)
+    .fetch_optional(&state.pool)
+    .await
+    .map_err(dberr)?;
+
+    Ok(Reply::new(row.map(|(id, page_url_hash, scene_json, png_path)| DiagramItemOut {
+        id,
+        page_url_hash,
+        scene_json,
+        png_path,
+    })))
 }
 
 #[cfg(test)]

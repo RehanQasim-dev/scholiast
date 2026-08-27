@@ -15,7 +15,12 @@ export CXX_aarch64_linux_android="$TOOLCHAIN/aarch64-linux-android24-clang++"
 export AR_aarch64_linux_android="$TOOLCHAIN/llvm-ar"
 export RANLIB_aarch64_linux_android="$TOOLCHAIN/llvm-ranlib"
 
-TARGET="${1:-aarch64}"
+export CC_x86_64_linux_android="$TOOLCHAIN/x86_64-linux-android24-clang"
+export CXX_x86_64_linux_android="$TOOLCHAIN/x86_64-linux-android24-clang++"
+export AR_x86_64_linux_android="$TOOLCHAIN/llvm-ar"
+export RANLIB_x86_64_linux_android="$TOOLCHAIN/llvm-ranlib"
+
+TARGET="${1:-x86_64}"
 
 cd "$(dirname "$0")/../scholiast_tauri"
 pnpm tauri android build --debug --target "$TARGET"

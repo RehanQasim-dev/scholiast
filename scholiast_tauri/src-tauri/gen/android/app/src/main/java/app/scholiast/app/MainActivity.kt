@@ -6,6 +6,7 @@ import android.os.Bundle
 import androidx.activity.enableEdgeToEdge
 
 class MainActivity : TauriActivity() {
+  override val handleBackNavigation: Boolean = true
   private var lastShareHash = 0
 
   override fun onCreate(savedInstanceState: Bundle?) {

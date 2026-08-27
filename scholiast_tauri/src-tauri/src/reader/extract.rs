@@ -192,6 +192,75 @@ pub async fn capture_article_html(url: &str) -> Result<ExtractedArticle, Scholia
     .map_err(|err| ScholiastError::Internal(err.to_string()))?
 }
 
+pub const UBLOCK_COSMETIC_CSS: &str = r#"
+/* Universal uBlock Origin / EasyList Ad & Tracker Element Hiding */
+.adsbygoogle, [id^="google_ads_"], [id*="-ad-"], [id$="-ad"], [id*="advertisement"],
+.ad-banner, .ad-container, .ad-wrapper, .ad-slot, .ad-box, .advertisement, .advert,
+.ad_top, .ad_bottom, .ad-placeholder, .top-ad, .sidebar-ad, .banner-ad,
+.sponsor-container, .sponsored-post, .sponsored-content, [data-ad-unit], [data-ad-slot], [data-ad-client],
+.outbrain, .taboola, .revcontent, .zergnet-widget,
+#onetrust-consent-sdk, .onetrust-pc-dark-filter, .cookie-banner, .cookie-notice,
+.cookie-consent, .gdpr-banner, .consent-banner, [id*="cookie-notice"],
+[class*="cookie-banner"], [class*="floating-ad"], [id*="floating-ad"],
+.sticky-ad, [data-ad-type="sticky"], [class*="Sponsored"],
+[aria-label*="advertisement" i], [aria-label*="sponsored" i],
+.pane-ad, .sidebar-ads, .ad-leaderboard {
+  display: none !important;
+  visibility: hidden !important;
+  height: 0 !important;
+  max-height: 0 !important;
+  overflow: hidden !important;
+  opacity: 0 !important;
+  pointer-events: none !important;
+}
+html, body {
+  overflow: auto !important;
+  position: static !important;
+}
+"#;
+
+/// Prepares full authentic HTML for in-app viewing:
+/// Injects <base> URL for styles/assets, no-referrer meta to bypass CDN hotlink protection,
+/// uBlock Origin cosmetic element hiding CSS, and neutralizes ad tracker scripts.
+pub fn prepare_authentic_html(html: &str, base_url: &str) -> String {
+    let base_tag = format!(r#"<base href="{}"><meta name="referrer" content="no-referrer">"#, base_url);
+    let ublock_style = format!(r#"<style id="ublock-cosmetic-filters">{}</style>"#, UBLOCK_COSMETIC_CSS);
+    let injection = format!("{}\n{}", base_tag, ublock_style);
+
+    let lower = html.to_ascii_lowercase();
+    let mut output = if let Some(pos) = lower.find("<head>") {
+        let insert_idx = pos + "<head>".len();
+        format!("{}\n{}{}", &html[..insert_idx], injection, &html[insert_idx..])
+    } else if let Some(pos) = lower.find("<head ") {
+        if let Some(end_head) = html[pos..].find('>') {
+            let insert_idx = pos + end_head + 1;
+            format!("{}\n{}{}", &html[..insert_idx], injection, &html[insert_idx..])
+        } else {
+            format!("{}\n{}", injection, html)
+        }
+    } else {
+        format!("{}\n{}", injection, html)
+    };
+
+    const AD_DOMAINS: &[&str] = &[
+        "pagead2.googlesyndication.com",
+        "doubleclick.net",
+        "adservice.google",
+        "googletagmanager.com/gtm.js",
+        "criteo.net",
+        "outbrain.com",
+        "taboola.com",
+        "adnxs.com",
+        "amazon-adsystem.com",
+    ];
+
+    for domain in AD_DOMAINS {
+        output = output.replace(domain, "blocked-tracker.invalid");
+    }
+
+    output
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

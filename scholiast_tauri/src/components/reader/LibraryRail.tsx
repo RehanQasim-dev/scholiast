@@ -15,7 +15,7 @@ const ARTICLES_KEY = ["articles"] as const;
 export const ADD_ARTICLE_INPUT_ID = "reader-add-article-input";
 
 /** Maps `add_article` failure kinds to short human copy. */
-export function describeAddError(kind: string, fallback: string): string {
+function describeAddError(kind: string, fallback: string): string {
   if (kind === "fetchBlocked") return "Site blocked extraction";
   if (kind === "notReadable") return "Not an article";
   if (kind === "network") return "Offline?";

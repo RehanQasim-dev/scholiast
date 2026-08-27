@@ -250,7 +250,7 @@ export function paint(
 }
 
 /** Remove every paint this module applied under `root` and drop registrations. */
-export function unpaint(root: HTMLElement): void {
+function unpaint(root: HTMLElement): void {
   if (supportsHighlightApi()) {
     const registry = nativeHighlight()?.registry;
     for (const name of activeRegistries) registry?.delete(name);

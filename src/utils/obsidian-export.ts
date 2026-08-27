@@ -180,7 +180,7 @@ function highlightBody(pieces: string[], color?: string): string[] {
 	return [mark(pieces.join(' '), color)];
 }
 
-export function buildPageBlock(title: string, url: string, highlights: HighlightLike[]): string {
+export function buildPageBlock(_title: string, url: string, highlights: HighlightLike[]): string {
 	const nodes: string[] = [];
 	for (const g of groupHighlights(highlights)) {
 		const img = g.pieces.length === 1 ? extractImageSrc(g.pieces[0], url) : null;
@@ -201,7 +201,7 @@ export interface VideoBlockResult {
 }
 
 export function buildVideoBlock(
-	title: string,
+	_title: string,
 	url: string,
 	videoId: string,
 	items: VideoItemLike[],

@@ -79,7 +79,7 @@ function countPropertyUsage(): Record<string, number> {
 	return usageCounts;
 }
 
-function createPropertyTypeListItem(propertyType: PropertyType, usageCount: number, isUsed: boolean): HTMLElement {
+function createPropertyTypeListItem(propertyType: PropertyType, usageCount: number, _isUsed: boolean): HTMLElement {
 	const listItem = createElementWithClass('div', 'property-editor');
 
 	const propertySelectDiv = createElementWithClass('div', 'property-select');

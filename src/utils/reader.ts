@@ -3,7 +3,6 @@ import browser from './browser-polyfill';
 import { getAll } from './page-store';
 import { detectBrowser } from './browser-detection';
 import { flattenShadowDom as flattenShadowDomUtil } from './flatten-shadow-dom';
-import { getLocalStorage, setLocalStorage } from './storage-utils';
 import hljs from 'highlight.js';
 import { getDomain } from './string-utils';
 import type { HighlighterAPI } from './highlighter';
@@ -139,9 +138,7 @@ export class Reader {
 		
 		return svg;
 	}
-	private static settingsBar: HTMLElement | null = null;
 	private static colorSchemeMediaQuery: MediaQueryList | null = null;
-	private static readerStyles: HTMLLinkElement | null = null;
 	private static lightbox: HTMLElement | null = null;
 	private static currentImageIndex: number = -1;
 	private static images: HTMLImageElement[] = [];
@@ -639,7 +636,6 @@ export class Reader {
 		settingsBar.appendChild(controlsContainer);
 
 		doc.body.appendChild(settingsBar);
-		this.settingsBar = settingsBar;
 
 		// Initialize values from settings
 		this.updateFontSize(doc, parseInt(getComputedStyle(doc.documentElement).getPropertyValue('--font-text-size')));
@@ -772,12 +768,6 @@ export class Reader {
 		} else {
 			doc.body.style.removeProperty('--font-text');
 		}
-	}
-
-	private static updateBlendImages(doc: Document, blend: boolean): void {
-		this.settings.blendImages = blend;
-		this.applyBlendImages(doc, blend);
-		this.saveSettings();
 	}
 
 	private static applyBlendImages(doc: Document, blend: boolean): void {

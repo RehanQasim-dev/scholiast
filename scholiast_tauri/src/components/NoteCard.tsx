@@ -1,5 +1,6 @@
 import { useCallback, useRef, useState } from "react";
 import { Trash2, Play } from "lucide-react";
+import { useNavigate } from "react-router-dom";
 import { parseNoteMarkdown, renderNoteNodes, stripHiddenIds } from "../lib/noteMarkdown";
 import type { VideoItem } from "../lib/ipc";
 import TimestampChip from "./TimestampChip";
@@ -7,13 +8,8 @@ import { invokeCommand } from "../lib/ipc";
 
 export type TimelineItem = VideoItem & { ocrText?: string; drmBlocked?: boolean };
 
-const KIND_ICONS: Record<VideoItem["kind"], string> = {
-  frame: "🎞",
-  note: "📝",
-  transcript: "🖍",
-};
 
-export function colorRail(color?: string | null): string {
+function colorRail(color?: string | null): string {
   switch (color) {
     case "yellow":
       return "var(--sc-hl-yellow)";
@@ -32,7 +28,15 @@ interface NoteCardProps {
   onEdit?: (item: TimelineItem, body: string) => void;
 }
 
-export function FrameThumb({ frame, drmBlocked }: { frame?: NonNullable<VideoItem["frame"]>; drmBlocked?: boolean }) {
+function FrameThumb({
+  frame,
+  drmBlocked,
+  onClick,
+}: {
+  frame?: NonNullable<VideoItem["frame"]>;
+  drmBlocked?: boolean;
+  onClick?: () => void;
+}) {
   if (drmBlocked || !frame) {
     return (
       <div
@@ -48,17 +52,25 @@ export function FrameThumb({ frame, drmBlocked }: { frame?: NonNullable<VideoIte
       <img
         data-testid="frame-thumb"
         src={frame.dataUrl}
-        alt=""
-        className="h-8 w-12 shrink-0 rounded-md border border-hairline object-cover"
+        alt="Frame thumbnail"
+        onClick={onClick}
+        className={`h-8 w-12 shrink-0 rounded-md border border-hairline object-cover ${
+          onClick ? "cursor-pointer transition-opacity hover:opacity-80 active:scale-95" : ""
+        }`}
         style={{ width: 48, height: 32 }}
+        title={onClick ? "Tap to draw / edit frame" : undefined}
       />
     );
   }
   return (
     <div
       data-testid="frame-thumb"
-      className="flex h-8 w-12 shrink-0 items-center justify-center rounded-md border border-hairline bg-elevated text-[10px] tabular-nums text-text-3"
+      onClick={onClick}
+      className={`flex h-8 w-12 shrink-0 items-center justify-center rounded-md border border-hairline bg-elevated text-[10px] tabular-nums text-text-3 ${
+        onClick ? "cursor-pointer transition-opacity hover:opacity-80 active:scale-95" : ""
+      }`}
       style={{ width: 48, height: 32 }}
+      title={onClick ? "Tap to draw / edit frame" : undefined}
     >
       {frame.w}×{frame.h}
     </div>
@@ -66,6 +78,7 @@ export function FrameThumb({ frame, drmBlocked }: { frame?: NonNullable<VideoIte
 }
 
 export default function NoteCard({ item, onDelete, onEdit }: NoteCardProps) {
+  const navigate = useNavigate();
   const primary = item.ocrText ?? item.quote ?? "";
   const body = item.notes[0];
   const [editing, setEditing] = useState(false);
@@ -171,10 +184,16 @@ export default function NoteCard({ item, onDelete, onEdit }: NoteCardProps) {
           <div className="flex items-center gap-2">
             <TimestampChip seconds={item.videoTime} secondsEnd={item.timeEnd} />
             {item.frame || item.drmBlocked ? (
-              <FrameThumb frame={item.frame} drmBlocked={item.drmBlocked} />
-            ) : (
-              <span aria-hidden className="text-xs">{KIND_ICONS[item.kind]}</span>
-            )}
+              <FrameThumb
+                frame={item.frame}
+                drmBlocked={item.drmBlocked}
+                onClick={
+                  item.kind === "frame"
+                    ? () => navigate("/frame", { state: { itemId: item.id } })
+                    : undefined
+                }
+              />
+            ) : null}
             {item.drmBlocked ? (
               <span className="inline-flex items-center gap-1 rounded-full bg-elevated px-2 py-0.5 text-[11px] font-medium text-text-2">
                 <Play size={10} strokeWidth={2} /> Play
@@ -186,10 +205,9 @@ export default function NoteCard({ item, onDelete, onEdit }: NoteCardProps) {
                   type="button"
                   aria-label="Delete note"
                   onClick={() => onDelete(item)}
-                  className="flex h-12 w-12 items-center justify-center rounded-md text-text-3 transition-colors hover:bg-elevated hover:text-[color:var(--sc-danger)]"
-                  style={{ minWidth: 48, minHeight: 48 }}
+                  className="flex h-7 w-7 items-center justify-center rounded text-text-3 opacity-60 transition-all hover:bg-elevated hover:text-[color:var(--sc-danger)] hover:opacity-100"
                 >
-                  <Trash2 size={16} strokeWidth={2} />
+                  <Trash2 size={14} strokeWidth={2} />
                 </button>
               )}
             </span>
@@ -205,22 +223,21 @@ export default function NoteCard({ item, onDelete, onEdit }: NoteCardProps) {
                   setEditing(true);
                 }
               }}
-              className="mt-2 w-full text-left"
+              className="mt-1.5 w-full text-left"
             >
               {item.drmBlocked && !primary && !body ? (
                 <span className="text-sm text-text-3">Protected segment — tap timestamp to seek.</span>
               ) : null}
-              {!primary && !body && !item.frame && !item.drmBlocked ? (
-                <p className="text-sm text-text-3">Empty note.</p>
-              ) : null}
               {primary && (
                 <p className="line-clamp-2 text-sm leading-snug text-text">{primary}</p>
               )}
-              {body && (
-                <div className="mt-1.5 line-clamp-2 text-sm leading-snug text-text-2">
+              {body && stripHiddenIds(body).trim() ? (
+                <div className="mt-1 line-clamp-2 text-sm leading-snug text-text-2">
                   {renderNoteNodes(parseNoteMarkdown(body))}
                 </div>
-              )}
+              ) : !primary && !item.frame && !item.drmBlocked ? (
+                <p className="mt-1 text-xs italic text-text-3">Add text or tap to edit…</p>
+              ) : null}
             </button>
           ) : (
             <div className="mt-2">
@@ -229,14 +246,14 @@ export default function NoteCard({ item, onDelete, onEdit }: NoteCardProps) {
                 value={draft}
                 onChange={(e) => setDraft(e.target.value)}
                 rows={2}
-                className="w-full resize-none rounded-md border border-accent bg-base px-3 py-2 text-sm text-text outline-none"
+                className="w-full resize-none rounded-md border border-accent bg-base px-2.5 py-1.5 text-sm text-text outline-none"
                 placeholder="Edit note…"
               />
               <div className="mt-2 flex justify-end gap-2">
                 <button
                   type="button"
                   onClick={() => setEditing(false)}
-                  className="min-h-[48px] rounded-md border border-hairline px-4 text-sm text-text-2"
+                  className="h-8 rounded-md border border-hairline px-3 text-xs font-medium text-text-2 hover:bg-elevated hover:text-text"
                 >
                   Cancel
                 </button>
@@ -244,7 +261,7 @@ export default function NoteCard({ item, onDelete, onEdit }: NoteCardProps) {
                   type="button"
                   onClick={() => void handleSave()}
                   disabled={saving || !draft.trim()}
-                  className="min-h-[48px] rounded-md bg-accent px-4 text-sm font-medium text-white disabled:opacity-50"
+                  className="h-8 rounded-md bg-accent px-3 text-xs font-medium text-white transition-opacity hover:opacity-90 disabled:opacity-50"
                 >
                   {saving ? "Saving…" : "Save"}
                 </button>

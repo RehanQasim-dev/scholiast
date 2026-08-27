@@ -235,10 +235,12 @@
   width: 100%;
   margin: 1.5em 0;
   border-collapse: collapse;
-  font-size: 0.95em;
-  table-layout: fixed;
-  word-wrap: break-word;
-  overflow-wrap: anywhere;
+  font-size: 0.9em;
+  table-layout: auto;
+  display: block;
+  max-width: 100%;
+  overflow-x: auto;
+  -webkit-overflow-scrolling: touch;
 }
 
 .sc-article-body th,
@@ -247,19 +249,30 @@
   border: 1px solid var(--sc-hairline);
   text-align: left;
   vertical-align: top;
-  word-break: break-word;
-  overflow-wrap: anywhere;
+  white-space: normal;
+  word-break: normal;
+  overflow-wrap: normal;
+}
+
+/* Prevent recursive border cage on nested layout tables, cladograms, and tree diagrams */
+.sc-article-body table table {
+  margin: 0;
+  display: table;
+  width: auto;
+  border: none;
+}
+
+.sc-article-body table table th,
+.sc-article-body table table td {
+  border: none;
+  padding: 0.2rem 0.4rem;
+  background: transparent;
 }
 
 .sc-article-body th[colspan],
 .sc-article-body td[colspan] {
-  word-break: break-word;
-  hyphens: auto;
+  word-break: normal;
   white-space: normal;
-}
-
-.sc-article-body table:has(th[colspan]) {
-  table-layout: auto;
 }
 
 .sc-article-body th {

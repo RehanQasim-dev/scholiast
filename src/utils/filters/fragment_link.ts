@@ -70,7 +70,7 @@ export const fragment_link = (str: string, param?: string): string[] => {
 		} else if (typeof data === "object" && data !== null) {
 			// Maybe useful for other filters
 			return Object.entries(data).map(
-				([key, value]) =>
+				([, value]) =>
 					`${value} [${linktext}](${currentUrl}${createTextFragmentUrl(
 						String(value)
 					)})`

@@ -125,7 +125,7 @@ declare global {
 		metaTags: { name?: string | null; property?: string | null; content: string | null }[];
 	}
 
-	browser.runtime.onMessage.addListener((request: any, sender, sendResponse) => {
+	browser.runtime.onMessage.addListener((request: any, _sender, sendResponse) => {
 		// If a newer generation of this content script has been injected,
 		// yield to it rather than responding from a potentially stale context.
 		if (window.obsidianClipperGeneration !== myGeneration) {
@@ -578,10 +578,12 @@ declare global {
 		const annot = isAnnotatorActive(), com = isCommentsActive(), trans = isTranscriptPanelActive();
 		if (annot) return;
 		if (k === transKey && trans) return;
-		// Snapshot `S` should work even when a note/transcript panel is open — keep
-		// the panel mounted and capture alongside it (no close-first flicker).
+		// When a side panel is open, pressing S closes it automatically so the
+		// snapshot captures the full, un-shrunk video in full player/fullscreen.
 		if (k === capKey) {
 			ensureHighlighterCSS();
+			if (com) closeComments(true);
+			if (trans) closeTranscriptPanel(true);
 			videoCapture();
 			return;
 		}

@@ -170,24 +170,6 @@ function validateImportedTemplate(template: Partial<Template>): boolean {
 	return hasRequiredFields && hasValidProperties && hasValidNoteNameAndPath && hasValidContext;
 }
 
-function preventDefaults(e: Event): void {
-	e.preventDefault();
-	e.stopPropagation();
-}
-
-function handleDrop(e: DragEvent): void {
-	const dt = e.dataTransfer;
-	const files = dt?.files;
-
-	if (files && files.length) {
-		handleFiles(files);
-	}
-}
-
-function handleFiles(files: FileList): void {
-	Array.from(files).forEach(importTemplateFile);
-}
-
 async function processImportedTemplate(importedTemplate: Partial<Template>): Promise<Template> {
 	console.log('Processing imported template:', importedTemplate);
 

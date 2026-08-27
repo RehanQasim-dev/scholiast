@@ -112,9 +112,7 @@ function ProviderRow({ name, label, testCommand }: ProviderRowProps) {
   const configured = status.data?.configured ?? false;
 
   return (
-    <div
-      className={`rounded-lg border border-hairline bg-surface p-3 ${offline ? "opacity-60" : ""}`}
-    >
+    <div className={`space-y-2 ${offline ? "opacity-60" : ""}`}>
       <div className="flex items-center gap-2">
         <h4 className="text-sm font-medium text-text">{label} API key</h4>
         <span
@@ -209,18 +207,22 @@ export default function SpeechSection() {
   const [language, setLanguage] = usePref(PREF_KEYS.speechLanguage, String(PREF_DEFAULTS[PREF_KEYS.speechLanguage]));
 
   return (
-    <section aria-label="Speech" className="space-y-3 rounded-lg border border-hairline bg-surface p-4">
-      <ProviderRow name="groq" label="Groq" testCommand="stt_test_groq" />
-      <ProviderRow name="gemini" label="Gemini" testCommand="stt_test_gemini" />
+    <div aria-label="Speech" className="divide-y divide-hairline">
+      <div className="pb-5">
+        <ProviderRow name="groq" label="Groq" testCommand="stt_test_groq" />
+      </div>
+      <div className="py-5">
+        <ProviderRow name="gemini" label="Gemini" testCommand="stt_test_gemini" />
+      </div>
 
-      <div className="grid gap-3 sm:grid-cols-2">
-        <label className="block text-sm text-text-2">
-          Groq model
+      <div className="pt-5 grid gap-4 sm:grid-cols-2">
+        <label className="flex flex-col gap-1.5 text-sm font-medium text-text-2">
+          <span>Groq model</span>
           <select
             value={GROQ_PRESETS.some(([v]) => v === groqModel) ? groqModel : GROQ_PRESETS[0]![0]}
             onChange={(event) => setGroqModel(event.target.value)}
             data-testid="pref-stt.groq_model"
-            className="mt-1 h-14 w-full rounded-md border border-hairline bg-elevated px-3 text-sm text-text outline-none focus:border-accent"
+            className="h-11 w-full rounded-lg border border-hairline bg-elevated px-3 text-sm text-text outline-none focus:border-accent"
           >
             {GROQ_PRESETS.map(([value, label]) => (
               <option key={value} value={value}>{label}</option>
@@ -230,13 +232,13 @@ export default function SpeechSection() {
             ) : null}
           </select>
         </label>
-        <label className="block text-sm text-text-2">
-          Gemini model
+        <label className="flex flex-col gap-1.5 text-sm font-medium text-text-2">
+          <span>Gemini model</span>
           <select
             value={GEMINI_PRESETS.some(([v]) => v === geminiModel) ? geminiModel : GEMINI_PRESETS[0]![0]}
             onChange={(event) => setGeminiModel(event.target.value)}
             data-testid="pref-stt.gemini_model"
-            className="mt-1 h-14 w-full rounded-md border border-hairline bg-elevated px-3 text-sm text-text outline-none focus:border-accent"
+            className="h-11 w-full rounded-lg border border-hairline bg-elevated px-3 text-sm text-text outline-none focus:border-accent"
           >
             {GEMINI_PRESETS.map(([value, label]) => (
               <option key={value} value={value}>{label}</option>
@@ -246,13 +248,13 @@ export default function SpeechSection() {
             ) : null}
           </select>
         </label>
-        <label className="block text-sm text-text-2">
-          Speech language
+        <label className="flex flex-col gap-1.5 text-sm font-medium text-text-2 sm:col-span-2">
+          <span>Speech language</span>
           <select
             value={language}
             onChange={(event) => setLanguage(event.target.value)}
             data-testid="pref-speech.language"
-            className="mt-1 h-14 w-full rounded-md border border-hairline bg-elevated px-3 text-sm text-text outline-none focus:border-accent"
+            className="h-11 w-full rounded-lg border border-hairline bg-elevated px-3 text-sm text-text outline-none focus:border-accent"
           >
             {LANGUAGES.map(([code, label]) => (
               <option key={code} value={code}>
@@ -262,6 +264,6 @@ export default function SpeechSection() {
           </select>
         </label>
       </div>
-    </section>
+    </div>
   );
 }

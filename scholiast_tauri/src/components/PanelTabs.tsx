@@ -11,9 +11,10 @@ type Tab = "notes" | "transcript";
 interface PanelTabsProps {
   url: string;
   videoId?: string | null;
+  onCaptureFrame?: () => Promise<{ path: string; w: number; h: number; urlHash: string } | null>;
 }
 
-export default function PanelTabs({ url, videoId }: PanelTabsProps) {
+export default function PanelTabs({ url, videoId, onCaptureFrame }: PanelTabsProps) {
   const [tab, setTab] = useState<Tab>("notes");
   const [captionsAvailable, setCaptionsAvailable] = useState(false);
   usePlayerEvent("onCaptionsAvailable", setCaptionsAvailable);
@@ -68,7 +69,7 @@ export default function PanelTabs({ url, videoId }: PanelTabsProps) {
         </button>
       </div>
       {tab === "notes" ? (
-        <NotesTab url={url} />
+        <NotesTab url={url} onCaptureFrame={onCaptureFrame} />
       ) : (
         <TranscriptPanel url={url} videoId={videoId ?? null} />
       )}

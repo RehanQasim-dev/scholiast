@@ -1,9 +1,8 @@
 import {
 	VideoItem, loadVideoData, upsertVideoItem, genVideoId, removeVideoItem
 } from './video-storage';
-import { renderMarkupSvg } from './video-markup';
 import { makeVideoNote, parseVideoNote, renderNoteHtml, formatVideoTime } from './video-notes';
-import { getVideoElement, getAccurateCurrentTime } from './youtube-detect';
+import { getAccurateCurrentTime } from './youtube-detect';
 import { loadFrameImage } from './frame-store';
 import { engagePlayerStage, mountHost, unmountHost, disengagePlayerStage, markPanelEsc } from './video-player-stage';
 
@@ -45,11 +44,10 @@ let editingNoteKey: { itemId: string, index: number } | null = null;
 let root: HTMLElement | null = null;
 let listEl: HTMLElement | null = null;
 let inputEl: HTMLTextAreaElement | null = null;
-let openedFullscreen = false;
 
 // Close the panel programmatically (e.g. to switch to another panel).
-export function closeComments(): void {
-	if (active) teardown();
+export function closeComments(immediate = false): void {
+	if (active) teardown(immediate);
 }
 
 export function isCommentsActive(): boolean {
@@ -60,7 +58,6 @@ export async function openComments(o: OpenCommentsOpts): Promise<void> {
 	if (active) return;
 	opts = o;
 	active = true;
-	openedFullscreen = !!document.fullscreenElement;
 
 	if (o.video) o.video.pause();
 
@@ -153,6 +150,17 @@ function build() {
 	window.addEventListener('keyup', onKeyUpShield, true);
 	window.addEventListener('keypress', onKeyUpShield, true);
 	window.addEventListener('mousedown', onMouseDownOutside, true);
+	window.addEventListener('__obVpsEscPressed', onEscBridge);
+	window.addEventListener('message', onEscMessage);
+}
+
+function onEscMessage(e: MessageEvent) {
+	if (e.data?.type === '__obVpsEscPressed') onEscBridge();
+}
+
+function onEscBridge() {
+	markPanelEsc();
+	teardown();
 }
 
 function onMouseDownOutside(e: MouseEvent) {
@@ -474,11 +482,6 @@ async function postMessage() {
 	renderConversation();
 }
 
-function seekTo(seconds: number) {
-	const v = opts?.video || getVideoElement();
-	if (v) { try { v.currentTime = Math.max(0, seconds); } catch { /* ignore */ } }
-}
-
 // --- Keyboard ----------------------------------------------------------------
 
 function onKeyUpShield(e: KeyboardEvent) {
@@ -503,17 +506,9 @@ function onKeyDown(e: KeyboardEvent) {
 		}
 		if (e.key === 'Escape') {
 			e.preventDefault(); e.stopPropagation(); e.stopImmediatePropagation();
-			// 1st Esc cancels the draft text only; 2nd Esc closes panel
-			if (inputEl && inputEl.value.trim().length > 0) {
-				inputEl.value = '';
-				autosizeInput();
-				return;
-			}
-			if (inputEl && document.activeElement === inputEl) {
-				inputEl.blur();
-				return;
-			}
-			markPanelEsc(); teardown();
+			markPanelEsc();
+			teardown();
+			return;
 		}
 		else if (e.key === 'Enter' && !e.shiftKey) { 
 			if (e.isComposing) return;
@@ -529,15 +524,17 @@ function onKeyDown(e: KeyboardEvent) {
 
 // --- Teardown ----------------------------------------------------------------
 
-function teardown() {
+function teardown(immediate = false) {
 	const o = opts;
 	window.removeEventListener('keydown', onKeyDown, true);
 	window.removeEventListener('keyup', onKeyUpShield, true);
 	window.removeEventListener('keypress', onKeyUpShield, true);
 	window.removeEventListener('mousedown', onMouseDownOutside, true);
+	window.removeEventListener('__obVpsEscPressed', onEscBridge);
+	window.removeEventListener('message', onEscMessage);
 
 	if (root) unmountHost(root);
-	disengagePlayerStage();
+	disengagePlayerStage(immediate);
 	root = listEl = inputEl = null;
 	active = false;
 	items = [];

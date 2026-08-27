@@ -12,7 +12,6 @@ dev_safari/
 dist/
 dist_firefox/
 dist_safari/
-dist-android/
 builds/
 changelogs/
 assets/shared
@@ -38,10 +37,11 @@ excalidraw.log
 # Local OAuth client config (never commit: contains a client secret)
 oauth.local.json
 
-# FUTO Keyboard upstream clone (task 11 extraction source; vendored code lives in android/app)
-android-keyboard/
-
 # Debug screenshots
 scratch/
-android/scratch/
 protonvpn-stable-release_1.0.8_all.deb
+
+# Local skills and lockfiles
+skills-lock.json
+.agents/skills/
+.claude/skills/

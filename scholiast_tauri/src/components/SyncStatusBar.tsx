@@ -75,7 +75,7 @@ const TONE_CLASSES: Record<ReturnType<typeof syncStatusView>["tone"], string> = 
   idle: "text-text-3 border-transparent hover:border-hairline hover:text-text-2",
 };
 
-export function StatusBarView({
+function StatusBarView({
   status,
   onOpen,
 }: {

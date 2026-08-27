@@ -11,7 +11,7 @@ const HTTP_URL_RE = /https?:\/\/[^\s"'<>]+/gi;
  * - plain text containing the first http(s) URL (ACTION_SEND extraText)
  * YouTube URLs open the player; anything else is ignored.
  */
-export function routeForSharedText(raw: string): string | null {
+function routeForSharedText(raw: string): string | null {
   let candidate = raw.trim();
   try {
     const parsed = new URL(candidate);
@@ -28,10 +28,12 @@ export function routeForSharedText(raw: string): string | null {
   }
   if (!candidate) return null;
   const videoId = extractVideoId(candidate);
-  if (!videoId) return null;
-  return `/player?url=${encodeURIComponent(
-    `https://www.youtube.com/watch?v=${videoId}`,
-  )}`;
+  if (videoId) {
+    return `/player?url=${encodeURIComponent(
+      `https://www.youtube.com/watch?v=${videoId}`,
+    )}`;
+  }
+  return `/reader?url=${encodeURIComponent(candidate)}`;
 }
 
 /** Global deep-link/share-intent listener. Mounted once from Home. */

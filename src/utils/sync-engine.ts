@@ -17,7 +17,7 @@ import {
 	loadFrameImage, saveFrameImage, hasFrameImage,
 	loadDiagramImage, saveDiagramImage, hasDiagramImage, deleteDiagramImage,
 } from './video/frame-store';
-import { getPage, setPage, removePage, getAll, getAllUrls, listAllPageUrls } from './page-store';
+import { getPage, setPage, removePage, getAll, listAllPageUrls } from './page-store';
 // The 3-way merge logic is shared verbatim with the Obsidian plugin. The per-page
 // reconcile uses `mergePageRecord` (one page at a time); types come from shared.
 import {
@@ -333,12 +333,11 @@ async function pullImages(merged: PageRecord, diagrams: DiagramsMap, interactive
 		const needDriveScene = dd.sceneDriveId && (!entry || (entry.updatedAt || 0) < (d.updatedAt || 0));
 		const needGhScene = dd.sceneGithubId && (!entry || (entry.updatedAt || 0) < (d.updatedAt || 0));
 		let sceneData: any = null;
-		let sceneSource: 'drive'|'github'|null = null;
 		if (needDriveScene && driveOn) {
-			try { sceneData = JSON.parse(await downloadDriveFile(dd.sceneDriveId!, interactive)); sceneSource='drive'; } catch {}
+			try { sceneData = JSON.parse(await downloadDriveFile(dd.sceneDriveId!, interactive)); } catch {}
 		}
 		if (!sceneData && needGhScene && ghOn) {
-			try { sceneData = JSON.parse(await github.downloadDriveFile(dd.sceneGithubId!, interactive)); sceneSource='github'; } catch {}
+			try { sceneData = JSON.parse(await github.downloadDriveFile(dd.sceneGithubId!, interactive)); } catch {}
 		}
 		if (sceneData) {
 			diagrams[d.id] = { sceneData, updatedAt: d.updatedAt, driveId: dd.driveId, sceneDriveId: dd.sceneDriveId, githubId: dd.githubId, sceneGithubId: dd.sceneGithubId };

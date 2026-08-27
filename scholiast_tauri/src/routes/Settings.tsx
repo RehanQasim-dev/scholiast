@@ -1,6 +1,7 @@
 import DriveSection from "../components/DriveSection";
 import AboutSection from "../components/settings/AboutSection";
 import AppearanceSection from "../components/settings/AppearanceSection";
+import ExcalidrawSettingsSection from "../components/settings/ExcalidrawSettingsSection";
 import DataSection from "../components/settings/DataSection";
 import ModelManagerSection from "../components/settings/ModelManagerSection";
 import PlaybackSection from "../components/settings/PlaybackSection";
@@ -16,36 +17,21 @@ function Group({
   children: React.ReactNode;
 }) {
   return (
-    <section className="space-y-3 rounded-lg border border-hairline bg-surface p-4">
-      <h2 className="text-sm font-semibold uppercase tracking-wide text-text-2">
+    <section className="space-y-2.5">
+      <h2 className="px-1 text-xs font-bold uppercase tracking-wider text-text-3">
         {title}
       </h2>
-      {children}
-    </section>
-  );
-}
-
-function SingleCardGroup({
-  title,
-  children,
-}: {
-  title: string;
-  children: React.ReactNode;
-}) {
-  return (
-    <section className="space-y-3 rounded-lg border border-hairline bg-surface p-4">
-      <h2 className="text-sm font-semibold uppercase tracking-wide text-text-2">
-        {title}
-      </h2>
-      {children}
+      <div className="overflow-hidden rounded-xl border border-hairline bg-surface p-4 sm:p-5">
+        {children}
+      </div>
     </section>
   );
 }
 
 export default function Settings() {
   return (
-    <div className="mx-auto max-w-3xl space-y-6 p-6 sm:p-10 bg-base min-h-full">
-      <h1 className="text-2xl font-semibold text-text">Settings</h1>
+    <div className="mx-auto max-w-3xl space-y-7 px-6 pt-7 sm:pt-9 pb-28 bg-base min-h-full">
+      <h1 className="text-2xl font-bold tracking-tight text-text">Settings</h1>
 
       <Group title="Speech">
         <SpeechSection />
@@ -57,12 +43,16 @@ export default function Settings() {
         <ModelManagerSection />
       </Group>
 
-      <SingleCardGroup title="Sync">
-        <div className="space-y-3">
-          <DriveSection />
-          <SyncProgressCard />
+      <Group title="Sync">
+        <div className="divide-y divide-hairline">
+          <div className="pb-5">
+            <DriveSection />
+          </div>
+          <div className="pt-5">
+            <SyncProgressCard />
+          </div>
         </div>
-      </SingleCardGroup>
+      </Group>
 
       <Group title="Playback">
         <PlaybackSection />
@@ -70,6 +60,10 @@ export default function Settings() {
 
       <Group title="Appearance">
         <AppearanceSection />
+      </Group>
+
+      <Group title="Excalidraw & Stylus">
+        <ExcalidrawSettingsSection />
       </Group>
 
       <Group title="Data">

@@ -2,9 +2,11 @@ import { useEffect, useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useNavigate } from "react-router-dom";
 import { listen } from "@tauri-apps/api/event";
-import { BookOpen, Play } from "lucide-react";
+import { BookOpen, Play, Globe } from "lucide-react";
 import type { VideoSummary } from "../lib/ipc";
 import { getVideoItems, listRecentVideos } from "../lib/ipc";
+import { listArticles, type ArticleSummary } from "../lib/readerIpc";
+import { resolveChannelForVideo, getDomainFromUrl } from "../lib/channelStore";
 
 function relativeTime(updatedAtMs: number): string {
   const seconds = Math.max(0, Math.round((Date.now() - updatedAtMs) / 1000));
@@ -59,26 +61,32 @@ function Scrub({ resumeAt }: { resumeAt: number }) {
   );
 }
 
-function RecentCard({ video }: { video: VideoSummary }) {
+type UnifiedRecentItem =
+  | { kind: "video"; data: VideoSummary }
+  | { kind: "article"; data: ArticleSummary };
+
+function VideoCard({ video }: { video: VideoSummary }) {
   const navigate = useNavigate();
+  const [channel, setChannel] = useState<string>("YouTube");
   const hasResume = video.resumeAt > 0;
-  const openInPlayer = () => {
-    if (!video.videoId) {
-      navigate(`/reader?url=${encodeURIComponent(video.url)}&h=${encodeURIComponent(video.urlHash)}`);
-      return;
+
+  useEffect(() => {
+    if (video.videoId) {
+      void resolveChannelForVideo(video.videoId).then(setChannel);
     }
+  }, [video.videoId]);
+
+  const openInPlayer = () => {
     navigate(
       `/player?url=${encodeURIComponent(video.url)}${hasResume ? `&resume=${Math.floor(video.resumeAt)}` : ""}`,
     );
   };
-  const isArticle = !video.videoId;
-  const sourceLabel = isArticle ? (() => { try { return new URL(video.url).hostname; } catch { return "Article"; } })() : "YouTube";
 
   return (
     <button
       type="button"
       onClick={openInPlayer}
-      className="relative flex min-h-[84px] w-full flex-col overflow-hidden rounded-md border border-hairline bg-elevated text-left transition-colors hover:border-accent/40 hover:bg-overlay"
+      className="group relative flex min-h-[84px] w-full flex-col overflow-hidden rounded-xl border border-hairline bg-surface/80 p-0 text-left backdrop-blur-sm transition-all duration-200 hover:-translate-y-0.5 hover:border-accent/40 hover:bg-elevated hover:shadow-lg active:scale-[0.99]"
     >
       <div className="relative w-full overflow-hidden bg-overlay">
         <div className="aspect-video w-full">
@@ -86,18 +94,14 @@ function RecentCard({ video }: { video: VideoSummary }) {
         </div>
         <Scrub resumeAt={video.resumeAt} />
       </div>
-      <div className="flex flex-1 flex-col gap-1.5 p-3">
-        <h3 className="line-clamp-2 text-[13px] font-medium leading-tight text-text">
+      <div className="flex flex-1 flex-col gap-1.5 p-3.5">
+        <h3 className="line-clamp-2 text-[13px] font-semibold leading-snug text-text transition-colors group-hover:text-accent">
           {video.title ?? video.url}
         </h3>
         <div className="flex items-center gap-1.5 text-xs tabular-nums text-text-2">
-          {isArticle ? (
-            <BookOpen size={12} strokeWidth={2} className="shrink-0" style={{ strokeLinecap: "round", strokeLinejoin: "round" } as React.CSSProperties} />
-          ) : (
-            <Play size={12} strokeWidth={2} className="shrink-0" style={{ strokeLinecap: "round", strokeLinejoin: "round" } as React.CSSProperties} />
-          )}
+          <Play size={12} strokeWidth={2} className="shrink-0 text-accent" />
           <span className="truncate">
-            {sourceLabel} • <NoteCountInline urlHash={video.urlHash} isArticle={isArticle} /> • {relativeTime(video.updatedAt)}
+            {channel} • <VideoNoteCountInline urlHash={video.urlHash} /> • {relativeTime(video.updatedAt)}
             {hasResume ? ` • ${formatClock(video.resumeAt)}` : ""}
           </span>
         </div>
@@ -106,79 +110,139 @@ function RecentCard({ video }: { video: VideoSummary }) {
   );
 }
 
-function NoteCountInline({ urlHash, isArticle }: { urlHash: string; isArticle: boolean }) {
+function ArticleCard({ article }: { article: ArticleSummary }) {
+  const navigate = useNavigate();
+  const domain = article.domain || getDomainFromUrl(article.url);
+
+  const openInReader = () => {
+    navigate(`/reader?url=${encodeURIComponent(article.url)}&h=${encodeURIComponent(article.urlHash)}`);
+  };
+
+  return (
+    <button
+      type="button"
+      onClick={openInReader}
+      className="group relative flex min-h-[84px] w-full flex-col overflow-hidden rounded-xl border border-hairline bg-surface/80 p-0 text-left backdrop-blur-sm transition-all duration-200 hover:-translate-y-0.5 hover:border-accent/40 hover:bg-elevated hover:shadow-lg active:scale-[0.99]"
+    >
+      <div className="flex aspect-video w-full items-center justify-center bg-gradient-to-br from-elevated to-overlay text-text-2 border-b border-hairline">
+        <div className="flex h-12 w-12 items-center justify-center rounded-2xl bg-surface/80 shadow-sm border border-hairline text-accent">
+          <BookOpen size={24} strokeWidth={2} />
+        </div>
+      </div>
+      <div className="flex flex-1 flex-col gap-1.5 p-3.5">
+        <h3 className="line-clamp-2 text-[13px] font-semibold leading-snug text-text transition-colors group-hover:text-accent">
+          {article.title ?? article.url}
+        </h3>
+        <div className="flex items-center gap-1.5 text-xs tabular-nums text-text-2">
+          <Globe size={12} strokeWidth={2} className="shrink-0 text-emerald-400" />
+          <span className="truncate">
+            {domain} • {relativeTime(article.updatedAt)}
+          </span>
+        </div>
+      </div>
+    </button>
+  );
+}
+
+function VideoNoteCountInline({ urlHash }: { urlHash: string }) {
   const query = useQuery({
     queryKey: ["videoItems", urlHash],
     queryFn: () => getVideoItems({ urlHash }),
     staleTime: 30_000,
   });
   const count = query.data?.length ?? 0;
-  if (count === 0) return <>{isArticle ? "0 highlights" : "0 notes"}</>;
-  return <>{count} {isArticle ? (count === 1 ? "highlight" : "highlights") : (count === 1 ? "note" : "notes")}</>;
+  return <>{count} {count === 1 ? "note" : "notes"}</>;
 }
 
 export default function RecentGrid() {
   const queryClient = useQueryClient();
-  const query = useQuery({
+
+  const videosQuery = useQuery({
     queryKey: ["videos", "recent"],
     queryFn: listRecentVideos,
   });
 
+  const articlesQuery = useQuery({
+    queryKey: ["articles"],
+    queryFn: listArticles,
+  });
+
   useEffect(() => {
-    let dispose: (() => void) | undefined;
+    let disposeVideos: (() => void) | undefined;
+    let disposeArticles: (() => void) | undefined;
     let cancelled = false;
-    try {
-      void listen("db://changed:videos", () => {
-        void queryClient.invalidateQueries({ queryKey: ["videos", "recent"] });
-      })
-        .then((fn) => {
-          if (cancelled) fn();
-          else dispose = fn;
-        })
-        .catch(() => {});
-    } catch {
-      /* tauri event unavailable in tests */
-    }
+
+    void listen("db://changed:videos", () => {
+      void queryClient.invalidateQueries({ queryKey: ["videos", "recent"] });
+    }).then((fn) => {
+      if (cancelled) fn();
+      else disposeVideos = fn;
+    }).catch(() => {});
+
+    void listen("db://changed:articles", () => {
+      void queryClient.invalidateQueries({ queryKey: ["articles"] });
+    }).then((fn) => {
+      if (cancelled) fn();
+      else disposeArticles = fn;
+    }).catch(() => {});
+
     return () => {
       cancelled = true;
-      dispose?.();
+      disposeVideos?.();
+      disposeArticles?.();
     };
   }, [queryClient]);
 
-  if (query.isPending) {
+  const isPending = videosQuery.isPending || articlesQuery.isPending;
+
+  if (isPending) {
     return (
-      <div className="grid grid-cols-1 gap-3 sm:grid-cols-2" aria-hidden="true">
+      <div className="grid grid-cols-1 gap-4 sm:grid-cols-2" aria-hidden="true">
         {[0, 1, 2, 3].map((i) => (
-          <div key={i} className="h-[220px] animate-pulse rounded-md bg-elevated" />
+          <div key={i} className="h-[220px] animate-pulse rounded-xl bg-elevated/70" />
         ))}
       </div>
     );
   }
 
-  if (query.isError) {
-    return (
-      <div className="rounded-md border border-hairline bg-elevated px-6 py-8 text-center text-sm text-text-2">
-        Couldn't load recent videos.
-      </div>
-    );
+  // Combine both and sort chronologically with newest on top
+  const items: UnifiedRecentItem[] = [];
+  if (videosQuery.data) {
+    for (const v of videosQuery.data) {
+      if (v.videoId) items.push({ kind: "video", data: v });
+    }
+  }
+  if (articlesQuery.data) {
+    for (const a of articlesQuery.data) {
+      items.push({ kind: "article", data: a });
+    }
   }
 
-  const videos = query.data;
+  items.sort((a, b) => b.data.updatedAt - a.data.updatedAt);
 
-  if (!videos || videos.length === 0) {
+  if (items.length === 0) {
     return (
-      <div className="flex flex-col items-center gap-1.5 rounded-md border border-dashed border-hairline bg-elevated px-6 py-8 text-center">
-        <p className="text-sm font-medium text-text">Paste any link to start taking notes.</p>
-        <p className="text-xs text-text-3">Your recent videos will appear here.</p>
+      <div className="flex flex-col items-center gap-2 rounded-2xl border border-dashed border-hairline bg-surface/50 p-8 text-center backdrop-blur-sm">
+        <div className="flex h-12 w-12 items-center justify-center rounded-full bg-elevated text-text-3">
+          <BookOpen size={22} strokeWidth={2} />
+        </div>
+        <p className="text-sm font-medium text-text">No notes or articles yet</p>
+        <p className="text-xs text-text-3 max-w-sm">
+          Paste a YouTube lecture link or web article URL above to begin studying and capturing knowledge.
+        </p>
       </div>
     );
   }
 
   return (
-    <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
-      {videos.map((video) => (
-        <RecentCard key={video.urlHash} video={video} />
-      ))}
+    <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+      {items.map((item) =>
+        item.kind === "video" ? (
+          <VideoCard key={`vid-${item.data.urlHash}`} video={item.data} />
+        ) : (
+          <ArticleCard key={`art-${item.data.urlHash}`} article={item.data} />
+        ),
+      )}
     </div>
   );
 }

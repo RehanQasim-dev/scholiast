@@ -27,7 +27,7 @@ export const strip_md = (str: string): string => {
 		str = str.replace(/\[\s*\]/g, '');  // empty square brackets
 		str = str.replace(/\[\^[^\]]+\]/g, '');  // footnote references
 		str = str.replace(/^\*\[[^\]]+\]:.+$/gm, '');  // abbreviations
-		str = str.replace(/\[\[([^\]|]+)\|?([^\]]*)\]\]/g, (match, p1, p2) => p2 || p1);  // wikilinks
+		str = str.replace(/\[\[([^\]|]+)\|?([^\]]*)\]\]/g, (_, p1, p2) => p2 || p1);  // wikilinks
 
 		// Final cleanup
 		str = str.replace(/\n{3,}/g, '\n\n');  // Multiple newlines

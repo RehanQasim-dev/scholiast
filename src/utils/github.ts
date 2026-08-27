@@ -78,9 +78,6 @@ function activeClientId(): string {
 
 // --- token helpers -----------------------------------------------------------
 
-function encodeState(v: string): string {
-	return btoa(v).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
-}
 function base64urlBytes(bytes: Uint8Array): string {
 	let s = '';
 	for (const b of bytes) s += String.fromCharCode(b);

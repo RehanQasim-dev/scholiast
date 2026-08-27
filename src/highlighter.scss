@@ -345,12 +345,12 @@ body.obsidian-highlight-overlays-hidden {
 	align-items: center;
 	gap: 1px;
 	padding: 3px;
-	background: rgba(27, 32, 48, 0.97);
-	backdrop-filter: blur(6px);
-	-webkit-backdrop-filter: blur(6px);
-	border: 1px solid rgba(255, 255, 255, 0.12);
+	background: rgba(7, 13, 10, 0.96);
+	backdrop-filter: blur(12px);
+	-webkit-backdrop-filter: blur(12px);
+	border: 1px solid rgba(47, 158, 98, 0.22);
 	border-radius: 999px;
-	box-shadow: 0 4px 14px rgba(0, 0, 0, 0.28);
+	box-shadow: 0 6px 20px rgba(0, 0, 0, 0.5);
 	font-family: 'JetBrains Mono', ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, 'Liberation Mono', monospace;
 
 	button {
@@ -1121,7 +1121,7 @@ body[data-ob-comment-size="large"] .obsidian-comment-box { --ob-font: 17px; }
 		}
 
 		&.has-text .obsidian-comment-editor-actions button.obsidian-comment-save-new:hover svg {
-			background: #734AD9 !important;
+			background: #278a54 !important;
 		}
 	}
 }

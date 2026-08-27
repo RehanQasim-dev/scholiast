@@ -274,7 +274,7 @@ function initializeProviderList() {
 
 	// Clear existing providers
 	providerList.textContent = '';
-	sortedProviders.forEach((provider, index) => {
+	sortedProviders.forEach((provider, _index) => {
 		const originalIndex = generalSettings.providers.findIndex(p => p.id === provider.id);
 		const providerItem = createProviderListItem(provider, originalIndex);
 		providerList.appendChild(providerItem);

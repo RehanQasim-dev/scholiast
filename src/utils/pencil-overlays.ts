@@ -44,7 +44,6 @@ interface StoredDrawings {
 	url: string;
 	strokes: PencilStroke[];
 }
-type DrawingsStorage = Record<string, StoredDrawings>;
 
 const SVG_NS = 'http://www.w3.org/2000/svg';
 const STROKE_WIDTH = 3;

@@ -1,19 +1,19 @@
-import { useEffect, useState } from "react";
+import { useEffect } from "react";
 import { useQueryClient } from "@tanstack/react-query";
+import { useNavigate } from "react-router-dom";
 import { listen } from "@tauri-apps/api/event";
 import { Settings } from "lucide-react";
 import OpenLinkField from "../components/OpenLinkField";
 import RecentGrid from "../components/RecentGrid";
-import SyncStatusCard from "../components/SyncStatusCard";
+import CloudSyncIndicator from "../components/CloudSyncIndicator";
 import { ToastHost } from "../components/Toast";
 import { useDeepLinks } from "../lib/deepLink";
-import SettingsPage from "./Settings";
 
 const RECENT_KEY = ["videos", "recent"] as const;
 
 export default function Home() {
   const queryClient = useQueryClient();
-  const [settingsOpen, setSettingsOpen] = useState(false);
+  const navigate = useNavigate();
   useDeepLinks();
 
   useEffect(() => {
@@ -40,54 +40,30 @@ export default function Home() {
   }, [queryClient]);
 
   return (
-    <section className="mx-auto flex w-full max-w-3xl flex-col gap-6 px-6 py-6">
+    <section className="mx-auto flex w-full max-w-3xl flex-col gap-7 px-6 pt-7 sm:pt-9 pb-24">
       <ToastHost />
       <header className="flex items-center justify-between gap-4">
         <h1 className="text-xl font-semibold tracking-tight text-text">Scholiast</h1>
-        <button
-          type="button"
-          aria-label="Open settings"
-          onClick={() => setSettingsOpen(true)}
-          className="flex h-12 w-12 shrink-0 items-center justify-center rounded-md text-text-2 transition-colors hover:bg-elevated hover:text-text focus-visible:outline-none"
-        >
-          <Settings size={24} strokeWidth={2} style={{ strokeLinecap: "round", strokeLinejoin: "round" } as React.CSSProperties} />
-        </button>
+        <div className="flex items-center gap-1.5">
+          <CloudSyncIndicator />
+          <button
+            type="button"
+            aria-label="Open settings"
+            onClick={() => navigate("/settings")}
+            className="flex h-10 w-10 shrink-0 items-center justify-center rounded-md text-text-2 transition-all hover:bg-elevated hover:text-text active:scale-95 focus-visible:outline-none"
+          >
+            <Settings size={20} strokeWidth={2} style={{ strokeLinecap: "round", strokeLinejoin: "round" } as React.CSSProperties} />
+          </button>
+        </div>
       </header>
       <OpenLinkField />
-      <section aria-label="Your library" className="flex flex-col gap-2">
-        <h2 className="text-[11px] font-medium uppercase tracking-wide text-text-3">Your Library</h2>
+      <section aria-label="Recent activity" className="flex flex-col gap-3">
+        <div className="flex items-center justify-between">
+          <h2 className="text-[11px] font-semibold uppercase tracking-wider text-text-3">Recent Activity</h2>
+          <span className="text-[11px] text-text-3">Newest first</span>
+        </div>
         <RecentGrid />
       </section>
-      <section aria-label="Sync status" className="flex flex-col gap-2">
-        <h2 className="text-[11px] font-medium uppercase tracking-wide text-text-3">Sync Status</h2>
-        <SyncStatusCard />
-      </section>
-
-      {settingsOpen && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
-          <div
-            className="absolute inset-0 bg-black/60 backdrop-blur-sm"
-            onClick={() => setSettingsOpen(false)}
-            aria-hidden="true"
-          />
-          <div
-            role="dialog"
-            aria-modal="true"
-            aria-label="Settings"
-            className="relative max-h-[90vh] w-full max-w-3xl overflow-y-auto rounded-lg border border-hairline bg-surface shadow-xl"
-          >
-            <button
-              type="button"
-              aria-label="Close settings"
-              onClick={() => setSettingsOpen(false)}
-              className="absolute right-3 top-3 flex h-12 w-12 items-center justify-center rounded-md text-text-2 hover:bg-elevated hover:text-text"
-            >
-              <span aria-hidden className="text-xl leading-none">×</span>
-            </button>
-            <SettingsPage />
-          </div>
-        </div>
-      )}
     </section>
   );
 }

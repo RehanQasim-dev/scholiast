@@ -69,10 +69,10 @@ pub fn run() {
             stt::local::stt_local_transcribe,
             #[cfg(feature = "local-stt")]
             stt::local::stt_local_cancel,
-            #[cfg(feature = "local-stt")]
             stt::local::list_stt_models,
-            #[cfg(feature = "local-stt")]
             stt::local::download_stt_model,
+            stt::local::import_stt_model_chunk,
+            stt::local::delete_stt_model,
             commands::drive::drive_connect,
             commands::drive::drive_disconnect,
             commands::drive::drive_status,
@@ -96,6 +96,7 @@ pub fn run() {
             commands::reader::add_article,
             commands::reader::list_articles,
             commands::reader::get_page,
+            commands::reader::get_authentic_html,
             commands::reader::delete_article,
             commands::reader::save_highlight,
             commands::reader::list_highlights,
@@ -104,6 +105,8 @@ pub fn run() {
             commands::reader::save_comment,
             commands::reader::list_comments,
             commands::reader::delete_comment,
+            commands::reader::save_diagram_item,
+            commands::reader::get_diagram_item,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

@@ -62,13 +62,13 @@ pub fn find_model(id: &str) -> Option<&'static ModelSpec> {
     MODEL_CATALOG.iter().find(|m| m.id == id)
 }
 
-#[derive(Serialize)]
+#[derive(Serialize, Clone, Debug)]
 #[serde(rename_all = "camelCase")]
 pub struct CatalogEntry {
-    pub id: &'static str,
-    pub label: &'static str,
-    pub url: &'static str,
-    pub file_name: &'static str,
+    pub id: String,
+    pub label: String,
+    pub url: String,
+    pub file_name: String,
     pub size_bytes: u64,
     pub is_default: bool,
     pub installed: bool,
@@ -76,23 +76,49 @@ pub struct CatalogEntry {
 }
 
 pub fn catalog_json(models_dir: &Path) -> Vec<CatalogEntry> {
-    MODEL_CATALOG
+    let mut entries: Vec<CatalogEntry> = MODEL_CATALOG
         .iter()
         .map(|spec| {
             let path = model_path(models_dir, spec);
             let installed = path.is_file();
             CatalogEntry {
-                id: spec.id,
-                label: spec.label,
-                url: spec.url,
-                file_name: spec.file_name,
+                id: spec.id.to_string(),
+                label: spec.label.to_string(),
+                url: spec.url.to_string(),
+                file_name: spec.file_name.to_string(),
                 size_bytes: spec.size_bytes,
                 is_default: spec.id == DEFAULT_MODEL_ID,
                 installed,
                 local_path: installed.then(|| path.to_string_lossy().into_owned()),
             }
         })
-        .collect()
+        .collect();
+
+    // Scan models_dir for custom .bin models imported by the user
+    if let Ok(read_dir) = fs::read_dir(models_dir) {
+        for entry in read_dir.flatten() {
+            let path = entry.path();
+            if path.is_file() && path.extension().map_or(false, |ext| ext == "bin") {
+                let fname = path.file_name().unwrap_or_default().to_string_lossy().into_owned();
+                if !entries.iter().any(|e| e.file_name == fname) {
+                    let size = entry.metadata().map(|m| m.len()).unwrap_or(0);
+                    let mb = size / (1024 * 1024);
+                    entries.push(CatalogEntry {
+                        id: fname.clone(),
+                        label: format!("{fname} (~{mb} MB)"),
+                        url: String::new(),
+                        file_name: fname,
+                        size_bytes: size,
+                        is_default: false,
+                        installed: true,
+                        local_path: Some(path.to_string_lossy().into_owned()),
+                    });
+                }
+            }
+        }
+    }
+
+    entries
 }
 
 pub fn model_path(models_dir: &Path, spec: &ModelSpec) -> PathBuf {
@@ -109,6 +135,22 @@ pub fn first_installed_model(models_dir: &Path) -> Option<&'static ModelSpec> {
         .iter()
         .filter(|spec| model_path(models_dir, spec).is_file())
         .min_by_key(default_first)
+}
+
+pub fn first_installed_model_path(models_dir: &Path) -> Option<PathBuf> {
+    if let Some(spec) = first_installed_model(models_dir) {
+        return Some(model_path(models_dir, spec));
+    }
+    // Check if any custom .bin model exists
+    if let Ok(read_dir) = fs::read_dir(models_dir) {
+        for entry in read_dir.flatten() {
+            let path = entry.path();
+            if path.is_file() && path.extension().map_or(false, |ext| ext == "bin") {
+                return Some(path);
+            }
+        }
+    }
+    None
 }
 
 #[allow(dead_code)]

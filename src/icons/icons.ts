@@ -86,6 +86,7 @@ export function initializeIcons(root: HTMLElement | Document = document) {
 			'class': 'lucide-icon'
 		},
 		nameAttr: 'data-lucide',
+		root,
 	});
 }
 

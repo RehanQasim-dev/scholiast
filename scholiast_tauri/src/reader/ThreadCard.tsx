@@ -35,9 +35,15 @@ export interface ThreadCommentView {
 }
 
 export const COLOR_TOKENS: Record<HighlightColor, string> = {
-  yellow: "var(--sc-hl-yellow)",
-  red: "var(--sc-hl-red)",
-  green: "var(--sc-hl-green)",
+  yellow: "var(--sc-hl-yellow, #d29600)",
+  red: "var(--sc-hl-red, #dc3c5a)",
+  green: "var(--sc-hl-green, #2da05f)",
+};
+
+export const COLOR_BG_TOKENS: Record<HighlightColor, string> = {
+  yellow: "var(--sc-hl-yellow-tint, rgba(210, 150, 0, 0.09))",
+  red: "var(--sc-hl-red-tint, rgba(220, 60, 90, 0.07))",
+  green: "var(--sc-hl-green-tint, rgba(45, 160, 95, 0.09))",
 };
 
 const COLORS: HighlightColor[] = ["yellow", "red", "green"];
@@ -85,7 +91,7 @@ export function parseThreadComments(members: HighlightView[]): ThreadCommentView
   return out.sort((a, b) => a.createdAt - b.createdAt);
 }
 
-export function relativeTime(ts: number): string {
+function relativeTime(ts: number): string {
   const diffMs = Date.now() - ts;
   if (diffMs < 60_000) return "just now";
   const minutes = Math.floor(diffMs / 60_000);
@@ -150,7 +156,7 @@ export default function ThreadCard({
           className="block w-full cursor-pointer border-0 border-l-4 px-3 py-2.5 text-left"
           style={{
             borderLeftColor: token,
-            backgroundColor: `color-mix(in srgb, ${token} 12%, transparent)`,
+            backgroundColor: COLOR_BG_TOKENS[color] || "rgba(255, 255, 255, 0.06)",
           }}
         >
           <p className="line-clamp-2 text-sm leading-snug text-text">

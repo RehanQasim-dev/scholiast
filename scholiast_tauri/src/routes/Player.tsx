@@ -2,12 +2,12 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { invoke } from "@tauri-apps/api/core";
 import { useNavigate, useSearchParams } from "react-router-dom";
-import CommentEditorSheet from "../components/CommentEditorSheet";
+import { ArrowLeft } from "lucide-react";
 import { toast } from "../components/Toast";
 import PanelTabs from "../components/PanelTabs";
-import StudyDock from "../components/StudyDock";
+import SplitterPane from "../components/SplitterPane";
 import useIsNarrow from "../hooks/useIsNarrow";
-import { addNote, invokeCommand, upsertVideo } from "../lib/ipc";
+import { invokeCommand, upsertVideo } from "../lib/ipc";
 import Chrome from "../player/Chrome";
 import PlayerHost from "../player/PlayerHost";
 import {
@@ -15,6 +15,7 @@ import {
   playerBridge,
   subscribePlayerState,
   usePlayerEvent,
+  YT_STATE,
 } from "../player/playerBridge";
 
 const VIDEO_ID_RE =
@@ -35,7 +36,7 @@ async function persistResume(url: string, seconds: number) {
   }
 }
 
-interface CaptureOut {
+export interface CaptureOut {
   path: string;
   w: number;
   h: number;
@@ -54,29 +55,16 @@ export default function Player() {
   const containerRef = useRef<HTMLDivElement | null>(null);
   const workspaceRef = useRef<HTMLDivElement | null>(null);
   const isNarrow = useIsNarrow();
-  const [noteOpen, setNoteOpen] = useState(false);
   const [sheet, setSheet] = useState<SheetState>("balanced");
   const [videoTitle, setVideoTitle] = useState("");
-  const edgeStartRef = useRef<{ x: number; y: number } | null>(null);
-  const videoSwipeRef = useRef<{ x: number; y: number } | null>(null);
+  const [playerState, setPlayerState] = useState<number>(YT_STATE.UNSTARTED);
 
-  const videoQuery = useQuery({
+  useQuery({
     queryKey: ["video", url],
     queryFn: () => upsertVideo({ url }),
     enabled: Boolean(url && videoId),
     staleTime: Infinity,
   });
-  const urlHash = videoQuery.data?.urlHash ?? null;
-
-  const handleFabAddNote = useCallback(async () => {
-    if (!urlHash) return;
-    const videoTime = getPlayerSnapshot().time;
-    try {
-      await addNote({ urlHash, videoTime });
-    } catch {
-      setNoteOpen(true);
-    }
-  }, [urlHash]);
 
   useEffect(() => {
     if (!url) return;
@@ -91,6 +79,7 @@ export default function Player() {
     if (resumeAt > 0) playerBridge.commands.seekTo(resumeAt);
   });
   usePlayerEvent("onTitle", (t) => setVideoTitle(t));
+  usePlayerEvent("onStateChange", (s) => setPlayerState(s));
 
   useEffect(() => {
     if (!url || !videoId) return;
@@ -107,9 +96,9 @@ export default function Player() {
     };
   }, [url, videoId]);
 
-  const captureFrame = async () => {
+  const captureFrame = useCallback(async (): Promise<CaptureOut | null> => {
     const stage = stageRef.current;
-    if (!stage || !url) return;
+    if (!stage || !url) return null;
     playerBridge.commands.pause();
     const box = stage.getBoundingClientRect();
     const dpr = window.devicePixelRatio || 1;
@@ -123,21 +112,12 @@ export default function Player() {
           h: Math.round(box.height * dpr),
         },
       });
-      navigate("/frame", {
-        state: {
-          urlHash: data.urlHash,
-          url,
-          tmpPath: data.path,
-          w: data.w,
-          h: data.h,
-          videoTime: getPlayerSnapshot().time,
-        },
-      });
+      return data;
     } catch {
       playerBridge.commands.play();
-      void handleFabAddNote();
+      return null;
     }
-  };
+  }, [url]);
 
   const handleWorkspaceScroll = useCallback(() => {
     const el = workspaceRef.current;
@@ -151,104 +131,105 @@ export default function Player() {
   }, [isNarrow, sheet]);
 
   const isFocus = sheet === "focus" && isNarrow;
+  const isShieldVisible = playerState === YT_STATE.PAUSED || playerState === YT_STATE.ENDED;
 
-  const handleEdgeTouchStart = useCallback((e: React.TouchEvent) => {
-    const x = e.touches[0]?.clientX ?? 0;
-    const y = e.touches[0]?.clientY ?? 0;
-    if (x < 24) edgeStartRef.current = { x, y };
-    else edgeStartRef.current = null;
-  }, []);
-  const handleEdgeTouchEnd = useCallback(
-    (e: React.TouchEvent) => {
-      const start = edgeStartRef.current;
-      edgeStartRef.current = null;
-      if (!start) return;
-      const endX = e.changedTouches[0]?.clientX ?? start.x;
-      const endY = e.changedTouches[0]?.clientY ?? start.y;
-      const dx = endX - start.x;
-      const dy = Math.abs(endY - start.y);
-      if (dx > 72 && dy < 80) navigate("/home");
-    },
-    [navigate],
+  const videoStageNode = (
+    <div
+      ref={stageRef}
+      data-testid="player-stage"
+      className={`relative h-full w-full overflow-hidden bg-black ${
+        isFocus ? "sticky top-0 z-10 border-b border-hairline" : ""
+      }`}
+    >
+      {videoId ? (
+        <>
+          <PlayerHost />
+          {/* Pause / Ended recommendation shield: prevents YouTube related tiles from bleeding through */}
+          {isShieldVisible && (
+            <div
+              aria-hidden="true"
+              className="pointer-events-none absolute inset-0 z-[1] bg-black/70 backdrop-blur-[1px] transition-opacity duration-200"
+            />
+          )}
+          {/* Floating Back to Home button */}
+          <button
+            type="button"
+            aria-label="Back to library"
+            onClick={() => navigate("/home")}
+            className="absolute top-3 left-3 z-30 flex h-9 w-9 items-center justify-center rounded-full bg-black/60 text-white/90 backdrop-blur hover:bg-black/80 hover:text-white transition-all shadow-md active:scale-95 cursor-pointer"
+          >
+            <ArrowLeft size={18} strokeWidth={2} />
+          </button>
+          <Chrome
+            stageRef={stageRef}
+            onCaptureClick={() => void captureFrame()}
+            collapsed={isFocus}
+            title={videoTitle}
+          />
+          {/* Airtight watermark mask: active on all viewports */}
+          <div
+            aria-hidden
+            className="sc-yt-mask"
+            style={{ display: isFocus ? "none" : undefined }}
+          />
+        </>
+      ) : (
+        <div className="flex h-full flex-col items-center justify-center p-6 text-center text-sm text-text-2 gap-3">
+          <p>{url ? "That link isn't a YouTube video URL." : "Open a video from Home to start watching."}</p>
+          <button
+            type="button"
+            onClick={() => navigate("/home")}
+            className="inline-flex items-center gap-1.5 rounded-md border border-hairline px-3 py-1.5 text-xs text-text hover:bg-elevated"
+          >
+            <ArrowLeft size={14} /> Back to Library
+          </button>
+        </div>
+      )}
+    </div>
   );
 
-  const handleVideoTouchStart = useCallback((e: React.TouchEvent) => {
-    const t = e.touches[0];
-    if (!t) return;
-    videoSwipeRef.current = { x: t.clientX, y: t.clientY };
-  }, []);
-  const handleVideoTouchEnd = useCallback(
-    (e: React.TouchEvent) => {
-      const start = videoSwipeRef.current;
-      videoSwipeRef.current = null;
-      if (!start) return;
-      const end = e.changedTouches[0];
-      if (!end) return;
-      const dx = end.clientX - start.x;
-      const dy = end.clientY - start.y;
-      if (dy > 80 && Math.abs(dx) < 60) navigate("/home");
-    },
-    [navigate],
+  const studyPanelNode = (
+    <aside
+      ref={workspaceRef}
+      onScroll={handleWorkspaceScroll}
+      className="flex h-full min-h-0 flex-1 flex-col overflow-hidden bg-surface"
+    >
+      <PanelTabs url={url} videoId={videoId} onCaptureFrame={captureFrame} />
+    </aside>
   );
 
   return (
     <section
       ref={containerRef}
-      onTouchStart={handleEdgeTouchStart}
-      onTouchEnd={handleEdgeTouchEnd}
-      className="flex h-full min-h-0 flex-col bg-base"
+      className="flex h-full min-h-0 w-full flex-col bg-base"
       style={isNarrow ? { paddingTop: "var(--sc-safe-top)" } : undefined}
     >
-      <div className="flex min-h-0 flex-1 flex-col lg:flex-row">
-        <div
-          ref={stageRef}
-          data-testid="player-stage"
-          onTouchStart={handleVideoTouchStart}
-          onTouchEnd={handleVideoTouchEnd}
-          className={`relative shrink-0 overflow-hidden bg-black lg:w-[65%] lg:flex-none ${isFocus ? "sticky top-0 z-10 border-b border-hairline" : ""}`}
-          style={
-            isNarrow
-              ? isFocus
+      {isNarrow ? (
+        /* Mobile / Narrow Portrait: Stacked Layout */
+        <div className="flex min-h-0 flex-1 flex-col overflow-hidden">
+          <div
+            className="relative shrink-0 overflow-hidden bg-black"
+            style={
+              isFocus
                 ? { height: 44 }
                 : { aspectRatio: "16 / 9", maxHeight: "42vh", width: "100%" }
-              : { aspectRatio: "16 / 9", minHeight: 0 }
-          }
-        >
-          {videoId ? (
-            <>
-              <PlayerHost />
-              <Chrome stageRef={stageRef} onCaptureClick={() => void captureFrame()} collapsed={isFocus} title={videoTitle} />
-              <div aria-hidden className="sc-yt-mask hidden lg:block" style={{ display: isFocus ? "none" : undefined }} />
-            </>
-          ) : (
-            <div className="flex h-full items-center justify-center p-6 text-center text-sm text-text-2">
-              {url ? "That link isn't a YouTube video URL." : "Open a video from Home to start watching."}
-            </div>
-          )}
+            }
+          >
+            {videoStageNode}
+          </div>
+          <div className="min-h-0 flex-1 overflow-hidden border-t border-hairline">
+            {studyPanelNode}
+          </div>
         </div>
-
-        <aside
-          ref={workspaceRef}
-          onScroll={handleWorkspaceScroll}
-          className="min-h-0 flex-1 overflow-y-auto border-t border-hairline bg-surface lg:w-[35%] lg:flex-none lg:border-t-0 lg:border-l"
-        >
-          <PanelTabs url={url} videoId={videoId} />
-        </aside>
-      </div>
-
-      {videoId && urlHash ? (
-        <StudyDock
-          urlHash={urlHash}
-          onCapture={() => void captureFrame()}
-          onNewNote={() => void handleFabAddNote()}
-        />
-      ) : null}
-
-      {videoId && urlHash && (
-        <CommentEditorSheet
-          open={noteOpen}
-          target={{ urlHash, currentTime: getPlayerSnapshot().time }}
-          onClose={() => setNoteOpen(false)}
+      ) : (
+        /* Tablet & Desktop Landscape: Resizable 2-Panel Splitter (60/40 Default, Persistent) */
+        <SplitterPane
+          left={videoStageNode}
+          right={studyPanelNode}
+          storageKey="layout.player_split_ratio"
+          defaultRatio={0.6}
+          minRatio={0.35}
+          maxRatio={0.75}
         />
       )}
     </section>

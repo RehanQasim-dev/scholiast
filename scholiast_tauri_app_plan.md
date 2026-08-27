@@ -4,13 +4,9 @@
 
 ## 0. Document purpose
 
-This is the single authority for the Tauri-based Scholiast app. It consolidates and supersedes, for this codebase:
+This is the single authority for the Tauri-based Scholiast app (targeting Linux Desktop and Android). It consolidates the full product spec: YouTube lecture note-taking, live transcript annotation, webpage reading/highlighting (Reader), frame capture & drawing, local offline Whisper STT, cloud AI (Groq/Gemini), and per-page Google Drive sync.
 
-- `scholiast_mobile_app_plan.md` — product spec (features §5, UX §6) written for the native Android tablet app. Its behavioral decisions carry over verbatim unless explicitly changed here.
-- `scholiast_web_annot_app_plan.md` — the webpage annotation (Reader) feature set.
-- `flutter_conv_plan.md` — historical (Flutter attempt, parked in `scholiast_flutter/`, kept for reference; its task board lives in `flutter-tasks/`).
-
-The reference implementation for logic ports is the **native Android app** (`android/`, board: `android-tasks/`) plus the desktop extension sources (`src/utils/*`, `shared/*`). Work is orchestrated from `tauri-tasks/`.
+Work is orchestrated from `tauri-tasks/`.
 
 ---
 

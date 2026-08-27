@@ -38,7 +38,6 @@ let openedFullscreen = false; // was YouTube fullscreen when the overlay opened?
 // Set while a text-label editor is open, so the global key handler can commit /
 // cancel it (we route keys through onKeyDown to shield YouTube's shortcuts).
 let activeTextCommit: (() => void) | null = null;
-let activeTextCancel: (() => void) | null = null;
 
 let watchUrl = '';
 let videoId = '';
@@ -97,7 +96,7 @@ export function warmAnnotator(): void {
 		pooledIframe = document.createElement('iframe');
 		pooledIframe.src = browser.runtime.getURL('video-excalidraw.html');
 		pooledIframe.className = 'ob-vid-excali-frame';
-		pooledIframe.allow = 'clipboard-read; clipboard-write';
+		pooledIframe.allow = 'clipboard-read; clipboard-write; keyboard-lock *';
 		Object.assign(pooledIframe.style, {
 			// Absolute (relative to the player), NOT fixed: a fixed element paints
 			// above a fullscreened #movie_player but hit-tests *below* it, so pointer
@@ -182,6 +181,10 @@ function triggerIframe(type: 'TRIGGER_SAVE' | 'TRIGGER_COMMENT' | 'TRIGGER_DISCA
 	pooledIframe?.contentWindow?.postMessage({ type }, '*');
 }
 
+function triggerIframeTool(tool: string) {
+	pooledIframe?.contentWindow?.postMessage({ type: 'TRIGGER_TOOL', tool }, '*');
+}
+
 function onPooledMessage(e: MessageEvent) {
 	const d = e.data;
 	if (!d || !pooledIframe) return;
@@ -205,7 +208,7 @@ function onPooledMessage(e: MessageEvent) {
 		}
 		if (d.action === 'comment') persist().then(goToComment);
 		else saveAndClose();
-	} else if (d.type === 'DISCARD_ANNOTATION') {
+	} else if (d.type === 'DISCARD_ANNOTATION' || d.type === '__obVpsEscPressed') {
 		if (active) teardown(false);
 	}
 }
@@ -263,6 +266,7 @@ function prepareSession() {
 	videoTitle = getVideoTitle();
 	wasPlaying = !!video && !video.paused;
 	openedFullscreen = !!document.fullscreenElement;
+	document.body.dataset.obVidAnnotatorActive = 'true';
 	if (video) video.pause();
 }
 
@@ -271,6 +275,7 @@ function prepareSession() {
 // plain Esc exits fullscreen as usual. No-ops outside fullscreen / unsupported.
 function lockEscape() {
 	if (!document.fullscreenElement) return;
+	try { window.postMessage({ type: '__obVpsLock' }, '*'); } catch {}
 	try { window.dispatchEvent(new CustomEvent('__obVpsLock')); } catch {}
 	try { document.dispatchEvent(new CustomEvent('__obVpsLock')); } catch {}
 	const kb = (navigator as unknown as { keyboard?: { lock?: (k: string[]) => Promise<void> } }).keyboard;
@@ -280,6 +285,7 @@ function lockEscape() {
 }
 
 function unlockEscape() {
+	try { window.postMessage({ type: '__obVpsUnlock' }, '*'); } catch {}
 	try { window.dispatchEvent(new CustomEvent('__obVpsUnlock')); } catch {}
 	try { document.dispatchEvent(new CustomEvent('__obVpsUnlock')); } catch {}
 	const kb = (navigator as unknown as { keyboard?: { unlock?: () => void } }).keyboard;
@@ -394,158 +400,22 @@ function onReposition() {
 }
 
 function onFullscreenChange() {
-	// Re-mount into the (new) fullscreen element / body so the overlay keeps
-	// rendering, then reposition. The pooled iframe lives in the player container
-	// (which is what YouTube fullscreens), so it needs no reparenting — only
-	// repositioning.
-	if (!root) return;
+	if (!root || !active) return;
+	// If snapshot mode was opened in fullscreen and fullscreen exits (user pressed Esc or exited),
+	// close the snapshot mode cleanly so it never stays stuck as a broken black box.
+	if (openedFullscreen && !document.fullscreenElement) {
+		teardown(false);
+		return;
+	}
 	const target = mountTarget();
 	if (root.parentElement !== target) target.appendChild(root);
 	positionRoot();
-	if (mode === 'draw') positionPooledIframe();
+	if (mode === 'draw') {
+		positionPooledIframe();
+		sendInitFrame();
+	}
 	renderCommitted();
 }
-
-// --- Draw tools --------------------------------------------------------------
-
-function buildDrawTools() {
-	const bar = document.createElement('div');
-	bar.className = 'ob-vid-toolbar';
-
-	const tools: { tool: Tool; icon: string; label: string }[] = [
-		{ tool: 'select', icon: '↖', label: 'Select (V)' },
-		{ tool: 'pencil', icon: '✏️', label: 'Draw (P)' },
-		{ tool: 'line', icon: '╱', label: 'Line (L)' },
-		{ tool: 'arrow', icon: '↘', label: 'Arrow (A)' },
-		{ tool: 'rect', icon: '□', label: 'Rectangle (R)' },
-		{ tool: 'text', icon: 'T', label: 'Text (T)' },
-	];
-	for (const t of tools) {
-		const b = document.createElement('button');
-		b.type = 'button';
-		b.className = 'ob-vid-tool' + (t.tool === currentTool ? ' is-active' : '');
-		b.dataset.tool = t.tool;
-		b.title = t.label;
-		b.textContent = t.icon;
-		b.addEventListener('click', (e) => {
-			if (t.tool === 'line' || t.tool === 'arrow' || t.tool === 'rect') {
-				if (currentTool === t.tool) {
-					toggleLinePopup(b, bar);
-				} else {
-					setTool(t.tool);
-					hideLinePopup();
-				}
-			} else {
-				setTool(t.tool);
-				hideLinePopup();
-			}
-		});
-		b.addEventListener('dblclick', (e) => {
-			if (t.tool !== 'select' && t.tool !== 'pencil') {
-				toolLocked = true;
-				b.classList.add('is-locked');
-			}
-		});
-		bar.appendChild(b);
-	}
-
-	const sep = document.createElement('span');
-	sep.className = 'ob-vid-toolsep';
-	bar.appendChild(sep);
-
-	const colors: VideoColor[] = ['yellow', 'red', 'green', 'black'];
-	for (const c of colors) {
-		const sw = document.createElement('button');
-		sw.type = 'button';
-		sw.className = 'ob-vid-swatch ' + c + (c === currentColor ? ' is-active' : '');
-		sw.dataset.color = c;
-		sw.title = c;
-		sw.addEventListener('click', () => setColor(c));
-		bar.appendChild(sw);
-	}
-
-	frameWrap!.appendChild(bar);
-}
-
-function setTool(t: Tool) {
-	currentTool = t;
-	toolLocked = (t === 'select' || t === 'pencil');
-	if (root) root.dataset.tool = t;
-	root?.querySelectorAll('.ob-vid-tool').forEach(el => {
-		el.classList.toggle('is-active', (el as HTMLElement).dataset.tool === t);
-		el.classList.toggle('is-locked', (el as HTMLElement).dataset.tool === t && toolLocked);
-	});
-	// Leaving the select tool clears any selection highlight.
-	if (t !== 'select' && selectedId) { selectedId = null; renderCommitted(); }
-}
-
-function toggleLinePopup(anchor: HTMLElement, bar: HTMLElement) {
-	if (linePopup) { hideLinePopup(); return; }
-	linePopup = document.createElement('div');
-	linePopup.className = 'ob-vid-line-popup';
-	Object.assign(linePopup.style, {
-		position: 'absolute',
-		left: `${anchor.offsetLeft}px`,
-		bottom: `calc(100% + 8px)`,
-		display: 'flex', flexDirection: 'column', gap: '4px',
-		background: '#222', padding: '4px', borderRadius: '4px', border: '1px solid #444',
-		zIndex: '10'
-	});
-	const widths: StrokeWidth[] = ['thin', 'medium', 'thick'];
-	const icons = { thin: '—', medium: '━', thick: '█' };
-	for (const w of widths) {
-		const btn = document.createElement('button');
-		btn.type = 'button';
-		btn.className = 'ob-vid-tool' + (w === currentStrokeWidth ? ' is-active' : '');
-		btn.textContent = icons[w];
-		btn.style.fontSize = w === 'thin' ? '12px' : w === 'medium' ? '14px' : '16px';
-		btn.addEventListener('click', (e) => {
-			e.stopPropagation();
-			currentStrokeWidth = w;
-			if (currentTool === 'select' && selectedId) {
-				const l = markup.lines.find(x => x.id === selectedId);
-				if (l) { pushUndoSnapshot(); l.weight = w; renderCommitted(); }
-				const s = markup.strokes.find(x => x.id === selectedId);
-				if (s) { pushUndoSnapshot(); s.weight = w; renderCommitted(); }
-				const r = markup.rects?.find(x => x.id === selectedId);
-				if (r) { pushUndoSnapshot(); r.weight = w; renderCommitted(); }
-				const a = markup.arrows?.find(x => x.id === selectedId);
-				if (a) { pushUndoSnapshot(); a.weight = w; renderCommitted(); }
-			}
-			hideLinePopup();
-		});
-		linePopup.appendChild(btn);
-	}
-	bar.appendChild(linePopup);
-}
-
-function setColor(c: VideoColor) {
-	currentColor = c;
-	if (root) root.dataset.color = c;
-	root?.querySelectorAll('.ob-vid-swatch').forEach(el =>
-		el.classList.toggle('is-active', (el as HTMLElement).dataset.color === c));
-	// In select mode, a swatch also recolors the selected element.
-	if (currentTool === 'select' && selectedId) recolorSelected(c);
-	
-	// Recolor active text input if editing
-	const activeTextInput = root?.querySelector('.ob-vid-textinput') as HTMLTextAreaElement | null;
-	if (activeTextInput) {
-		activeTextInput.className = `ob-vid-textinput ${c}`;
-	}
-}
-
-// --- Drawing -----------------------------------------------------------------
-
-let drawing = false;
-let livePts: number[] = []; // pixel coords during a drag
-let lineStart: { x: number; y: number } | null = null;
-
-// Select-tool state: the currently selected markup element and an in-progress
-// drag-to-move.
-let selectedId: string | null = null;
-let selDragging = false;
-let selLast: { x: number; y: number } | null = null;
-let selSnapshot: VideoMarkup | null = null; // pre-move state for undo
 
 function wrapSize() {
 	const surface = frameInner || frameWrap!;
@@ -553,198 +423,20 @@ function wrapSize() {
 	return { w: r.width, h: r.height, left: r.left, top: r.top };
 }
 
-function toLocal(e: PointerEvent) {
-	const { left, top } = wrapSize();
-	return { x: e.clientX - left, y: e.clientY - top };
-}
-
 function renderCommitted() {
 	if (!committedHolder || !frameInner) return;
 	const { w, h } = wrapSize();
-	committedHolder.replaceChildren(renderMarkupSvg(markup, Math.max(1, w), Math.max(1, h), selectedId));
+	committedHolder.replaceChildren(renderMarkupSvg(markup, Math.max(1, w), Math.max(1, h), null));
 }
 
-// --- Select-tool editing (move / recolor / delete / edit text) ---------------
+// --- Comment panel -----------------------------------------------------------
 
-// Distance from point (px,py) to segment (ax,ay)-(bx,by), in pixels.
-function distToSeg(px: number, py: number, ax: number, ay: number, bx: number, by: number): number {
-	const dx = bx - ax, dy = by - ay;
-	const len2 = dx * dx + dy * dy;
-	let t = len2 ? ((px - ax) * dx + (py - ay) * dy) / len2 : 0;
-	t = Math.max(0, Math.min(1, t));
-	return Math.hypot(px - (ax + t * dx), py - (ay + t * dy));
-}
+function buildPanel(): HTMLElement {
+	const p = document.createElement('div');
+	p.className = 'ob-vid-panel';
 
-// Geometric hit-test of a local (frameInner-relative) pixel point against the
-// markup. Topmost-first (texts paint last, then lines, then strokes). Reliable
-// regardless of SVG pointer-events.
-function hitTest(lx: number, ly: number): string | null {
-	const { w, h } = wrapSize();
-	const TOL = 12;
-
-	for (let i = (markup.rects || []).length - 1; i >= 0; i--) {
-		const r = markup.rects![i];
-		const rx = r.x * w, ry = r.y * h, rw = r.w * w, rh = r.h * h;
-		if (lx >= rx - TOL && lx <= rx + rw + TOL && ly >= ry - TOL && ly <= ry + rh + TOL) {
-			if (!(lx > rx + TOL && lx < rx + rw - TOL && ly > ry + TOL && ly < ry + rh - TOL)) return r.id;
-		}
-	}
-	for (let i = (markup.arrows || []).length - 1; i >= 0; i--) {
-		const a = markup.arrows![i];
-		if (distToSeg(lx, ly, a.x1 * w, a.y1 * h, a.x2 * w, a.y2 * h) <= TOL) return a.id;
-	}
-	for (let i = markup.texts.length - 1; i >= 0; i--) {
-		const t = markup.texts[i];
-		// Prefer the rendered box's real bounds; fall back to an estimate.
-		const div = committedHolder?.querySelector(`[data-mid="${t.id}"] > div`) as HTMLElement | null;
-		if (div && frameInner) {
-			const r = div.getBoundingClientRect();
-			const fr = frameInner.getBoundingClientRect();
-			const x = r.left - fr.left, y = r.top - fr.top;
-			if (lx >= x - 4 && lx <= x + r.width + 4 && ly >= y - 4 && ly <= y + r.height + 4) return t.id;
-		} else {
-			const tx = t.x * w, ty = t.y * h, tw = (t.w || 0.28) * w;
-			if (lx >= tx && lx <= tx + tw && ly >= ty && ly <= ty + h * 0.06) return t.id;
-		}
-	}
-	for (let i = markup.lines.length - 1; i >= 0; i--) {
-		const l = markup.lines[i];
-		if (distToSeg(lx, ly, l.x1 * w, l.y1 * h, l.x2 * w, l.y2 * h) <= TOL) return l.id;
-	}
-	for (let i = markup.strokes.length - 1; i >= 0; i--) {
-		const s = markup.strokes[i];
-		const pts = s.points;
-		if (pts.length === 2) {
-			if (Math.hypot(lx - pts[0] * w, ly - pts[1] * h) <= TOL) return s.id;
-			continue;
-		}
-		for (let j = 0; j < pts.length - 2; j += 2) {
-			if (distToSeg(lx, ly, pts[j] * w, pts[j + 1] * h, pts[j + 2] * w, pts[j + 3] * h) <= TOL) return s.id;
-		}
-	}
-	return null;
-}
-
-function selectedColor(): VideoColor | null {
-	const s = markup.strokes.find(x => x.id === selectedId);
-	if (s) return s.color;
-	const l = markup.lines.find(x => x.id === selectedId);
-	if (l) return l.color;
-	const r = markup.rects?.find(x => x.id === selectedId);
-	if (r) return r.color;
-	const a = markup.arrows?.find(x => x.id === selectedId);
-	if (a) return a.color;
-	const t = markup.texts.find(x => x.id === selectedId);
-	return t ? t.color : null;
-}
-
-function translateSelected(dxNorm: number, dyNorm: number) {
-	const clamp = (v: number) => Math.max(0, Math.min(1, v));
-	const s = markup.strokes.find(x => x.id === selectedId);
-	if (s) { for (let i = 0; i < s.points.length; i += 2) { s.points[i] = clamp(s.points[i] + dxNorm); s.points[i + 1] = clamp(s.points[i + 1] + dyNorm); } return; }
-	const l = markup.lines.find(x => x.id === selectedId);
-	if (l) { l.x1 = clamp(l.x1 + dxNorm); l.y1 = clamp(l.y1 + dyNorm); l.x2 = clamp(l.x2 + dxNorm); l.y2 = clamp(l.y2 + dyNorm); return; }
-	const r = markup.rects?.find(x => x.id === selectedId);
-	if (r) { r.x = clamp(r.x + dxNorm); r.y = clamp(r.y + dyNorm); return; }
-	const a = markup.arrows?.find(x => x.id === selectedId);
-	if (a) { a.x1 = clamp(a.x1 + dxNorm); a.y1 = clamp(a.y1 + dyNorm); a.x2 = clamp(a.x2 + dxNorm); a.y2 = clamp(a.y2 + dyNorm); return; }
-	const t = markup.texts.find(x => x.id === selectedId);
-	if (t) {
-		t.x = clamp(t.x + dxNorm); 
-		t.y = clamp(t.y + dyNorm);
-		if (t.x + (t.w || 0.28) > 1) t.x = 1 - (t.w || 0.28);
-		if (t.y > 0.9) t.y = 0.9;
-	}
-}
-
-function deleteSelected() {
-	if (!selectedId) return;
-	pushUndoSnapshot();
-	markup.strokes = markup.strokes.filter(x => x.id !== selectedId);
-	markup.lines = markup.lines.filter(x => x.id !== selectedId);
-	markup.texts = markup.texts.filter(x => x.id !== selectedId);
-	if (markup.rects) markup.rects = markup.rects.filter(x => x.id !== selectedId);
-	if (markup.arrows) markup.arrows = markup.arrows.filter(x => x.id !== selectedId);
-	selectedId = null;
-	renderCommitted();
-}
-
-function recolorSelected(c: VideoColor) {
-	if (!selectedId) return;
-	const s = markup.strokes.find(x => x.id === selectedId);
-	const l = markup.lines.find(x => x.id === selectedId);
-	const t = markup.texts.find(x => x.id === selectedId);
-	const r = markup.rects?.find(x => x.id === selectedId);
-	const a = markup.arrows?.find(x => x.id === selectedId);
-	if (!s && !l && !t && !r && !a) return;
-	pushUndoSnapshot();
-	if (s) s.color = c;
-	if (l) l.color = c;
-	if (t) t.color = c;
-	if (r) r.color = c;
-	if (a) a.color = c;
-	renderCommitted();
-}
-
-function ensureLiveSvg(): SVGSVGElement {
-	const { w, h } = wrapSize();
-	if (!liveSvg) {
-		liveSvg = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
-		liveSvg.setAttribute('class', 'ob-vid-live-svg');
-		liveSvg.setAttribute('preserveAspectRatio', 'none');
-		frameInner!.appendChild(liveSvg);
-	}
-	liveSvg.setAttribute('viewBox', `0 0 ${Math.max(1, w)} ${Math.max(1, h)}`);
-	return liveSvg;
-}
-
-function clearLive() {
-	if (liveSvg) { liveSvg.remove(); liveSvg = null; }
-}
-
-function pushUndoSnapshot() {
-	undoStack.push(JSON.parse(JSON.stringify(markup)));
-	if (undoStack.length > 50) undoStack.shift();
-}
-
-function colorHexAttr(): string {
-	return currentColor;
-}
-
-function attachDrawHandlers() {
-	const surface = frameInner;
-	if (!surface) return;
-	surface.addEventListener('pointerdown', onPointerDown);
-	surface.addEventListener('pointermove', onPointerMove);
-	surface.addEventListener('pointerup', onPointerUp);
-	surface.addEventListener('pointerleave', onPointerUp);
-	surface.addEventListener('dblclick', onDoubleClick);
-}
-
-function onPointerDown(e: PointerEvent) {
-	if (e.button !== 0 || mode !== 'draw') return;
-
-	// Select tool: click a markup element to select it (then drag to move); click
-	// empty space to deselect. Hit-testing is geometric against the markup coords.
-	if (currentTool === 'select') {
-		const p = toLocal(e);
-		const mid = hitTest(p.x, p.y);
-		selectedId = mid;
-		if (root) {
-			root.querySelectorAll('.ob-vid-swatch').forEach(el =>
-				el.classList.toggle('is-active', (el as HTMLElement).dataset.color === selectedColor()));
-		}
-		renderCommitted();
-		if (mid) {
-			selDragging = true;
-			selLast = p;
-			selSnapshot = JSON.parse(JSON.stringify(markup));
-			frameInner?.setPointerCapture?.(e.pointerId);
-			e.preventDefault();
-		}
-		return;
-	}
-
+	const head = document.createElement('div');
+	head.className = 'ob-vid-panel-head';
 	// Don't treat clicks on an in-progress text label as a new placement.
 	if ((e.target as HTMLElement)?.classList?.contains('ob-vid-textinput')) return;
 	const p = toLocal(e);
@@ -954,7 +646,7 @@ function placeTextInput(x: number, y: number, initial = '', boxOverride?: number
 
 	let done = false; // guard against a remove→blur double-commit
 	const clearActive = () => {
-		if (activeTextCommit === commit) { activeTextCommit = null; activeTextCancel = null; }
+		if (activeTextCommit === commit) { activeTextCommit = null; }
 	};
 	const commit = () => {
 		if (done) return;
@@ -975,54 +667,6 @@ function placeTextInput(x: number, y: number, initial = '', boxOverride?: number
 		clearActive();
 		if (!toolLocked && currentTool === 'text') setTool('select');
 	};
-	const cancel = () => { done = true; ta.remove(); clearActive(); };
-	activeTextCommit = commit;
-	activeTextCancel = cancel;
-	ta.addEventListener('blur', commit);
-}
-
-function undoMarkup() {
-	const prev = undoStack.pop();
-	if (!prev) return;
-	markup = prev;
-	if (item) item.markup = markup;
-	selectedId = null;
-	renderCommitted();
-}
-
-// Double-click a text label (select tool) to edit it: reopen the editor with its
-// text, replacing the old label on commit. If empty space is clicked, spawn new text.
-function onDoubleClick(e: MouseEvent) {
-	if (mode !== 'draw' || currentTool !== 'select' || !frameInner) return;
-	const fr = frameInner.getBoundingClientRect();
-	const lx = e.clientX - fr.left, ly = e.clientY - fr.top;
-	const mid = hitTest(lx, ly);
-	if (!mid) {
-		placeTextInput(lx, ly);
-		return;
-	}
-	const idx = markup.texts.findIndex(t => t.id === mid);
-	if (idx < 0) return;
-	const t = markup.texts[idx];
-	const { w, h } = wrapSize();
-	pushUndoSnapshot();
-	const existing = t.text;
-	const px = t.x * w, py = t.y * h, boxPx = (t.w || 0.28) * w;
-	if (t.size) lastFontSizeScale = t.size;
-	// Remove the old label; placeTextInput will add the edited one.
-	markup.texts.splice(idx, 1);
-	selectedId = null;
-	renderCommitted();
-	placeTextInput(px, py, existing, boxPx);
-	e.preventDefault();
-}
-
-// --- Comment panel -----------------------------------------------------------
-
-function buildPanel(): HTMLElement {
-	const p = document.createElement('div');
-	p.className = 'ob-vid-panel';
-
 	const head = document.createElement('div');
 	head.className = 'ob-vid-panel-head';
 	const ts = document.createElement('span');
@@ -1139,6 +783,7 @@ async function goToComment() {
 		watchUrl: wu, videoId: vid2, videoTitle: vt,
 		video: vid, wasPlaying: playing,
 		focusItemId: it.id, resumeOnClose: true,
+		ensureItem: it,
 	});
 }
 
@@ -1208,20 +853,25 @@ function onKeyDown(e: KeyboardEvent) {
 	e.stopPropagation();
 
 	if (mode === 'draw') {
-		// Delete the selected element (select tool).
-		if (selectedId && (e.key === 'Delete' || e.key === 'Backspace')) { e.preventDefault(); deleteSelected(); return; }
-		// Undo a stroke/line/text regardless of tool.
-		if ((e.ctrlKey || e.metaKey) && (e.key === 'z' || e.key === 'Z')) { e.preventDefault(); undoMarkup(); return; }
-		if (e.key === '1') { e.preventDefault(); setColor('yellow'); return; }
-		if (e.key === '2') { e.preventDefault(); setColor('red'); return; }
-		if (e.key === '3') { e.preventDefault(); setColor('green'); return; }
-		if (e.key === '4') { e.preventDefault(); setColor('black'); return; }
-		if (e.key === 'v' || e.key === 'V') { e.preventDefault(); setTool('select'); return; }
-		if (e.key === 'p' || e.key === 'P') { e.preventDefault(); setTool('pencil'); return; }
-		if (e.key === 'l' || e.key === 'L') { e.preventDefault(); setTool('line'); return; }
-		if (e.key === 't' || e.key === 'T') { e.preventDefault(); setTool('text'); return; }
-		if (e.key === 'r' || e.key === 'R') { e.preventDefault(); setTool('rect'); return; }
-		if (e.key === 'a' || e.key === 'A') { e.preventDefault(); setTool('arrow'); return; }
+		const k = e.key.toLowerCase();
+		const toolMap: Record<string, string> = {
+			'1': 'selection', 'v': 'selection',
+			'2': 'rectangle', 'r': 'rectangle',
+			'3': 'diamond',   'd': 'diamond',
+			'4': 'ellipse',   'o': 'ellipse',
+			'5': 'arrow',     'a': 'arrow',
+			'6': 'line',      'l': 'line',
+			'7': 'freedraw',  'p': 'freedraw',
+			'8': 'text',      't': 'text',
+			'9': 'image',
+			'0': 'eraser',    'e': 'eraser',
+			'h': 'hand',
+		};
+		if (!e.ctrlKey && !e.metaKey && !e.altKey && toolMap[k]) {
+			e.preventDefault();
+			triggerIframeTool(toolMap[k]);
+			return;
+		}
 
 		// Drawing lives in the pooled iframe; normally it has focus and handles
 		// these itself. This fires only when focus is still on the host page —
@@ -1235,6 +885,9 @@ function onKeyDown(e: KeyboardEvent) {
 		} else if (e.key === 'n' || e.key === 'N' || e.key === 'c' || e.key === 'C') {
 			e.preventDefault();
 			triggerIframe('TRIGGER_COMMENT');
+		} else if (k === 's') {
+			e.preventDefault();
+			triggerIframe('TRIGGER_CYCLE_STROKE' as any);
 		}
 	} else {
 		if (e.key === 'Escape') { e.preventDefault(); teardown(true); }
@@ -1281,7 +934,6 @@ function teardown(save: boolean, resume = true) {
 	window.removeEventListener('keyup', onKeyUpShield, true);
 	window.removeEventListener('keypress', onKeyUpShield, true);
 	activeTextCommit = null;
-	activeTextCancel = null;
 	selectedId = null;
 	selDragging = false;
 
@@ -1296,6 +948,7 @@ function teardown(save: boolean, resume = true) {
 	const doResume = resume && wasPlaying;
 	const vid = video;
 	active = false;
+	delete document.body.dataset.obVidAnnotatorActive;
 	mode = 'draw';
 	item = null;
 	markup = emptyMarkup();

@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { createRoot } from 'react-dom/client';
 import { Excalidraw, exportToBlob } from '@excalidraw/excalidraw';
 import * as Icons from './excalidraw-icons';
@@ -26,17 +26,18 @@ function App() {
 		currentItemRoundness: 'sharp',
 		currentItemFillStyle: 'hachure'
 	});
-	const [selectedElements, setSelectedElements] = useState<any[]>([]);
+	const [, setSelectedElements] = useState<any[]>([]);
 	const [activePopup, setActivePopup] = useState<string | null>(null);
 	const [tempSelectedValue, setTempSelectedValue] = useState<any>(null);
 	const [activeToolType, setActiveToolType] = useState<string>('selection');
 	const [dimOpacity, setDimOpacity] = useState<number>(15);
 	
-	// Vertical bands (px) reserved at the top/bottom of the iframe for the native
-	// toolbar and our properties bar — the captured frame is fit into the region
-	// between them so nothing overlaps the drawing.
-	const TOP_BAND = 40;
-	const BOTTOM_BAND = 40;
+	// Vertical bands (px) reserved at top and bottom so the top toolbar,
+	// action buttons, properties dock, undo/redo, and dim slider do not overlap
+	// the snapshot image. With 30px docks at 6px margin, reserving 38px leaves
+	// a clean 2px breathing gap with zero overlap.
+	const TOP_BAND = 38;
+	const BOTTOM_BAND = 38;
 
 	const handleApiChange = (api: any) => {
 		setExcalidrawAPI(api);
@@ -98,6 +99,13 @@ function App() {
 				save('comment');
 			} else if (e.data?.type === 'TRIGGER_DISCARD') {
 				discard();
+			} else if (e.data?.type === 'TRIGGER_TOOL' && e.data?.tool) {
+				const api = excalidrawAPIRef.current || excalidrawAPI;
+				if (api) {
+					api.setActiveTool({ type: e.data.tool });
+				}
+			} else if (e.data?.type === 'TRIGGER_CYCLE_STROKE') {
+				cycleProp('currentItemStrokeColor', colors);
 			}
 		};
 		window.addEventListener('message', handleMessage);
@@ -116,6 +124,35 @@ function App() {
 			window.removeEventListener('wheel', blockWheel);
 		};
 	}, [excalidrawAPI]);
+
+	useEffect(() => {
+		const kb = (navigator as unknown as { keyboard?: { lock?: (k: string[]) => Promise<void> } }).keyboard;
+		if (kb?.lock) {
+			kb.lock(['Escape']).catch(() => {});
+		}
+	}, []);
+
+	useEffect(() => {
+		const handleResize = () => {
+			if (!excalidrawAPI || !frameDataUrl) return;
+			const W = window.innerWidth, H = window.innerHeight;
+			const regionH = Math.max(1, H - TOP_BAND - BOTTOM_BAND);
+			const zoom = Math.min(W / frameSize.w, regionH / frameSize.h);
+			const dispW = frameSize.w * zoom, dispH = frameSize.h * zoom;
+			const offX = (W - dispW) / 2;
+			const offY = TOP_BAND + (regionH - dispH) / 2;
+
+			const scrollX = offX / zoom;
+			const scrollY = offY / zoom;
+			lockedViewRef.current = { scrollX, scrollY, zoom };
+
+			excalidrawAPI.updateScene({
+				appState: { zoom: { value: zoom }, scrollX, scrollY }
+			});
+		};
+		window.addEventListener('resize', handleResize);
+		return () => window.removeEventListener('resize', handleResize);
+	}, [excalidrawAPI, frameDataUrl, frameSize]);
 
 	useEffect(() => {
 		if (!excalidrawAPI || !frameDataUrl) return;
@@ -217,6 +254,20 @@ function App() {
 				return;
 			}
 			const k = e.key.toLowerCase();
+			const TOOL_SHORTCUTS: Record<string, string> = {
+				'1': 'selection', 'v': 'selection',
+				'2': 'rectangle', 'r': 'rectangle',
+				'3': 'diamond',   'd': 'diamond',
+				'4': 'ellipse',   'o': 'ellipse',
+				'5': 'arrow',     'a': 'arrow',
+				'6': 'line',      'l': 'line',
+				'7': 'freedraw',  'p': 'freedraw',
+				'8': 'text',      't': 'text',
+				'9': 'image',
+				'0': 'eraser',    'e': 'eraser',
+				'h': 'hand',
+			};
+
 			if (e.key === 'Enter') { 
 				e.preventDefault(); e.stopPropagation(); 
 				if (activePopup) {
@@ -228,11 +279,8 @@ function App() {
 			}
 			else if (e.key === 'Escape') { 
 				e.preventDefault(); e.stopPropagation(); 
-				if (activePopup) {
-					setActivePopup(null);
-				} else {
-					discard(); 
-				}
+				if (activePopup) setActivePopup(null);
+				discard(); 
 			}
 			else if (k === 'c' || k === 'n') { 
 				if (activePopup) return;
@@ -245,6 +293,14 @@ function App() {
 			else if (k === 'w') { e.preventDefault(); e.stopPropagation(); cycleProp('currentItemStrokeWidth', strokeWidths); }
 			else if (k === 'x') { e.preventDefault(); e.stopPropagation(); cycleProp('currentItemStrokeStyle', strokeStyles); }
 			else if (k === 'q') { e.preventDefault(); e.stopPropagation(); cycleProp('currentItemOpacity', opacities); }
+			else if (TOOL_SHORTCUTS[k] && !e.ctrlKey && !e.metaKey && !e.altKey && !activePopup) {
+				const api = excalidrawAPIRef.current || excalidrawAPI;
+				if (api) {
+					e.preventDefault();
+					e.stopPropagation();
+					api.setActiveTool({ type: TOOL_SHORTCUTS[k] });
+				}
+			}
 		};
 		window.addEventListener('keydown', handleKeyDown, true);
 		return () => window.removeEventListener('keydown', handleKeyDown, true);
@@ -366,7 +422,6 @@ function App() {
 	const isShape = ['rectangle', 'diamond', 'ellipse'].includes(activeToolType);
 	const isRectangle = activeToolType === 'rectangle';
 	const isDiamond = activeToolType === 'diamond';
-	const isEllipse = activeToolType === 'ellipse';
 	const isLine = activeToolType === 'line';
 	const isArrow = activeToolType === 'arrow';
 	const isFreedraw = activeToolType === 'freedraw';
@@ -439,12 +494,11 @@ function App() {
 	];
 
 	// Components
-	const OptionGroup = ({ options, currentVal, propKey, isColor = false }: any) => {
+	const OptionGroup = ({ options, currentVal, propKey, isColor = false, title = '' }: any) => {
 		const isCurrentlyActive = (o: any) => {
 			if (o.val === currentVal) return true;
 			// Excalidraw sometimes normalizes 'sharp' or 'none' to null or undefined
 			if ((o.val === 'sharp' || o.val === null || o.val === 'none') && (currentVal === null || currentVal === undefined || currentVal === 'sharp' || currentVal === 'none')) {
-				// Only match if the option is actually sharp or none, and currentVal is falsy or equivalent
 				if (o.val === 'sharp' && (currentVal === 'sharp' || currentVal === null || currentVal === undefined)) return true;
 				if ((o.val === null || o.val === 'none') && (currentVal === 'none' || currentVal === null || currentVal === undefined)) return true;
 			}
@@ -460,27 +514,45 @@ function App() {
 					<div className="option-popup-inner">
 						{options.map((o: any) => {
 							const isTempActive = isPopupOpen && (o.val === tempSelectedValue || o.value === tempSelectedValue);
+							const active = isCurrentlyActive(o) && !isTempActive;
 							return (
 								<div key={String(o.val)} 
-									className={`${isColor ? 'color-swatch' : 'option-btn'} ${isCurrentlyActive(o) && !isTempActive ? 'active' : ''}`}
-									style={{
-										...(isColor ? { background: o.val === 'transparent' ? 'transparent' : o.val } : {}),
-										...(isTempActive ? { outline: '2px solid white', outlineOffset: '2px', zIndex: 10 } : {})
-									}}
+									className={isColor ? `color-swatch-wrap ${active ? 'active' : ''}` : `option-btn ${active ? 'active' : ''}`}
+									style={isTempActive ? { outline: '2px solid #2f9e62', outlineOffset: '1px', zIndex: 10 } : undefined}
 									onClick={() => {
 										updateProp(propKey, o.val);
 										setActivePopup(null);
 									}}
-									title={isColor ? o.name : ''}
+									title={o.name || o.title || ''}
 								>
-									{!isColor && o.icon}
+									{isColor ? (
+										o.val === 'transparent' ? (
+											<Icons.TransparentIcon />
+										) : (
+											<div className="color-swatch-dot" style={{ background: o.val }} />
+										)
+									) : (
+										o.icon
+									)}
 								</div>
 							);
 						})}
 					</div>
 				</div>
-				<div className={`${isColor ? 'color-swatch' : 'option-btn'} active`} style={isColor ? { background: selected.val === 'transparent' ? 'transparent' : selected.val } : {}}>
-					{!isColor && selected.icon}
+				<div 
+					className={isColor ? `color-swatch-wrap active` : `option-btn active`} 
+					title={title}
+					onClick={() => setActivePopup(isPopupOpen ? null : propKey)}
+				>
+					{isColor ? (
+						selected.val === 'transparent' ? (
+							<Icons.TransparentIcon />
+						) : (
+							<div className="color-swatch-dot" style={{ background: selected.val }} />
+						)
+					) : (
+						selected.icon
+					)}
 				</div>
 			</div>
 		);
@@ -520,16 +592,16 @@ function App() {
 				
 				{(isShape || isLine || isArrow || isFreedraw || isText) && (
 					<div className="bottom-options-bar">
-						{/* Stroke Color applies to almost everything */}
-						<OptionGroup options={colors} currentVal={appState.currentItemStrokeColor} propKey="currentItemStrokeColor" isColor={true} />
+						{/* Stroke Color */}
+						<OptionGroup title="Stroke Color" options={colors} currentVal={appState.currentItemStrokeColor} propKey="currentItemStrokeColor" isColor={true} />
 						
-						{/* Background Color & Fill apply to shapes, lines, freedraw */}
+						{/* Background Color & Fill */}
 						{(isShape || isLine || isFreedraw) && (
 							<>
-								<div style={{width:'1px', height:'20px', background:'rgba(255,255,255,0.2)'}}></div>
-								<OptionGroup options={[{name:'transparent', val:'transparent'}, ...colors]} currentVal={appState.currentItemBackgroundColor} propKey="currentItemBackgroundColor" isColor={true} />
+								<div className="bar-divider"></div>
+								<OptionGroup title="Background Color" options={[{name:'transparent', val:'transparent'}, ...colors]} currentVal={appState.currentItemBackgroundColor} propKey="currentItemBackgroundColor" isColor={true} />
 								{appState.currentItemBackgroundColor !== 'transparent' && (
-									<OptionGroup options={fillStyles} currentVal={appState.currentItemFillStyle} propKey="currentItemFillStyle" />
+									<OptionGroup title="Fill Style" options={fillStyles} currentVal={appState.currentItemFillStyle} propKey="currentItemFillStyle" />
 								)}
 							</>
 						)}
@@ -537,60 +609,60 @@ function App() {
 						{/* Text properties */}
 						{isText && (
 							<>
-								<div style={{width:'1px', height:'20px', background:'rgba(255,255,255,0.2)'}}></div>
-								<OptionGroup options={fontFamilies} currentVal={appState.currentItemFontFamily} propKey="currentItemFontFamily" />
-								<OptionGroup options={fontSizes} currentVal={appState.currentItemFontSize} propKey="currentItemFontSize" />
-								<OptionGroup options={textAligns} currentVal={appState.currentItemTextAlign} propKey="currentItemTextAlign" />
+								<div className="bar-divider"></div>
+								<OptionGroup title="Font Family" options={fontFamilies} currentVal={appState.currentItemFontFamily} propKey="currentItemFontFamily" />
+								<OptionGroup title="Font Size" options={fontSizes} currentVal={appState.currentItemFontSize} propKey="currentItemFontSize" />
+								<OptionGroup title="Text Alignment" options={textAligns} currentVal={appState.currentItemTextAlign} propKey="currentItemTextAlign" />
 							</>
 						)}
 						
-						{/* Stroke width applies to shapes, lines, arrow, freedraw */}
+						{/* Stroke width */}
 						{(isShape || isLine || isArrow || isFreedraw) && (
 							<>
-								<div style={{width:'1px', height:'20px', background:'rgba(255,255,255,0.2)'}}></div>
-								<OptionGroup options={strokeWidths} currentVal={appState.currentItemStrokeWidth} propKey="currentItemStrokeWidth" />
+								<div className="bar-divider"></div>
+								<OptionGroup title="Stroke Width" options={strokeWidths} currentVal={appState.currentItemStrokeWidth} propKey="currentItemStrokeWidth" />
 							</>
 						)}
 						
-						{/* Stroke style applies to shapes, lines, arrow */}
+						{/* Stroke style */}
 						{(isShape || isLine || isArrow) && (
-							<OptionGroup options={strokeStyles} currentVal={appState.currentItemStrokeStyle} propKey="currentItemStrokeStyle" />
+							<OptionGroup title="Stroke Style" options={strokeStyles} currentVal={appState.currentItemStrokeStyle} propKey="currentItemStrokeStyle" />
 						)}
 						
-						{/* Sloppiness/Roughness applies to shapes, lines, arrow, freedraw */}
+						{/* Sloppiness/Roughness */}
 						{(isShape || isLine || isArrow || isFreedraw) && (
-							<OptionGroup options={roughnesses} currentVal={appState.currentItemRoughness} propKey="currentItemRoughness" />
+							<OptionGroup title="Sloppiness" options={roughnesses} currentVal={appState.currentItemRoughness} propKey="currentItemRoughness" />
 						)}
 						
-						{/* Edges/Roundness applies to rectangles, diamonds, lines */}
+						{/* Edges/Roundness */}
 						{(isLine || isRectangle || isDiamond) && (
-							<OptionGroup options={roundnesses} currentVal={appState.currentItemRoundness === null ? 'sharp' : 'round'} propKey="currentItemRoundness" />
+							<OptionGroup title="Corners" options={roundnesses} currentVal={appState.currentItemRoundness === null ? 'sharp' : 'round'} propKey="currentItemRoundness" />
 						)}
 
-						{/* Arrow Type (Routing) applies to arrows */}
+						{/* Arrow Type (Routing) */}
 						{isArrow && (
-							<OptionGroup options={arrowTypes} currentVal={appState.currentItemRoundness === null ? 'sharp' : appState.currentItemRoundness?.type === 2 ? 'round' : 'elbow'} propKey="currentItemRoundness" />
+							<OptionGroup title="Arrow Routing" options={arrowTypes} currentVal={appState.currentItemRoundness === null ? 'sharp' : appState.currentItemRoundness?.type === 2 ? 'round' : 'elbow'} propKey="currentItemRoundness" />
 						)}
 
-						{/* Arrowheads apply to arrow tool */}
+						{/* Arrowheads */}
 						{isArrow && (
 							<>
-								<div style={{width:'1px', height:'20px', background:'rgba(255,255,255,0.2)'}}></div>
-								<OptionGroup options={arrowheads} currentVal={appState.currentItemStartArrowhead} propKey="currentItemStartArrowhead" />
-								<OptionGroup options={arrowheads} currentVal={appState.currentItemEndArrowhead} propKey="currentItemEndArrowhead" />
+								<div className="bar-divider"></div>
+								<OptionGroup title="Start Arrowhead" options={arrowheads} currentVal={appState.currentItemStartArrowhead} propKey="currentItemStartArrowhead" />
+								<OptionGroup title="End Arrowhead" options={arrowheads} currentVal={appState.currentItemEndArrowhead} propKey="currentItemEndArrowhead" />
 							</>
 						)}
 
-						{/* Opacity applies to everything */}
-						<div style={{width:'1px', height:'20px', background:'rgba(255,255,255,0.2)'}}></div>
-						<OptionGroup options={opacities} currentVal={appState.currentItemOpacity} propKey="currentItemOpacity" />
+						{/* Opacity */}
+						<div className="bar-divider"></div>
+						<OptionGroup title="Opacity" options={opacities} currentVal={appState.currentItemOpacity} propKey="currentItemOpacity" />
 					</div>
 				)}
 
-				<div style={{ pointerEvents: 'auto', position: 'absolute', bottom: 4, right: 10, display: 'flex', alignItems: 'center', gap: '8px', background: 'rgba(7, 13, 10, 0.92)', backdropFilter: 'blur(12px)', WebkitBackdropFilter: 'blur(12px)', padding: '3px 10px', borderRadius: '8px', border: '1px solid rgba(47, 158, 98, 0.18)', color: '#a8d5b5', boxShadow: '0 4px 14px rgba(0, 0, 0, 0.5)' }}>
-					<label style={{ fontSize: '12px', fontWeight: 600, color: '#a8d5b5', fontFamily: "'JetBrains Mono', monospace" }}>Dim</label>
-					<input type="range" min="0" max="50" value={dimOpacity} onChange={(e) => setDimOpacity(parseInt(e.target.value))} style={{ width: '80px', accentColor: '#2f9e62', cursor: 'pointer' }} />
-					<span style={{ fontSize: '12px', fontWeight: 600, minWidth: '3ch', textAlign: 'right', color: '#6fcf97', fontFamily: "'JetBrains Mono', monospace" }}>{dimOpacity}%</span>
+				<div style={{ pointerEvents: 'auto', position: 'absolute', bottom: 6, right: 10, height: '30px', display: 'flex', alignItems: 'center', gap: '6px', background: 'rgba(10, 16, 13, 0.92)', backdropFilter: 'blur(16px)', WebkitBackdropFilter: 'blur(16px)', padding: '0 8px', borderRadius: '8px', border: '1px solid rgba(255, 255, 255, 0.1)', color: '#a8d5b5', boxShadow: '0 8px 30px rgba(0, 0, 0, 0.55), inset 0 1px 0 rgba(255, 255, 255, 0.08)', zIndex: 40, boxSizing: 'border-box' }}>
+					<label style={{ fontSize: '10px', fontWeight: 600, color: '#a8d5b5', fontFamily: "'JetBrains Mono', monospace", letterSpacing: '0.02em' }}>Dim</label>
+					<input type="range" min="0" max="50" value={dimOpacity} onChange={(e) => setDimOpacity(parseInt(e.target.value))} style={{ width: '55px', accentColor: '#2f9e62', cursor: 'pointer' }} />
+					<span style={{ fontSize: '10px', fontWeight: 600, minWidth: '3ch', textAlign: 'right', color: '#6fcf97', fontFamily: "'JetBrains Mono', monospace" }}>{dimOpacity}%</span>
 				</div>
 			</div>}
 		</>

@@ -1,8 +1,7 @@
 import browser from './browser-polyfill';
 import { sanitizeFileName } from '../utils/string-utils';
 import { generateFrontmatter as generateFrontmatterCore } from './shared';
-import { Template, Property } from '../types/types';
-import { generalSettings, incrementStat } from './storage-utils';
+import { generalSettings } from './storage-utils';
 import { copyToClipboard } from './clipboard-utils';
 import { getMessage } from './i18n';
 

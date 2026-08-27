@@ -2,7 +2,7 @@
 // Current implementation is English-specific
 const lowercaseWords = ['a', 'an', 'the', 'and', 'but', 'or', 'for', 'nor', 'on', 'at', 'to', 'from', 'by', 'in', 'of'];
 
-export const title = (input: string | string[], param?: string): string | string[] => {
+export const title = (input: string | string[], _param?: string): string | string[] => {
 	const toTitleCase = (str: string): string => {
 		return str.split(/\s+/).map((word, index) => {
 			if (index !== 0 && lowercaseWords.includes(word.toLowerCase())) {

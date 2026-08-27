@@ -8,7 +8,7 @@ import { addArticle } from "../lib/readerIpc";
 import { extractVideoId } from "../routes/Player";
 import { toast } from "./Toast";
 
-export function canonicalWatchUrl(videoId: string): string {
+function canonicalWatchUrl(videoId: string): string {
   return `https://www.youtube.com/watch?v=${videoId}`;
 }
 
