@@ -57,12 +57,10 @@ export default function PanelTabs({ url, videoId, onCaptureFrame }: PanelTabsPro
         <button
           type="button"
           onClick={() => setTab("transcript")}
-          disabled={!captionsAvailable}
-          aria-disabled={!captionsAvailable}
           aria-current={tab === "transcript" ? "page" : undefined}
           data-testid="panel-tab-transcript"
-          title={captionsAvailable ? undefined : "No captions for this video"}
-          className={`${segBase} ${tab === "transcript" ? segActive : segIdle} disabled:opacity-40`}
+          title={captionsAvailable ? undefined : "No captions for this video — add notes manually"}
+          className={`${segBase} ${tab === "transcript" ? segActive : segIdle} ${!captionsAvailable ? "opacity-60" : ""}`}
         >
           <FileText size={24} strokeWidth={2} aria-hidden />
           <span>Transcript</span>

@@ -84,18 +84,18 @@ export default function DataSection({ fetchStats }: DataSectionProps) {
 
   return (
     <section aria-label="Data" className="space-y-3">
-      <div className="flex flex-wrap gap-2">
+      <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
         <button
           type="button"
           onClick={() => void open("local")}
-          className="min-h-[48px] rounded-md border border-[var(--sc-danger)] px-4 py-2 text-sm text-[var(--sc-danger)] hover:bg-elevated"
+          className="min-h-[48px] w-full rounded-md border border-[var(--sc-danger)] px-4 py-2 text-sm text-[var(--sc-danger)] hover:bg-elevated"
         >
           Delete local data…
         </button>
         <button
           type="button"
           onClick={() => void open("drive")}
-          className="min-h-[48px] rounded-md border border-hairline px-4 py-2 text-sm text-text-2 hover:text-text hover:bg-elevated"
+          className="min-h-[48px] w-full rounded-md border border-hairline px-4 py-2 text-sm text-text-2 hover:text-text hover:bg-elevated"
         >
           Delete all data on Google Drive…
         </button>

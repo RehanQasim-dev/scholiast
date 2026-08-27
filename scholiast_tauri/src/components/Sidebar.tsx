@@ -51,7 +51,7 @@ const NAV_ITEMS = [
 ];
 
 const linkClass = ({ isActive }: { isActive: boolean }) =>
-  `flex items-center gap-3.5 rounded-xl px-3.5 py-2.5 text-sm font-medium transition-colors duration-[var(--sc-dur-fast)] ease-out ${
+  `flex min-h-[44px] items-center gap-3.5 rounded-xl px-3.5 py-3 text-sm font-medium transition-colors duration-[var(--sc-dur-fast)] ease-out ${
     isActive
       ? "bg-elevated text-text shadow-sm"
       : "text-text-2 hover:bg-elevated/50 hover:text-text"

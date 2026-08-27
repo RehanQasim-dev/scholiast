@@ -159,7 +159,7 @@ export default function ThreadCard({
             backgroundColor: COLOR_BG_TOKENS[color] || "rgba(255, 255, 255, 0.06)",
           }}
         >
-          <p className="line-clamp-2 text-sm leading-snug text-text">
+          <p className="line-clamp-3 break-words text-sm leading-snug text-text">
             {representative.content}
           </p>
           <p className="mt-1 flex items-center gap-2 font-mono text-[11px] tabular-nums text-text-3">

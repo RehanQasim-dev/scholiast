@@ -1,0 +1,6 @@
+[submodule "excalidraw"]
+	path = excalidraw
+	url = https://github.com/excalidraw/excalidraw.git
+[submodule "obsidian-local-rest-api"]
+	path = obsidian-local-rest-api
+	url = https://github.com/coddingtonbear/obsidian-local-rest-api.git

@@ -53,7 +53,7 @@ export function ToastHost({ durationMs = 4000 }: { durationMs?: number }) {
       <div
         role="status"
         data-testid="toast-snackbar"
-        className="pointer-events-auto rounded-full border border-hairline bg-[#16191F] px-4 py-2.5 text-sm font-medium text-text shadow-[0_8px_32px_rgba(0,0,0,0.5)]"
+        className="pointer-events-auto rounded-full border border-hairline bg-[#16191F] px-5 py-3 text-sm font-medium text-text shadow-[0_8px_32px_rgba(0,0,0,0.5)]"
         style={{ animation: "sc-toast-in 180ms cubic-bezier(0.16,1,0.3,1)" }}
       >
         {visible}

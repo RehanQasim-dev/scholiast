@@ -50,12 +50,14 @@ export default function CloudSyncIndicator() {
     }
   }
 
+  const label = running ? "Syncing…" : hasError ? "Sync failed" : isSynced ? "Synced" : "Offline";
+
   return (
     <>
       <button
         type="button"
         onClick={handleClick}
-        aria-label="Cloud sync status"
+        aria-label={`Cloud sync status: ${label}`}
         title={
           running
             ? `Syncing: ${status.phase ?? "processing"}…`
@@ -65,39 +67,31 @@ export default function CloudSyncIndicator() {
                 ? "Google Drive synced • Click to sync now"
                 : "Google Drive • Click to setup backup"
         }
-        className="relative flex h-10 w-10 shrink-0 items-center justify-center rounded-md text-text-2 transition-all hover:bg-elevated hover:text-text active:scale-95 focus-visible:outline-none"
+        className="relative flex h-11 min-h-[44px] shrink-0 items-center gap-2 rounded-full border border-hairline bg-elevated px-3.5 text-xs font-medium tabular-nums text-text-2 transition-all hover:bg-surface hover:text-text active:scale-[0.98] focus-visible:outline-none"
       >
         {running ? (
           <RefreshCw
-            size={18}
+            size={16}
             strokeWidth={2}
             className="animate-spin text-accent"
             style={{ strokeLinecap: "round", strokeLinejoin: "round" } as React.CSSProperties}
           />
         ) : hasError ? (
           <AlertCircle
-            size={18}
+            size={16}
             strokeWidth={2}
             className="text-[var(--sc-danger)]"
             style={{ strokeLinecap: "round", strokeLinejoin: "round" } as React.CSSProperties}
           />
         ) : (
           <Cloud
-            size={18}
+            size={16}
             strokeWidth={2}
-            className={isSynced ? "text-text-2" : "text-text-3"}
+            className={isSynced ? "text-[var(--sc-success)]" : "text-text-3"}
             style={{ strokeLinecap: "round", strokeLinejoin: "round" } as React.CSSProperties}
           />
         )}
-
-        {/* Status dot badge */}
-        {!running && !hasError && (
-          <span
-            className={`absolute top-2 right-2 h-2 w-2 rounded-full border border-base ${
-              isSynced ? "bg-[var(--sc-success)]" : "bg-text-3/50"
-            }`}
-          />
-        )}
+        <span>{label}</span>
       </button>
 
       <CloudSyncModal

@@ -118,9 +118,8 @@ export default function AuthenticView({
 
   if (isLoading) {
     return (
-      <div className="flex h-full w-full flex-col items-center justify-center gap-3 p-8 text-text-2">
+      <div className="flex h-full w-full flex-col items-center justify-center p-8 text-text-2">
         <div className="h-8 w-8 animate-spin rounded-full border-2 border-accent border-t-transparent" />
-        <span className="text-sm font-medium">Loading authentic webpage with uBlock & Dark Reader…</span>
       </div>
     );
   }

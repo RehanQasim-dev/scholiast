@@ -1,4 +1,4 @@
 {
   "$schema": "https://schema.tauri.app/config/2",
-  "identifier": "app.scholiast.app"
+  "identifier": "app.scholiast"
 }

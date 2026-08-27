@@ -276,8 +276,9 @@
 }
 
 .sc-article-body th {
-  background: var(--sc-surface);
+  background: var(--sc-elevated);
   font-weight: 600;
+  color: var(--sc-text);
 }
 
 .sc-article-state {

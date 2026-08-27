@@ -426,13 +426,15 @@ export default function NotesTab({
             </button>
             <button
               type="button"
-              title={voice.recording ? "Stop recording" : "Record voice note"}
+              title={voice.disabledReason ?? (voice.recording ? "Stop recording" : "Record voice note")}
               onClick={() => void handleMicToggle()}
-              disabled={voice.state === "transcribing"}
+              disabled={voice.state === "transcribing" || Boolean(voice.disabledReason)}
               className={`relative flex h-8 w-8 items-center justify-center rounded-lg transition-all active:scale-95 ${
                 voice.recording
                   ? "bg-[color:var(--sc-danger)] text-white animate-pulse"
-                  : "text-text-2 hover:bg-elevated hover:text-text"
+                  : voice.disabledReason
+                    ? "text-text-3 opacity-40 cursor-not-allowed"
+                    : "text-text-2 hover:bg-elevated hover:text-text"
               }`}
             >
               {voice.state === "transcribing" ? (

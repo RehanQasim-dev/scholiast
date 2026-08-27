@@ -1,6 +1,5 @@
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useState } from "react";
-// eslint-disable-next-line @typescript-eslint/no-unused-vars
 import { Edit3, Check } from "lucide-react";
 import { IpcCommandError, invokeCommand } from "../../lib/ipc";
 import { PREF_DEFAULTS, PREF_KEYS } from "../../lib/store";
@@ -151,7 +150,7 @@ function ProviderRow({ name, label, testCommand }: ProviderRowProps) {
             value={value}
             placeholder={configured ? "Replace key…" : "Paste key…"}
             onChange={(event) => setValue(event.target.value)}
-            className="min-w-0 flex-1 h-14 rounded-md border border-hairline bg-elevated px-3 text-sm outline-none focus:border-accent"
+            className="min-w-0 flex-1 h-12 min-h-[48px] rounded-md border border-hairline bg-elevated px-3 text-sm outline-none focus:border-accent"
           />
           <button
             type="button"
@@ -222,7 +221,7 @@ export default function SpeechSection() {
             value={GROQ_PRESETS.some(([v]) => v === groqModel) ? groqModel : GROQ_PRESETS[0]![0]}
             onChange={(event) => setGroqModel(event.target.value)}
             data-testid="pref-stt.groq_model"
-            className="h-11 w-full rounded-lg border border-hairline bg-elevated px-3 text-sm text-text outline-none focus:border-accent"
+            className="h-12 min-h-[48px] w-full rounded-lg border border-hairline bg-elevated px-3 text-sm text-text outline-none focus:border-accent"
           >
             {GROQ_PRESETS.map(([value, label]) => (
               <option key={value} value={value}>{label}</option>
@@ -238,7 +237,7 @@ export default function SpeechSection() {
             value={GEMINI_PRESETS.some(([v]) => v === geminiModel) ? geminiModel : GEMINI_PRESETS[0]![0]}
             onChange={(event) => setGeminiModel(event.target.value)}
             data-testid="pref-stt.gemini_model"
-            className="h-11 w-full rounded-lg border border-hairline bg-elevated px-3 text-sm text-text outline-none focus:border-accent"
+            className="h-12 min-h-[48px] w-full rounded-lg border border-hairline bg-elevated px-3 text-sm text-text outline-none focus:border-accent"
           >
             {GEMINI_PRESETS.map(([value, label]) => (
               <option key={value} value={value}>{label}</option>
@@ -254,7 +253,7 @@ export default function SpeechSection() {
             value={language}
             onChange={(event) => setLanguage(event.target.value)}
             data-testid="pref-speech.language"
-            className="h-11 w-full rounded-lg border border-hairline bg-elevated px-3 text-sm text-text outline-none focus:border-accent"
+            className="h-12 min-h-[48px] w-full rounded-lg border border-hairline bg-elevated px-3 text-sm text-text outline-none focus:border-accent"
           >
             {LANGUAGES.map(([code, label]) => (
               <option key={code} value={code}>

@@ -7,14 +7,12 @@ import OpenLinkField from "../components/OpenLinkField";
 import RecentGrid from "../components/RecentGrid";
 import CloudSyncIndicator from "../components/CloudSyncIndicator";
 import { ToastHost } from "../components/Toast";
-import { useDeepLinks } from "../lib/deepLink";
 
 const RECENT_KEY = ["videos", "recent"] as const;
 
 export default function Home() {
   const queryClient = useQueryClient();
   const navigate = useNavigate();
-  useDeepLinks();
 
   useEffect(() => {
     let dispose: (() => void) | undefined;
@@ -42,7 +40,7 @@ export default function Home() {
   return (
     <section className="mx-auto flex w-full max-w-3xl flex-col gap-7 px-6 pt-7 sm:pt-9 pb-24">
       <ToastHost />
-      <header className="flex items-center justify-between gap-4">
+      <header className="sticky top-0 z-10 -mx-6 -mt-7 flex items-center justify-between gap-4 border-b border-transparent bg-base/80 px-6 py-4 backdrop-blur-md supports-[backdrop-filter]:bg-base/70 sm:-mt-9">
         <h1 className="text-xl font-semibold tracking-tight text-text">Scholiast</h1>
         <div className="flex items-center gap-1.5">
           <CloudSyncIndicator />

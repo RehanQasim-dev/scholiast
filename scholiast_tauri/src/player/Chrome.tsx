@@ -247,10 +247,10 @@ export default function Chrome({ stageRef, slots, onCaptureClick, collapsed = fa
             backgroundRepeat: "no-repeat",
           }}
         />
-        <div className="flex items-center gap-2 text-xs text-text-2 tabular-nums">
-          <span aria-label="Current time">{formatMss(snap.time)}</span>
-          <span aria-hidden>●</span>
-          <span aria-label="Duration">{formatMss(snap.duration)}</span>
+        <div className="flex items-center gap-2 text-xs text-text-2">
+          <span aria-label="Current time" className="tabular-nums">{formatMss(snap.time)}</span>
+          <span aria-hidden className="opacity-60">·</span>
+          <span aria-label="Duration" className="tabular-nums">{formatMss(snap.duration)}</span>
         </div>
         <div className="flex flex-wrap items-center gap-1">
           <button

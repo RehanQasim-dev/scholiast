@@ -18,6 +18,17 @@ export default defineConfig({
   },
   build: {
     target: "es2022",
+    chunkSizeWarningLimit: 1000,
+    rollupOptions: {
+      output: {
+        manualChunks: {
+          react: ["react", "react-dom", "react-router-dom"],
+          tanstack: ["@tanstack/react-query"],
+          tauri: ["@tauri-apps/api", "@tauri-apps/plugin-store", "@tauri-apps/plugin-opener", "@tauri-apps/plugin-deep-link"],
+          excalidraw: ["@excalidraw/excalidraw"],
+        },
+      },
+    },
   },
   resolve: {
     alias: {

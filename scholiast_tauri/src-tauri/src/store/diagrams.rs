@@ -1,6 +1,9 @@
+#[cfg(target_os = "linux")]
 use scholiast_core::error::ScholiastError;
+#[cfg(target_os = "linux")]
 use serde::{Deserialize, Serialize};
 
+#[cfg(target_os = "linux")]
 use super::{dberr, Store};
 
 /// Contract for the `diagrams` table (Excalidraw scenes; image bytes live on

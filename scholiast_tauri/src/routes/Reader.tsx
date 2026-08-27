@@ -15,6 +15,7 @@ import ReaderTopBar, {
   type ReaderTheme,
   type ReaderViewMode,
 } from "../components/reader/ReaderTopBar";
+import TabletVerticalDock from "../components/reader/TabletVerticalDock";
 import SplitterPane from "../components/SplitterPane";
 import {
   addArticle,
@@ -77,6 +78,20 @@ export default function Reader() {
   const [drawerOpen, setDrawerOpen] = useState(false);
   const [annotationsOpen, setAnnotationsOpen] = useState(false);
   const [threadSheetOpen, setThreadSheetOpen] = useState(false);
+  const [dockAppearanceOpen, setDockAppearanceOpen] = useState(false);
+  const dockPopoverRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    if (!dockAppearanceOpen) return;
+    const onDown = (e: MouseEvent) => {
+      const target = e.target as Node | null;
+      if (target && dockPopoverRef.current && !dockPopoverRef.current.contains(target)) {
+        setDockAppearanceOpen(false);
+      }
+    };
+    document.addEventListener("mousedown", onDown);
+    return () => document.removeEventListener("mousedown", onDown);
+  }, [dockAppearanceOpen]);
 
   // When a highlight is clicked or created, open the notes panel/sheet
   const handleHighlightClick = useCallback((highlightId: string) => {
@@ -138,23 +153,20 @@ export default function Reader() {
     lastScrollTop.current = 0;
   }, [urlHash]);
 
-  // Auto-hide header on downward scroll; restore on upward scroll
   useEffect(() => {
+    if (!isNarrow) return;
     const el = scrollRef.current;
     if (!el) return;
     const onScroll = () => {
       const top = el.scrollTop;
       const delta = top - lastScrollTop.current;
-      if (delta > 20 && top > 60) {
-        setHeaderHidden(true);
-      } else if (delta < -15 || top <= 20) {
-        setHeaderHidden(false);
-      }
+      if (delta > 20 && top > 60) setHeaderHidden(true);
+      else if (delta < -15 || top <= 20) setHeaderHidden(false);
       lastScrollTop.current = top;
     };
     el.addEventListener("scroll", onScroll, { passive: true });
     return () => el.removeEventListener("scroll", onScroll);
-  }, [urlHash]);
+  }, [urlHash, isNarrow]);
 
   const selectArticle = useCallback(
     (article: ArticleSummary) => {
@@ -335,7 +347,7 @@ export default function Reader() {
           />
           <div
             data-testid="rail-wrap"
-            className="relative z-50 h-full w-72 max-w-[85vw] border-r border-hairline bg-surface shadow-2xl"
+            className="relative z-50 h-full w-[264px] max-w-[85vw] border-r border-hairline bg-surface shadow-2xl"
           >
             <LibraryRail
               activeUrlHash={urlHash || null}
@@ -346,10 +358,10 @@ export default function Reader() {
         </div>
       )}
 
-      {/* Auto-hiding Minimalist TopBar */}
+      {/* TopBar: auto-hides on mobile scroll, always visible on tablet but appearance controls moved to left dock */}
       <div
-        className={`shrink-0 overflow-hidden transition-all duration-200 ease-out ${
-          focusMode || headerHidden ? "-mt-[50px] opacity-0 pointer-events-none" : "mt-0 opacity-100"
+        className={`shrink-0 overflow-visible transition-all duration-200 ease-out ${
+          focusMode || (isNarrow && headerHidden) ? "-mt-[50px] opacity-0 pointer-events-none" : "mt-0 opacity-100"
         }`}
         data-testid="topbar-wrap"
       >
@@ -375,56 +387,105 @@ export default function Reader() {
             if (isNarrow) setThreadSheetOpen((v) => !v);
             else setAnnotationsOpen((v) => !v);
           }}
+          hideAppearanceOnTablet={!isNarrow}
+          hideViewModeOnTablet={!isNarrow}
+          hideAnnotationsOnTablet={!isNarrow}
         />
       </div>
 
       {/* Main Content Area */}
-      <div className="min-h-0 flex-1 overflow-hidden">
-        {!urlHash ? (
-          /* No article selected: Show clean Library View */
-          articleContentNode
-        ) : isNarrow ? (
-          /* Mobile Narrow View */
-          <div className="relative h-full w-full overflow-hidden">
-            {articleContentNode}
-
-            {/* Mobile Bottom Sheet for Past Comments / Annotations */}
-            {threadSheetOpen && (
-              <div className="fixed inset-0 z-40 flex flex-col justify-end">
-                <div
-                  className="absolute inset-0 bg-black/40 backdrop-blur-[1px]"
-                  onClick={() => setThreadSheetOpen(false)}
-                />
-                <aside
-                  data-testid="thread-panel-slot"
-                  className="relative z-10 flex max-h-[45vh] h-[40vh] flex-col rounded-t-2xl border-t border-hairline bg-surface shadow-2xl pb-[var(--sc-safe-bottom)]"
-                >
-                  <div className="mx-auto my-2 h-1 w-12 rounded-full bg-text-3/40" />
-                  <div className="min-h-0 flex-1 overflow-hidden">
-                    <ThreadPanel urlHash={urlHash} selectRequest={selectRequest} />
+      <div className="flex min-h-0 flex-1 overflow-hidden">
+        {!isNarrow && Boolean(urlHash) && (
+          <div className="relative">
+            <TabletVerticalDock
+              hasArticle={Boolean(urlHash)}
+              viewMode={viewMode}
+              onToggleViewMode={toggleViewMode}
+              onLibraryToggle={() => setDrawerOpen((v) => !v)}
+              annotationsCount={annotationsCount}
+              annotationsOpen={annotationsOpen}
+              onToggleAnnotations={() => setAnnotationsOpen((v) => !v)}
+              onOpenAppearance={() => setDockAppearanceOpen((v) => !v)}
+            />
+            {dockAppearanceOpen && (
+              <div
+                ref={dockPopoverRef}
+                role="dialog"
+                aria-label="Reading settings"
+                className="absolute left-[64px] top-12 z-40 w-72 rounded-lg border border-hairline bg-surface p-3 shadow-xl backdrop-blur-md"
+              >
+                <div className="space-y-3">
+                  <div>
+                    <span className="text-[11px] font-medium uppercase tracking-wide text-text-3">Text Size</span>
+                    <div className="mt-1 flex items-center justify-between rounded-md border border-hairline bg-base p-1">
+                      <button type="button" onClick={() => changeFontStep(-1)} disabled={fontStep <= -2} className="h-8 w-10 rounded text-xs font-semibold text-text-2 hover:bg-elevated hover:text-text disabled:opacity-30">A−</button>
+                      <span className="font-mono text-xs tabular-nums text-text">{16 + fontStep}px</span>
+                      <button type="button" onClick={() => changeFontStep(1)} disabled={fontStep >= 4} className="h-8 w-10 rounded text-xs font-semibold text-text-2 hover:bg-elevated hover:text-text disabled:opacity-30">A+</button>
+                    </div>
                   </div>
-                </aside>
+                  <div>
+                    <span className="text-[11px] font-medium uppercase tracking-wide text-text-3">Theme</span>
+                    <div className="mt-1 flex items-center gap-1.5 rounded-md border border-hairline bg-base p-1.5">
+                      {[
+                        { id: "oled", label: "OLED", bg: "#000000", border: "#27272a" },
+                        { id: "sepia", label: "Sepia", bg: "#1c1815", border: "#443428" },
+                        { id: "slate", label: "Slate", bg: "#0f172a", border: "#334155" },
+                        { id: "light", label: "Light", bg: "#fbfbfa", border: "#d4d4d8" },
+                      ].map((t) => (
+                        <button key={t.id} type="button" title={t.label} onClick={() => handleThemeChange(t.id as ReaderTheme)} className={`flex-1 flex flex-col items-center gap-1 rounded py-1 transition-all cursor-pointer ${theme === t.id ? "ring-2 ring-accent" : "opacity-70 hover:opacity-100"}`}>
+                          <span className="h-4 w-full rounded border shadow-sm" style={{ backgroundColor: t.bg, borderColor: t.border }} />
+                          <span className="text-[10px] font-medium text-text-2">{t.label}</span>
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+                  <div>
+                    <span className="text-[11px] font-medium uppercase tracking-wide text-text-3">Typeface</span>
+                    <div className="mt-1 flex rounded-md border border-hairline bg-base p-1">
+                      <button type="button" onClick={() => serif && toggleSerif()} className={`flex-1 rounded py-1 text-xs font-medium transition-colors ${!serif ? "bg-accent text-[var(--sc-accent-text)]" : "text-text-2 hover:text-text"}`}>Sans</button>
+                      <button type="button" onClick={() => !serif && toggleSerif()} className={`flex-1 rounded py-1 font-serif text-xs font-medium transition-colors ${serif ? "bg-accent text-[var(--sc-accent-text)]" : "text-text-2 hover:text-text"}`}>Serif</button>
+                    </div>
+                  </div>
+                  <div>
+                    <span className="text-[11px] font-medium uppercase tracking-wide text-text-3">Column Width</span>
+                    <div className="mt-1 flex rounded-md border border-hairline bg-base p-1">
+                      {COLUMN_WIDTHS.map((w) => (
+                        <button key={w} type="button" onClick={() => { if (columnWidth !== w) cycleColumnWidth(); }} className={`flex-1 rounded py-1 text-xs font-medium transition-colors ${columnWidth === w ? "bg-accent text-[var(--sc-accent-text)]" : "text-text-2 hover:text-text"}`}>{w === 700 ? "Narrow" : w === 736 ? "Default" : w === 800 ? "Wide" : "Extra"}</button>
+                      ))}
+                    </div>
+                  </div>
+                  <div className="border-t border-hairline pt-2">
+                    <button type="button" onClick={() => { setDockAppearanceOpen(false); void handleDelete(); }} className="flex w-full items-center justify-between rounded px-2 py-1.5 text-xs text-[color:var(--sc-danger)] hover:bg-elevated">Delete Article</button>
+                  </div>
+                </div>
               </div>
             )}
           </div>
-        ) : (
-          /* Tablet & Desktop: Resizable 2-Panel Splitter when Annotations Open */
-          annotationsOpen && threadPanelNode ? (
-            <SplitterPane
-              left={articleContentNode}
-              right={threadPanelNode}
-              storageKey="layout.reader_split_ratio"
-              defaultRatio={0.65}
-              minRatio={0.4}
-              maxRatio={0.8}
-            />
-          ) : (
-            /* Full Width Reading Canvas when Annotations Closed */
-            <div className="h-full w-full overflow-hidden">
-              {articleContentNode}
-            </div>
-          )
         )}
+        <div className="min-h-0 flex flex-1 overflow-hidden">
+          {!urlHash ? (
+            articleContentNode
+          ) : isNarrow ? (
+            <div className="relative h-full w-full overflow-hidden">
+              {articleContentNode}
+              {threadSheetOpen && (
+                <div className="fixed inset-0 z-40 flex flex-col justify-end">
+                  <div className="absolute inset-0 bg-black/40 backdrop-blur-[1px]" onClick={() => setThreadSheetOpen(false)} />
+                  <aside data-testid="thread-panel-slot" className="relative z-10 flex max-h-[45vh] h-[40vh] flex-col rounded-t-2xl border-t border-hairline bg-surface shadow-2xl pb-[var(--sc-safe-bottom)]">
+                    <div className="mx-auto my-2 h-1 w-12 rounded-full bg-text-3/40" />
+                    <div className="min-h-0 flex-1 overflow-hidden">
+                      <ThreadPanel urlHash={urlHash} selectRequest={selectRequest} />
+                    </div>
+                  </aside>
+                </div>
+              )}
+            </div>
+          ) : annotationsOpen && threadPanelNode ? (
+            <SplitterPane left={articleContentNode} right={threadPanelNode} storageKey="layout.reader_split_ratio" defaultRatio={0.65} minRatio={0.4} maxRatio={0.8} />
+          ) : (
+            <div className="h-full w-full overflow-hidden">{articleContentNode}</div>
+          )}
+        </div>
       </div>
     </section>
   );

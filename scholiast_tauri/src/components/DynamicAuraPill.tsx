@@ -85,7 +85,7 @@ export default function DynamicAuraPill({ onSave, onCancel }: DynamicAuraPillPro
         };
 
         animFrameRef.current = requestAnimationFrame(updateLevels);
-      } catch (err) {
+      } catch {
         toast("Microphone unavailable");
         onCancel();
       }

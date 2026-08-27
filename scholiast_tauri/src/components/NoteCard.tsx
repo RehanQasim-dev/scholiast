@@ -229,10 +229,10 @@ export default function NoteCard({ item, onDelete, onEdit }: NoteCardProps) {
                 <span className="text-sm text-text-3">Protected segment — tap timestamp to seek.</span>
               ) : null}
               {primary && (
-                <p className="line-clamp-2 text-sm leading-snug text-text">{primary}</p>
+                <p className="line-clamp-3 break-words text-sm leading-snug text-text">{primary}</p>
               )}
               {body && stripHiddenIds(body).trim() ? (
-                <div className="mt-1 line-clamp-2 text-sm leading-snug text-text-2">
+                <div className="mt-1 line-clamp-3 break-words text-sm leading-snug text-text-2">
                   {renderNoteNodes(parseNoteMarkdown(body))}
                 </div>
               ) : !primary && !item.frame && !item.drmBlocked ? (

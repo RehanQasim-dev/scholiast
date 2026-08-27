@@ -98,7 +98,10 @@ export default function Player() {
 
   const captureFrame = useCallback(async (): Promise<CaptureOut | null> => {
     const stage = stageRef.current;
-    if (!stage || !url) return null;
+    if (!stage || !url) {
+      toast("Frame capture unavailable — open a video first");
+      return null;
+    }
     playerBridge.commands.pause();
     const box = stage.getBoundingClientRect();
     const dpr = window.devicePixelRatio || 1;
@@ -112,8 +115,10 @@ export default function Player() {
           h: Math.round(box.height * dpr),
         },
       });
+      if (!data) toast("Frame capture failed — DRM or unsupported content");
       return data;
     } catch {
+      toast("Frame capture failed — DRM or unsupported content");
       playerBridge.commands.play();
       return null;
     }

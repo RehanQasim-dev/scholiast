@@ -114,7 +114,7 @@ export default function CloudSyncModal({
       await invokeCommand<boolean>("drive_disconnect");
       await queryClient.invalidateQueries({ queryKey: ["drive"] });
       toast("Disconnected from Google Drive");
-    } catch (err) {
+    } catch {
       toast("Failed to disconnect");
     }
   }

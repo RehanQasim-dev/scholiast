@@ -30,49 +30,51 @@ function Group({
 
 export default function Settings() {
   return (
-    <div className="mx-auto max-w-3xl space-y-7 px-6 pt-7 sm:pt-9 pb-28 bg-base min-h-full">
+    <div className="mx-auto max-w-[1200px] space-y-7 px-6 pt-7 sm:pt-9 pb-28 bg-base min-h-full">
       <h1 className="text-2xl font-bold tracking-tight text-text">Settings</h1>
 
-      <Group title="Speech">
-        <SpeechSection />
-      </Group>
-      <Group title="Prompts">
-        <PromptsEditor />
-      </Group>
-      <Group title="Local models">
-        <ModelManagerSection />
-      </Group>
-
-      <Group title="Sync">
-        <div className="divide-y divide-hairline">
-          <div className="pb-5">
-            <DriveSection />
-          </div>
-          <div className="pt-5">
-            <SyncProgressCard />
-          </div>
+      <div className="grid gap-7 lg:grid-cols-2 lg:items-start">
+        <Group title="Speech">
+          <SpeechSection />
+        </Group>
+        <Group title="Prompts">
+          <PromptsEditor />
+        </Group>
+        <Group title="Local models">
+          <ModelManagerSection />
+        </Group>
+        <Group title="Excalidraw & Stylus">
+          <ExcalidrawSettingsSection />
+        </Group>
+        <div className="lg:col-span-2">
+          <Group title="Sync">
+            <div className="divide-y divide-hairline">
+              <div className="pb-5">
+                <DriveSection />
+              </div>
+              <div className="pt-5">
+                <SyncProgressCard />
+              </div>
+            </div>
+          </Group>
         </div>
-      </Group>
-
-      <Group title="Playback">
-        <PlaybackSection />
-      </Group>
-
-      <Group title="Appearance">
-        <AppearanceSection />
-      </Group>
-
-      <Group title="Excalidraw & Stylus">
-        <ExcalidrawSettingsSection />
-      </Group>
-
-      <Group title="Data">
-        <DataSection />
-      </Group>
-
-      <Group title="About">
-        <AboutSection />
-      </Group>
+        <Group title="Playback">
+          <PlaybackSection />
+        </Group>
+        <Group title="Appearance">
+          <AppearanceSection />
+        </Group>
+        <div className="lg:col-span-2">
+          <Group title="Data">
+            <DataSection />
+          </Group>
+        </div>
+        <div className="lg:col-span-2">
+          <Group title="About">
+            <AboutSection />
+          </Group>
+        </div>
+      </div>
     </div>
   );
 }

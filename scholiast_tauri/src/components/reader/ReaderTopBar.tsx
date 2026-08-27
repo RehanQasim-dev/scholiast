@@ -10,7 +10,7 @@ import {
   X,
 } from "lucide-react";
 
-export const COLUMN_WIDTHS = [700, 736, 800] as const;
+export const COLUMN_WIDTHS = [700, 736, 800, 960] as const;
 const CONFIRM_WORD = "DELETE";
 
 export type ReaderTheme = "oled" | "sepia" | "slate" | "light";
@@ -35,6 +35,9 @@ export interface ReaderTopBarProps {
   annotationsCount?: number;
   annotationsOpen?: boolean;
   onToggleAnnotations?: () => void;
+  hideAppearanceOnTablet?: boolean;
+  hideViewModeOnTablet?: boolean;
+  hideAnnotationsOnTablet?: boolean;
 }
 
 export default function ReaderTopBar({
@@ -56,6 +59,9 @@ export default function ReaderTopBar({
   annotationsCount = 0,
   annotationsOpen = false,
   onToggleAnnotations,
+  hideAppearanceOnTablet = false,
+  hideViewModeOnTablet = false,
+  hideAnnotationsOnTablet = false,
 }: ReaderTopBarProps) {
   const [popoverOpen, setPopoverOpen] = useState(false);
   const [dialogOpen, setDialogOpen] = useState(false);
@@ -149,7 +155,7 @@ export default function ReaderTopBar({
                 aria-label={viewMode === "web" ? "Switch to clean reader" : "Switch to authentic webview"}
                 title={viewMode === "web" ? "Authentic Web (Click for Clean Reader)" : "Clean Reader (Click for Authentic Web)"}
                 onClick={onToggleViewMode}
-                className={`flex h-9 items-center gap-1.5 rounded-md px-2.5 text-xs font-semibold transition-colors ${
+                className={`flex h-9 items-center gap-1.5 rounded-md px-2.5 text-xs font-semibold transition-colors ${hideViewModeOnTablet ? "lg:hidden" : ""} ${
                   viewMode === "web"
                     ? "bg-elevated text-accent border border-accent/40"
                     : "text-text-2 hover:bg-elevated hover:text-text border border-hairline"
@@ -170,7 +176,7 @@ export default function ReaderTopBar({
             )}
 
             {/* aA Reading Settings Toggle */}
-            <div className="relative" ref={popoverRef}>
+            <div className={`relative ${hideAppearanceOnTablet ? "lg:hidden" : ""}`} ref={popoverRef}>
               <button
                 type="button"
                 aria-label="Reading appearance settings"
@@ -285,7 +291,7 @@ export default function ReaderTopBar({
                               columnWidth === w ? "bg-accent text-[var(--sc-accent-text)]" : "text-text-2 hover:text-text"
                             }`}
                           >
-                            {w === 700 ? "Narrow" : w === 736 ? "Default" : "Wide"}
+                            {w === 700 ? "Narrow" : w === 736 ? "Default" : w === 800 ? "Wide" : "Extra"}
                           </button>
                         ))}
                       </div>
@@ -316,7 +322,7 @@ export default function ReaderTopBar({
                 type="button"
                 aria-label="Toggle annotations panel"
                 onClick={onToggleAnnotations}
-                className={`flex h-9 items-center gap-1.5 rounded-md px-2.5 text-xs font-medium transition-colors ${
+                className={`flex h-9 items-center gap-1.5 rounded-md px-2.5 text-xs font-medium transition-colors ${hideAnnotationsOnTablet ? "lg:hidden" : ""} ${
                   annotationsOpen
                     ? "bg-accent text-[var(--sc-accent-text)]"
                     : "text-text-2 hover:bg-elevated hover:text-text"

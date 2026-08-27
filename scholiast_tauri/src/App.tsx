@@ -13,11 +13,16 @@ import Reader from "./routes/Reader";
 import Settings from "./routes/Settings";
 import useIsNarrow from "./hooks/useIsNarrow";
 import { useAutoSyncScheduler } from "./hooks/useAutoSyncScheduler";
+import { useDeepLinks } from "./lib/deepLink";
 
 function Shell() {
   const isNarrow = useIsNarrow();
   const location = useLocation();
   const isStudySession = location.pathname === "/player" || location.pathname === "/reader";
+
+  // Deep links must be handled at root — not just Home — so share intents
+  // work from Reader/Player (otherwise onOpenUrl never fires).
+  useDeepLinks();
 
   // Background auto-backup (every 5 min & on exiting study sessions)
   useAutoSyncScheduler();
