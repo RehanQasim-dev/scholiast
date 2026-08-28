@@ -48,6 +48,7 @@ interface NotesTabProps {
   url: string;
   deleteGraceMs?: number;
   onCaptureFrame?: () => Promise<CapturedFrameMeta | null>;
+  fontStep?: number;
 }
 
 interface PendingDelete {
@@ -59,6 +60,7 @@ export default function NotesTab({
   url,
   deleteGraceMs = 5000,
   onCaptureFrame,
+  fontStep = 0,
 }: NotesTabProps) {
   const queryClient = useQueryClient();
   const navigate = useNavigate();
@@ -291,7 +293,7 @@ export default function NotesTab({
   const items = itemsQuery.data ?? [];
 
   return (
-    <div className="flex h-full min-h-0 flex-col overflow-hidden bg-surface">
+    <div className="flex h-full min-h-0 flex-col overflow-hidden bg-surface" style={{ ["--sc-note-font" as unknown as string]: `${15 + fontStep}px` } as any}>
       {/* Scrollable Notes Stream */}
       <div className="min-h-0 flex-1 overflow-y-auto p-3 flex flex-col gap-2">
         {items.length === 0 ? (
