@@ -1,13 +1,17 @@
 @import "tailwindcss";
+@import "@fontsource/jetbrains-mono/400.css";
+@import "@fontsource/jetbrains-mono/500.css";
+@import "@fontsource/jetbrains-mono/600.css";
+@import "@fontsource/jetbrains-mono/700.css";
 
 :root {
   color-scheme: dark;
-  /* --- DARK OBSIDIAN & CRISP MINT THEME --- */
-  --sc-bg: #060b08;
-  --sc-surface: #0c140f;
-  --sc-elevated: #121e17;
-  --sc-overlay: #17261e;
-  --sc-hairline: rgba(74, 222, 128, 0.12);
+  /* --- DARK OBSIDIAN & CRISP MINT THEME — darker, less harsh --- */
+  --sc-bg: #040a08;
+  --sc-surface: #070d0b;
+  --sc-elevated: #0e1a14;
+  --sc-overlay: #13211a;
+  --sc-hairline: rgba(74, 222, 128, 0.08);
   --sc-text: #d8fae5;
   --sc-text-2: #86d1a1;
   --sc-text-3: #8ec0a6;
@@ -41,6 +45,11 @@
   --sc-hit: 48px;
   --sc-safe-top: env(safe-area-inset-top, 0px);
   --sc-safe-bottom: env(safe-area-inset-bottom, 0px);
+  --sc-font-mono: 'JetBrains Mono', ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, 'Liberation Mono', monospace;
+  --sc-note-text: #a8d5b5;
+  --sc-note-muted: #6e9a7e;
+  --sc-note-bg: #070d0a;
+  --sc-note-font: 15px;
 }
 
 @theme inline {
@@ -75,6 +84,29 @@
       Roboto,
       sans-serif;
     -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+    text-rendering: optimizeLegibility;
+  }
+
+  /* Terminal / comment surfaces — JetBrains Mono, same as extension's
+     obsidian-comment-box (highlighter.scss:557). Fixes broken strokes on
+     Linux WebKitGTK with WEBKIT_DISABLE_COMPOSITING_MODE=1 + antialiased
+     at small sizes: use normal weight 500, geometric precision, no ligature
+     breakage. */
+  .sc-note-terminal,
+  .sc-note-terminal textarea,
+  .sc-note-terminal p,
+  .sc-note-terminal div {
+    font-family: var(--sc-font-mono);
+    font-size: var(--sc-note-font);
+    font-weight: 500;
+    line-height: 1.45;
+    letter-spacing: -0.01em;
+    -webkit-font-smoothing: auto;
+    -moz-osx-font-smoothing: auto;
+    text-rendering: geometricPrecision;
+    font-variant-ligatures: normal;
+    font-feature-settings: "liga" 1, "calt" 1;
   }
 
   /* Visible keyboard focus everywhere, without restyling pointer clicks. */
@@ -124,17 +156,6 @@
       flex-basis var(--sc-spring-response) var(--sc-ease-spring),
       transform var(--sc-spring-response) var(--sc-ease-spring),
       opacity var(--sc-dur-fast) var(--sc-ease-out);
-  }
-
-  .sc-yt-mask {
-    position: absolute;
-    right: 40px;
-    bottom: 0;
-    width: 108px;
-    height: 38px;
-    background: #000;
-    pointer-events: none;
-    z-index: 10;
   }
 
   .sc-strip {

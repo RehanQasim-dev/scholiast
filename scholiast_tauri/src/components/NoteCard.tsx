@@ -165,7 +165,7 @@ export default function NoteCard({ item, onDelete, onEdit }: NoteCardProps) {
         <Trash2 size={20} strokeWidth={2} className="text-white" aria-hidden />
       </div>
       <article
-        className="relative flex gap-3 bg-surface p-3 transition-transform duration-150 ease-out"
+        className="sc-note-terminal relative flex gap-3 bg-surface p-3 transition-transform duration-150 ease-out"
         style={{ transform: `translateX(${offsetX}px)` }}
         onPointerDown={onPointerDown}
         onPointerMove={onPointerMove}
@@ -229,10 +229,10 @@ export default function NoteCard({ item, onDelete, onEdit }: NoteCardProps) {
                 <span className="text-sm text-text-3">Protected segment — tap timestamp to seek.</span>
               ) : null}
               {primary && (
-                <p className="line-clamp-3 break-words text-sm leading-snug text-text">{primary}</p>
+                <p className="line-clamp-3 break-words text-text" style={{ color: "var(--sc-note-text)" }}>{primary}</p>
               )}
               {body && stripHiddenIds(body).trim() ? (
-                <div className="mt-1 line-clamp-3 break-words text-sm leading-snug text-text-2">
+                <div className="mt-1 line-clamp-3 break-words text-text-2" style={{ color: "var(--sc-note-text)" }}>
                   {renderNoteNodes(parseNoteMarkdown(body))}
                 </div>
               ) : !primary && !item.frame && !item.drmBlocked ? (
@@ -240,13 +240,13 @@ export default function NoteCard({ item, onDelete, onEdit }: NoteCardProps) {
               ) : null}
             </button>
           ) : (
-            <div className="mt-2">
+            <div className="mt-2 sc-note-terminal">
               <textarea
                 autoFocus
                 value={draft}
                 onChange={(e) => setDraft(e.target.value)}
                 rows={2}
-                className="w-full resize-none rounded-md border border-accent bg-base px-2.5 py-1.5 text-sm text-text outline-none"
+                className="w-full resize-none rounded-md border border-accent bg-base px-2.5 py-1.5 text-text outline-none"
                 placeholder="Edit note…"
               />
               <div className="mt-2 flex justify-end gap-2">

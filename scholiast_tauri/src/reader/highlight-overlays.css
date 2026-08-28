@@ -44,10 +44,23 @@
   text-underline-offset: 1px;
 }
 
+/* Live native selection while dragging — keep it tight to glyphs, not full block */
+.sc-article-body ::selection {
+  background-color: var(--sc-hl-yellow-fill, rgba(210, 150, 0, 0.38));
+  color: inherit;
+}
+.sc-article-body ::-moz-selection {
+  background-color: var(--sc-hl-yellow-fill, rgba(210, 150, 0, 0.38));
+  color: inherit;
+}
+
 mark.sc-hl {
-  padding: 0.05em 0;
+  display: inline;
+  padding: 0 0.04em;
   border-radius: 2px;
   color: inherit;
+  box-decoration-break: clone;
+  -webkit-box-decoration-break: clone;
 }
 
 mark.sc-hl-yellow {

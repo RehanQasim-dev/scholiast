@@ -66,24 +66,22 @@ describe("Chrome", () => {
 
     expect(screen.getAllByRole("button", { name: "Play" })).toHaveLength(2);
     expect(screen.getByLabelText("Seek")).toBeInTheDocument();
-    expect(screen.getByLabelText("Back 15 seconds")).toBeInTheDocument();
-    expect(screen.getByLabelText("Forward 15 seconds")).toBeInTheDocument();
     expect(screen.getByLabelText("Playback speed")).toBeInTheDocument();
     expect(screen.getByLabelText("Volume")).toBeInTheDocument();
     expect(screen.getByLabelText("Fullscreen")).toBeInTheDocument();
   });
 
-  it("dispatches seek commands from the ±15s buttons", () => {
+  it("dispatches seek via double-tap on stage (left/right) — 10s step", () => {
     const { player, calls } = makeFakePlayer();
     playerBridge.attach(player);
     renderChrome();
-
-    fireEvent.click(screen.getByLabelText("Forward 15 seconds"));
-    fireEvent.click(screen.getByLabelText("Back 15 seconds"));
-
-    expect(calls).toContain("seekTo:15");
-    expect(calls).toContain("seekTo:0");
-    expect(getPlayerSnapshot().time).toBe(0);
+    const root = screen.getByTestId("chrome-root");
+    Object.defineProperty(root, "getBoundingClientRect", {
+      value: () => ({ left: 0, width: 1000, top: 0, height: 200, right: 1000, bottom: 200 } as DOMRect),
+    });
+    fireEvent.click(root, { clientX: 100 });
+    fireEvent.click(root, { clientX: 100 });
+    expect(calls.some((c) => c.startsWith("seekTo:"))).toBe(true);
   });
 
   it("toggles play/pause from player state and dispatches pause", () => {

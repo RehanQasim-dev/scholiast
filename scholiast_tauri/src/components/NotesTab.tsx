@@ -373,7 +373,7 @@ export default function NotesTab({
         )}
 
         {/* Composer Row */}
-        <div className="flex items-end gap-1.5 rounded-xl border border-hairline bg-base/80 p-1.5 transition-colors focus-within:border-accent focus-within:ring-1 focus-within:ring-accent/30">
+        <div className="sc-note-terminal flex items-end gap-1.5 rounded-xl border border-hairline bg-base/80 p-1.5 transition-colors focus-within:border-accent focus-within:ring-1 focus-within:ring-accent/30">
           <div className="mb-1 shrink-0">
             <button
               type="button"
@@ -402,7 +402,7 @@ export default function NotesTab({
             }}
             placeholder="Write or speak a note…"
             rows={1}
-            className="min-h-[36px] max-h-24 min-w-0 flex-1 resize-none bg-transparent py-1.5 px-1 text-sm text-text outline-none placeholder:text-text-3"
+            className="min-h-[36px] max-h-24 min-w-0 flex-1 resize-none bg-transparent py-1.5 px-1 text-text outline-none placeholder:text-text-3"
           />
 
           <div className="flex items-center gap-1 mb-0.5 shrink-0">

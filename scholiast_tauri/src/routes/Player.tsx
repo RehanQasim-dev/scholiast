@@ -171,12 +171,6 @@ export default function Player() {
             collapsed={isFocus}
             title={videoTitle}
           />
-          {/* Airtight watermark mask: active on all viewports */}
-          <div
-            aria-hidden
-            className="sc-yt-mask"
-            style={{ display: isFocus ? "none" : undefined }}
-          />
         </>
       ) : (
         <div className="flex h-full flex-col items-center justify-center p-6 text-center text-sm text-text-2 gap-3">

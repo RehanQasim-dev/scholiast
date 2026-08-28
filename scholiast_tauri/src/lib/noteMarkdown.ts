@@ -223,13 +223,13 @@ function safeHref(href: string): string | null {
   return /^https?:\/\//i.test(href) ? href : null;
 }
 
-const TEXT_CLASS = "text-[color:var(--sc-text)]";
+const TEXT_CLASS = "text-[color:var(--sc-note-text)]";
 const LINK_CLASS =
   "text-[color:var(--sc-accent)] underline underline-offset-2 hover:opacity-80";
 const TAG_CLASS =
   "inline-flex items-center rounded-full bg-[color:var(--sc-elevated)] px-1.5 py-px text-xs font-medium text-[color:var(--sc-accent)]";
 const EDITED_BADGE_CLASS =
-  "ml-1 inline-block rounded bg-[color:var(--sc-elevated)] px-1 py-px align-middle text-[10px] uppercase tracking-wide text-[color:var(--sc-text-3)]";
+  "ml-1 inline-block rounded bg-[color:var(--sc-elevated)] px-1 py-px align-middle text-[10px] uppercase tracking-wide text-[color:var(--sc-note-muted)]";
 
 function renderAnchor(href: string, label: string, key: string): ReactNode {
   const target = safeHref(href);

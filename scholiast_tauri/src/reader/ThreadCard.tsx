@@ -144,7 +144,7 @@ export default function ThreadCard({
     <section
       data-testid={`thread-card-${representative.id}`}
       data-active={active || undefined}
-      className="overflow-hidden rounded-md border bg-surface transition-colors duration-[var(--sc-dur-fast)] ease-out"
+      className="sc-note-terminal overflow-hidden rounded-md border bg-surface transition-colors duration-[var(--sc-dur-fast)] ease-out"
       style={{ borderColor: active ? token : "var(--sc-hairline)" }}
     >
       <div className="group/header relative">
@@ -159,7 +159,7 @@ export default function ThreadCard({
             backgroundColor: COLOR_BG_TOKENS[color] || "rgba(255, 255, 255, 0.06)",
           }}
         >
-          <p className="line-clamp-3 break-words text-sm leading-snug text-text">
+          <p className="line-clamp-3 break-words text-text" style={{ color: "var(--sc-note-text)" }}>
             {representative.content}
           </p>
           <p className="mt-1 flex items-center gap-2 font-mono text-[11px] tabular-nums text-text-3">
@@ -228,7 +228,7 @@ export default function ThreadCard({
                             cancelEdit();
                           }
                         }}
-                        className="w-full resize-y rounded-md border border-hairline bg-base px-2 py-1.5 text-sm leading-relaxed text-text outline-none focus:border-accent"
+                        className="w-full resize-y rounded-md border border-hairline bg-base px-2 py-1.5 leading-relaxed text-text outline-none focus:border-accent"
                       />
                       <div className="mt-1 flex justify-end gap-2">
                         <button
@@ -255,7 +255,7 @@ export default function ThreadCard({
                     </div>
                   ) : (
                     <>
-                      <div className="text-sm leading-relaxed">
+                      <div className="leading-relaxed" style={{ color: "var(--sc-note-text)" }}>
                         {renderNoteNodes(parseNoteMarkdown(comment.note))}
                       </div>
                       <div className="mt-1 flex items-center gap-2 font-mono text-[11px] tabular-nums text-text-3">

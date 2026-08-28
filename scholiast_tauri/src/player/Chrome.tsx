@@ -1,5 +1,4 @@
 import { useCallback, useEffect, useRef, useState, type ReactNode, type RefObject } from "react";
-import { RotateCcw, RotateCw } from "lucide-react";
 import {
   commands,
   getPlayerSnapshot,
@@ -280,22 +279,6 @@ export default function Chrome({ stageRef, slots, onCaptureClick, collapsed = fa
               </svg>
             )}
           </button>
-          <button
-            type="button"
-            aria-label="Back 15 seconds"
-            onClick={() => seekBy(-15)}
-            className="sc-hit flex items-center justify-center rounded-md text-white/90 hover:bg-white/10"
-          >
-            <RotateCcw size={24} strokeWidth={2} aria-hidden />
-          </button>
-          <button
-            type="button"
-            aria-label="Forward 15 seconds"
-            onClick={() => seekBy(15)}
-            className="sc-hit flex items-center justify-center rounded-md text-white/90 hover:bg-white/10"
-          >
-            <RotateCw size={24} strokeWidth={2} aria-hidden />
-          </button>
 
           <span className="rounded-md bg-black/40 px-1.5 py-1 text-xs text-white/90 tabular-nums">{snap.rate}×</span>
 
@@ -369,7 +352,6 @@ export default function Chrome({ stageRef, slots, onCaptureClick, collapsed = fa
       </div>
 
       <PlaybackSheet open={sheetOpen} onClose={() => setSheetOpen(false)} />
-      <div aria-hidden className="sc-yt-mask" />
     </div>
   );
 }
