@@ -154,7 +154,6 @@ export default function Reader() {
   }, [urlHash]);
 
   useEffect(() => {
-    if (!isNarrow) return;
     const el = scrollRef.current;
     if (!el) return;
     const onScroll = () => {
@@ -166,7 +165,7 @@ export default function Reader() {
     };
     el.addEventListener("scroll", onScroll, { passive: true });
     return () => el.removeEventListener("scroll", onScroll);
-  }, [urlHash, isNarrow]);
+  }, [urlHash]);
 
   const selectArticle = useCallback(
     (article: ArticleSummary) => {
@@ -199,6 +198,11 @@ export default function Reader() {
       void setPref(PREF_KEYS.readerColumnWidth, next).catch(() => {});
       return next;
     });
+  }, []);
+
+  const handleSetColumnWidth = useCallback((next: number) => {
+    setColumnWidth(next);
+    void setPref(PREF_KEYS.readerColumnWidth, next).catch(() => {});
   }, []);
 
   const toggleViewMode = useCallback(() => {
@@ -358,10 +362,10 @@ export default function Reader() {
         </div>
       )}
 
-      {/* TopBar: auto-hides on mobile scroll, always visible on tablet but appearance controls moved to left dock */}
+      {/* TopBar: auto-hides on scroll (mobile/tablet/desktop), re-appears on scroll-up */}
       <div
         className={`shrink-0 overflow-visible transition-all duration-200 ease-out ${
-          focusMode || (isNarrow && headerHidden) ? "-mt-[50px] opacity-0 pointer-events-none" : "mt-0 opacity-100"
+          focusMode || headerHidden ? "-mt-[50px] opacity-0 pointer-events-none" : "mt-0 opacity-100"
         }`}
         data-testid="topbar-wrap"
       >
@@ -378,9 +382,8 @@ export default function Reader() {
           onFontStep={changeFontStep}
           onToggleSerif={toggleSerif}
           onCycleColumnWidth={cycleColumnWidth}
+          onSetColumnWidth={handleSetColumnWidth}
           onDelete={handleDelete}
-          showLibraryToggle={Boolean(urlHash)}
-          onLibraryToggle={() => setDrawerOpen((v) => !v)}
           annotationsCount={annotationsCount}
           annotationsOpen={isNarrow ? threadSheetOpen : annotationsOpen}
           onToggleAnnotations={() => {
@@ -432,7 +435,7 @@ export default function Reader() {
                         { id: "slate", label: "Slate", bg: "#0f172a", border: "#334155" },
                         { id: "light", label: "Light", bg: "#fbfbfa", border: "#d4d4d8" },
                       ].map((t) => (
-                        <button key={t.id} type="button" title={t.label} onClick={() => handleThemeChange(t.id as ReaderTheme)} className={`flex-1 flex flex-col items-center gap-1 rounded py-1 transition-all cursor-pointer ${theme === t.id ? "ring-2 ring-accent" : "opacity-70 hover:opacity-100"}`}>
+                        <button key={t.id} type="button" title={t.label} onClick={() => handleThemeChange(t.id as ReaderTheme)} className={`flex-1 flex flex-col items-center gap-1 rounded py-1 transition-all cursor-pointer ${theme === t.id ? "ring-1 ring-accent/30" : "opacity-60 hover:opacity-100"}`}>
                           <span className="h-4 w-full rounded border shadow-sm" style={{ backgroundColor: t.bg, borderColor: t.border }} />
                           <span className="text-[10px] font-medium text-text-2">{t.label}</span>
                         </button>
@@ -442,15 +445,15 @@ export default function Reader() {
                   <div>
                     <span className="text-[11px] font-medium uppercase tracking-wide text-text-3">Typeface</span>
                     <div className="mt-1 flex rounded-md border border-hairline bg-base p-1">
-                      <button type="button" onClick={() => serif && toggleSerif()} className={`flex-1 rounded py-1 text-xs font-medium transition-colors ${!serif ? "bg-accent text-[var(--sc-accent-text)]" : "text-text-2 hover:text-text"}`}>Sans</button>
-                      <button type="button" onClick={() => !serif && toggleSerif()} className={`flex-1 rounded py-1 font-serif text-xs font-medium transition-colors ${serif ? "bg-accent text-[var(--sc-accent-text)]" : "text-text-2 hover:text-text"}`}>Serif</button>
+                      <button type="button" onClick={() => serif && toggleSerif()} className={`flex-1 rounded py-1 text-xs font-medium transition-colors border ${!serif ? "bg-[rgba(58,166,125,0.14)] border-accent/20 text-[color:var(--sc-note-text)]" : "border-transparent text-text-2 hover:text-text"}`}>Sans</button>
+                      <button type="button" onClick={() => !serif && toggleSerif()} className={`flex-1 rounded py-1 font-serif text-xs font-medium transition-colors border ${serif ? "bg-[rgba(58,166,125,0.14)] border-accent/20 text-[color:var(--sc-note-text)]" : "border-transparent text-text-2 hover:text-text"}`}>Serif</button>
                     </div>
                   </div>
                   <div>
                     <span className="text-[11px] font-medium uppercase tracking-wide text-text-3">Column Width</span>
                     <div className="mt-1 flex rounded-md border border-hairline bg-base p-1">
                       {COLUMN_WIDTHS.map((w) => (
-                        <button key={w} type="button" onClick={() => { if (columnWidth !== w) cycleColumnWidth(); }} className={`flex-1 rounded py-1 text-xs font-medium transition-colors ${columnWidth === w ? "bg-accent text-[var(--sc-accent-text)]" : "text-text-2 hover:text-text"}`}>{w === 700 ? "Narrow" : w === 736 ? "Default" : w === 800 ? "Wide" : "Extra"}</button>
+                        <button key={w} type="button" onClick={() => handleSetColumnWidth(w)} className={`flex-1 rounded py-1 text-xs font-medium transition-colors border ${columnWidth === w ? "bg-[rgba(58,166,125,0.14)] border-accent/20 text-[color:var(--sc-note-text)]" : "border-transparent text-text-2 hover:text-text"}`}>{w === 700 ? "Narrow" : w === 736 ? "Default" : w === 800 ? "Wide" : "Extra"}</button>
                       ))}
                     </div>
                   </div>

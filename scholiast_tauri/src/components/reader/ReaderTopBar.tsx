@@ -4,7 +4,6 @@ import {
   ArrowLeft,
   FileText,
   Globe,
-  PanelLeft,
   Trash2,
   Type,
   X,
@@ -29,9 +28,8 @@ export interface ReaderTopBarProps {
   onFontStep: (delta: number) => void;
   onToggleSerif: () => void;
   onCycleColumnWidth: () => void;
+  onSetColumnWidth?: (width: number) => void;
   onDelete: () => Promise<void> | void;
-  showLibraryToggle?: boolean;
-  onLibraryToggle?: () => void;
   annotationsCount?: number;
   annotationsOpen?: boolean;
   onToggleAnnotations?: () => void;
@@ -53,9 +51,8 @@ export default function ReaderTopBar({
   onFontStep,
   onToggleSerif,
   onCycleColumnWidth,
+  onSetColumnWidth,
   onDelete,
-  showLibraryToggle,
-  onLibraryToggle,
   annotationsCount = 0,
   annotationsOpen = false,
   onToggleAnnotations,
@@ -122,18 +119,6 @@ export default function ReaderTopBar({
         >
           <ArrowLeft size={18} strokeWidth={2} aria-hidden />
         </Link>
-
-        {showLibraryToggle && onLibraryToggle ? (
-          <button
-            type="button"
-            data-testid="library-drawer-toggle"
-            aria-label="Open library"
-            onClick={onLibraryToggle}
-            className="flex h-9 w-9 shrink-0 items-center justify-center rounded-md text-text-2 hover:bg-elevated hover:text-text"
-          >
-            <PanelLeft size={18} strokeWidth={2} aria-hidden />
-          </button>
-        ) : null}
 
         {title ? (
           <h1 className="truncate text-sm font-medium text-text max-w-[200px] sm:max-w-xs md:max-w-md">
@@ -238,7 +223,7 @@ export default function ReaderTopBar({
                             title={t.label}
                             onClick={() => onThemeChange?.(t.id as ReaderTheme)}
                             className={`flex-1 flex flex-col items-center gap-1 rounded py-1 transition-all cursor-pointer ${
-                              theme === t.id ? "ring-2 ring-accent" : "opacity-70 hover:opacity-100"
+                              theme === t.id ? "ring-1 ring-accent/30" : "opacity-60 hover:opacity-100"
                             }`}
                           >
                             <span
@@ -258,8 +243,8 @@ export default function ReaderTopBar({
                         <button
                           type="button"
                           onClick={() => serif && onToggleSerif()}
-                          className={`flex-1 rounded py-1 text-xs font-medium transition-colors ${
-                            !serif ? "bg-accent text-[var(--sc-accent-text)]" : "text-text-2 hover:text-text"
+                          className={`flex-1 rounded py-1 text-xs font-medium transition-colors border ${
+                            !serif ? "bg-[rgba(58,166,125,0.14)] border-accent/20 text-[color:var(--sc-note-text)]" : "border-transparent text-text-2 hover:text-text"
                           }`}
                         >
                           Sans
@@ -267,8 +252,8 @@ export default function ReaderTopBar({
                         <button
                           type="button"
                           onClick={() => !serif && onToggleSerif()}
-                          className={`flex-1 rounded py-1 font-serif text-xs font-medium transition-colors ${
-                            serif ? "bg-accent text-[var(--sc-accent-text)]" : "text-text-2 hover:text-text"
+                          className={`flex-1 rounded py-1 font-serif text-xs font-medium transition-colors border ${
+                            serif ? "bg-[rgba(58,166,125,0.14)] border-accent/20 text-[color:var(--sc-note-text)]" : "border-transparent text-text-2 hover:text-text"
                           }`}
                         >
                           Serif
@@ -285,10 +270,12 @@ export default function ReaderTopBar({
                             key={w}
                             type="button"
                             onClick={() => {
-                              if (columnWidth !== w) onCycleColumnWidth();
+                              if (columnWidth === w) return;
+                              if (onSetColumnWidth) onSetColumnWidth(w);
+                              else onCycleColumnWidth();
                             }}
-                            className={`flex-1 rounded py-1 text-xs font-medium transition-colors ${
-                              columnWidth === w ? "bg-accent text-[var(--sc-accent-text)]" : "text-text-2 hover:text-text"
+                            className={`flex-1 rounded py-1 text-xs font-medium transition-colors border ${
+                              columnWidth === w ? "bg-[rgba(58,166,125,0.14)] border-accent/20 text-[color:var(--sc-note-text)]" : "border-transparent text-text-2 hover:text-text"
                             }`}
                           >
                             {w === 700 ? "Narrow" : w === 736 ? "Default" : w === 800 ? "Wide" : "Extra"}
@@ -322,10 +309,10 @@ export default function ReaderTopBar({
                 type="button"
                 aria-label="Toggle annotations panel"
                 onClick={onToggleAnnotations}
-                className={`flex h-9 items-center gap-1.5 rounded-md px-2.5 text-xs font-medium transition-colors ${hideAnnotationsOnTablet ? "lg:hidden" : ""} ${
+                className={`flex h-9 items-center gap-1.5 rounded-md px-2.5 text-xs font-medium transition-colors border ${hideAnnotationsOnTablet ? "lg:hidden" : ""} ${
                   annotationsOpen
-                    ? "bg-accent text-[var(--sc-accent-text)]"
-                    : "text-text-2 hover:bg-elevated hover:text-text"
+                    ? "bg-[rgba(58,166,125,0.14)] border-accent/20 text-accent"
+                    : "border-transparent text-text-2 hover:bg-elevated hover:text-text"
                 }`}
               >
                 <FileText size={15} strokeWidth={2} />

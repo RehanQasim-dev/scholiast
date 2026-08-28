@@ -1,3 +1,4 @@
+import { useNavigate } from "react-router-dom";
 import { FileText, Globe, Library, PanelLeft, Type } from "lucide-react";
 
 export interface TabletVerticalDockProps {
@@ -22,6 +23,7 @@ export default function TabletVerticalDock({
   onToggleAnnotations,
   onOpenAppearance,
 }: TabletVerticalDockProps) {
+  const navigate = useNavigate();
   return (
     <nav
       aria-label="Reader tools"
@@ -42,7 +44,7 @@ export default function TabletVerticalDock({
         type="button"
         aria-label="Library"
         data-testid="tablet-dock-library-alt"
-        onClick={onLibraryToggle}
+        onClick={() => navigate("/library")}
         className="flex h-11 w-11 min-h-[44px] min-w-[44px] items-center justify-center rounded-xl text-text-2 transition-colors hover:bg-elevated hover:text-text"
       >
         <Library size={18} strokeWidth={2} />
