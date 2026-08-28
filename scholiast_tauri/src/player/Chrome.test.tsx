@@ -122,4 +122,47 @@ describe("Chrome", () => {
 
     expect(screen.getByRole("alert")).toHaveTextContent(/embedding disabled/i);
   });
+
+  it("surfaces referrer configuration error 153 as an overlay message (Error 153 regression)", () => {
+    const { player, fire } = makeFakePlayer();
+    playerBridge.attach(player);
+    renderChrome();
+
+    fire("onError", 153);
+
+    expect(screen.getByRole("alert")).toHaveTextContent(/configuration error/i);
+    expect(screen.getByRole("alert")).toHaveTextContent(/missing referrer/i);
+    expect(screen.getByRole("alert")).toHaveTextContent(/YouTube now requires a referrer/i);
+  });
+
+  it("clears error 153 when playback resumes (playing/buffering)", () => {
+    const { player, fire } = makeFakePlayer();
+    playerBridge.attach(player);
+    renderChrome();
+
+    fire("onError", 153);
+    expect(screen.getByRole("alert")).toBeInTheDocument();
+
+    fire("onStateChange", YT_STATE.PLAYING);
+    expect(screen.queryByRole("alert")).not.toBeInTheDocument();
+
+    fire("onError", 153);
+    expect(screen.getByRole("alert")).toBeInTheDocument();
+
+    fire("onStateChange", YT_STATE.BUFFERING);
+    expect(screen.queryByRole("alert")).not.toBeInTheDocument();
+  });
+
+  it("surfaces generic player errors with their code", () => {
+    const { player, fire } = makeFakePlayer();
+    playerBridge.attach(player);
+    renderChrome();
+
+    fire("onError", 2);
+    expect(screen.getByRole("alert")).toHaveTextContent(/Invalid video ID/i);
+
+    fire("onStateChange", YT_STATE.PLAYING);
+    fire("onError", 999);
+    expect(screen.getByRole("alert")).toHaveTextContent(/Player error \(999\)/i);
+  });
 });

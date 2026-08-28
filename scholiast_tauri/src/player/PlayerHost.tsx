@@ -22,15 +22,57 @@ declare global {
   }
 }
 
-const IFRAME_API_URL = "https://www.youtube.com/iframe_api";
+export const IFRAME_API_URL = "https://www.youtube.com/iframe_api";
 
 let apiPromise: Promise<YTNamespace> | null = null;
 let constructing: Promise<YTPlayerLike> | null = null;
 let ytPlayer: YTPlayerLike | null = null;
 let stageDiv: HTMLDivElement | null = null;
 let parkedHost: HTMLDivElement | null = null;
+let iframeObserver: MutationObserver | null = null;
 
-function loadIframeApi(): Promise<YTNamespace> {
+export function getYoutubeOrigin(origin = window.location.origin): string {
+  if (origin.startsWith("http://") || origin.startsWith("https://")) return origin;
+  return "https://app.scholiast.desktop";
+}
+
+export function patchIframeReferrerPolicy(root: HTMLElement) {
+  const iframe = root.querySelector("iframe") as HTMLIFrameElement | null;
+  if (iframe && iframe.getAttribute("referrerpolicy") !== "strict-origin-when-cross-origin") {
+    iframe.setAttribute("referrerpolicy", "strict-origin-when-cross-origin");
+    try {
+      (iframe as unknown as { referrerPolicy: string }).referrerPolicy =
+        "strict-origin-when-cross-origin";
+    } catch {
+      /* readonly in some engines */
+    }
+  }
+}
+
+export function observeIframeReferrerPolicy(root: HTMLElement) {
+  patchIframeReferrerPolicy(root);
+  if (iframeObserver) return;
+  iframeObserver = new MutationObserver(() => patchIframeReferrerPolicy(root));
+  iframeObserver.observe(root, { childList: true, subtree: true });
+}
+
+export function resetPlayerHostForTests() {
+  apiPromise = null;
+  constructing = null;
+  ytPlayer = null;
+  if (iframeObserver) {
+    iframeObserver.disconnect();
+    iframeObserver = null;
+  }
+  stageDiv?.remove();
+  stageDiv = null;
+  parkedHost?.remove();
+  parkedHost = null;
+  delete (window as unknown as Record<string, unknown>).YT;
+  delete (window as unknown as Record<string, unknown>).onYouTubeIframeAPIReady;
+}
+
+export function loadIframeApi(): Promise<YTNamespace> {
   if (window.YT?.Player) return Promise.resolve(window.YT);
   if (!apiPromise) {
     apiPromise = new Promise<YTNamespace>((resolve) => {
@@ -41,6 +83,8 @@ function loadIframeApi(): Promise<YTNamespace> {
       };
       const tag = document.createElement("script");
       tag.src = IFRAME_API_URL;
+      tag.referrerPolicy = "strict-origin-when-cross-origin";
+      tag.setAttribute("referrerpolicy", "strict-origin-when-cross-origin");
       document.head.appendChild(tag);
     });
   }
@@ -60,13 +104,15 @@ function ensurePlayer(): Promise<YTPlayerLike> {
       }
       const mount = document.createElement("div");
       stageDiv.appendChild(mount);
+      observeIframeReferrerPolicy(stageDiv);
       const initialId = playerBridge.peekPendingVideoId();
       ytPlayer = new YT.Player(mount, {
         width: "100%",
         height: "100%",
         ...(initialId ? { videoId: initialId } : {}),
         playerVars: {
-          origin: window.location.origin,
+          origin: getYoutubeOrigin(),
+          widget_referrer: getYoutubeOrigin(),
           rel: 0,
           playsinline: 1,
           controls: 0,
@@ -79,6 +125,8 @@ function ensurePlayer(): Promise<YTPlayerLike> {
         },
       });
       playerBridge.markConstructed(initialId);
+      requestAnimationFrame(() => patchIframeReferrerPolicy(stageDiv!));
+      setTimeout(() => patchIframeReferrerPolicy(stageDiv!), 500);
       return ytPlayer;
     });
   }
@@ -95,6 +143,7 @@ export default function PlayerHost() {
     ensurePlayer().then((p) => {
       if (cancelled || !stageDiv) return;
       container.appendChild(stageDiv);
+      patchIframeReferrerPolicy(stageDiv);
       playerBridge.attach(p);
     });
     return () => {

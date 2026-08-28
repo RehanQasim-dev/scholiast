@@ -37,12 +37,15 @@ Feature screens live under `src/routes/`, `src/player/`, `src/reader/`, `src/fra
 | `pnpm lint` | ESLint |
 | `pnpm typecheck` | `tsc --noEmit` (strict) |
 | `pnpm vitest run` | Frontend tests |
-| `cargo clippy -- -D warnings` | Rust lint gate (workspace root) |
+| `cargo check` | Rust type-check + `unused`/`dead_code` deny (low-cost, no codegen — **always run after Rust changes and fix before commit**) |
+| `cargo clippy -- -D warnings` | Rust lint gate (workspace root, pedantic = warn) |
 | `cargo test` | Rust tests (workspace root) |
 | `pnpm tauri build --debug` | Bundle (deb target on Linux) |
 
-Per-task gates: frontend tasks run lint + typecheck + vitest; Rust/domain tasks run clippy +
-test; integration tasks also smoke-boot `pnpm tauri dev`.
+Per-task gates: frontend tasks run lint + typecheck + vitest; Rust/domain tasks run `cargo check` + clippy +
+test; integration tasks also smoke-boot `pnpm tauri dev`. **After every Rust change, `cargo check` is mandatory — it is the workspace-wide `unused`/`dead_code` deny gate and is cached ~0.9s vs full `cargo build`.**
+
+Workspace lint: `Cargo.toml:36` `[workspace.lints.rust] unused = "deny", dead_code = "deny"` (plus `clippy::pedantic = warn`) is inherited by every crate via `[lints] workspace = true` (`src-tauri/Cargo.toml:66`, `crates/core/Cargo.toml:13`, `crates/server/Cargo.toml:10`). Do not add `#[allow(unused)]`/`dead_code` without task justification.
 
 ## Environment notes
 

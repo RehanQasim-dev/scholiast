@@ -63,3 +63,6 @@ keyring = { version = "3", features = [
   "sync-secret-service",
   "windows-native",
 ] }
+
+[lints]
+workspace = true

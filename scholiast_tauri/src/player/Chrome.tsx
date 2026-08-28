@@ -19,6 +19,7 @@ const ERROR_MESSAGES: Record<number, string> = {
   2: "Invalid video ID or parameter",
   5: "HTML5 player error",
   100: "Video not found or removed",
+  153: "Video player configuration error — missing referrer",
 };
 
 function errorMessage(code: number): string {
@@ -32,6 +33,10 @@ function errorMessage(code: number): string {
 
 function isEmbeddingDisabled(code: number): boolean {
   return code === 101 || code === 150;
+}
+
+function isReferrerError(code: number): boolean {
+  return code === 153;
 }
 
 interface ChromeProps {
@@ -190,6 +195,11 @@ export default function Chrome({ stageRef, slots, onCaptureClick, collapsed = fa
             <p className="text-sm font-medium">{errorMessage(error)}</p>
             {isEmbeddingDisabled(error) && (
               <p className="mt-1 text-xs text-text-2">Transcript and notes may still be available for this video.</p>
+            )}
+            {isReferrerError(error) && (
+              <p className="mt-1 text-xs text-text-2">
+                YouTube now requires a referrer header. Update the app or open the video on YouTube directly.
+              </p>
             )}
           </div>
         </div>

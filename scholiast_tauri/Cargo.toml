@@ -33,3 +33,10 @@ strip = true
 [profile.release.package."*"]
 opt-level = 3
 
+[workspace.lints.rust]
+unused = "deny"
+dead_code = "deny"
+
+[workspace.lints.clippy]
+pedantic = { level = "warn", priority = -1 }
+

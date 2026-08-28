@@ -10,3 +10,6 @@ scraper = "0.27.0"
 serde = { workspace = true }
 serde_json = { workspace = true }
 url = "2.5.8"
+
+[lints]
+workspace = true
