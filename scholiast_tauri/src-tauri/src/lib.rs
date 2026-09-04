@@ -81,6 +81,7 @@ pub fn run() {
             #[cfg(feature = "local-stt")]
             stt::local::stt_local_cancel,
             stt::local::list_stt_models,
+            stt::local::stt_local_engine_available,
             stt::local::download_stt_model,
             stt::local::import_stt_model_chunk,
             stt::local::delete_stt_model,

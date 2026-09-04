@@ -5,7 +5,7 @@ import AudioWave from "../AudioWave";
 import { invokeCommand } from "../../lib/ipc";
 import { type TimelineItem } from "../NoteCard";
 import { toast } from "../Toast";
-import { useVoiceComment } from "../../voice/useVoiceComment";
+import { useVoiceComment, voiceFailureMessage } from "../../voice/useVoiceComment";
 import {
   getPlayerSnapshot,
   playerBridge,
@@ -72,8 +72,8 @@ export default function TabletVideoDock({
           draft: text || "",
           wasPlaying: recordedWasPlaying,
         });
-      } catch {
-        toast("Voice transcription failed");
+      } catch (err) {
+        toast(voiceFailureMessage(err, "Voice transcription failed"));
         if (recordedWasPlaying) playerBridge.commands.play();
       }
     } else {

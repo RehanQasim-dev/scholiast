@@ -8,7 +8,7 @@ import { deleteVideoItem, getVideoItems, upsertVideo, invokeCommand } from "../l
 import NoteCard, { type TimelineItem } from "./NoteCard";
 import AudioWave from "./AudioWave";
 import { toast } from "./Toast";
-import { formatElapsedMs, useVoiceComment } from "../voice/useVoiceComment";
+import { formatElapsedMs, useVoiceComment, voiceFailureMessage } from "../voice/useVoiceComment";
 import {
   getPlayerSnapshot,
   playerBridge,
@@ -452,8 +452,8 @@ export default function NotesTab({
           wasPlaying: mobileVoiceWasPlaying,
           autoFocus: false, // Don't autofocus to avoid pop-up keyboard
         });
-      } catch {
-        toast("Voice transcription failed");
+      } catch (err) {
+        toast(voiceFailureMessage(err, "Voice transcription failed"));
         if (mobileVoiceWasPlaying) playerBridge.commands.play();
       }
     } else {

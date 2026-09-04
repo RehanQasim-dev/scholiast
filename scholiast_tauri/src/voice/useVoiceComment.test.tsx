@@ -56,6 +56,8 @@ const getPrefMock = vi.mocked(getPref);
 let groqConfigured = false;
 let geminiConfigured = false;
 let localModels: Array<{ id: string; installed: boolean }> = [];
+let localEngineBuiltIn = true;
+let activeModelPref = "auto";
 
 function setOnline(value: boolean) {
   Object.defineProperty(navigator, "onLine", { configurable: true, value });
@@ -68,16 +70,20 @@ beforeEach(() => {
   groqConfigured = true;
   geminiConfigured = false;
   localModels = [];
+  localEngineBuiltIn = true;
+  activeModelPref = "auto";
   setOnline(true);
   resetVoiceAvailabilityForTests();
 
   getPrefMock.mockImplementation(async (key, fallback) => {
     if (key === PREF_KEYS.speechLanguage) return "en";
     if (key === PREF_KEYS.localModel) return "";
+    if (key === PREF_KEYS.activeModel) return activeModelPref;
     return fallback;
   });
 
   invokeMock.mockImplementation(async (command: string, args?: unknown) => {
+    if (command === "stt_local_engine_available") return localEngineBuiltIn;
     if (command === "list_stt_models")
       return { models: localModels.map((id) => ({ ...id })) };
     if (command === "get_secret_status") {
@@ -243,5 +249,57 @@ describe("useVoiceComment", () => {
     await act(async () => {});
     expect(invokeMock).not.toHaveBeenCalledWith("list_stt_models");
     expect(invokeMock).not.toHaveBeenCalledWith("get_secret_status", expect.anything());
+  });
+
+  test("model files without the engine disable the mic with a rebuild reason (no silent record-to-failure)", async () => {
+    setOnline(true);
+    groqConfigured = false;
+    geminiConfigured = false;
+    localModels = [{ id: "tiny_en", installed: true }];
+    localEngineBuiltIn = false;
+    const { result } = renderHook(() => useVoiceComment({ kind: "add" }));
+
+    await waitFor(() =>
+      expect(result.current.disabledReason).toBe(
+        "Local engine missing — rebuild app with local-stt",
+      ),
+    );
+    await act(async () => {
+      await expect(result.current.start()).rejects.toThrow("Local engine missing");
+    });
+    expect(activeRecorder?.start).not.toHaveBeenCalled();
+    expect(invokeMock).not.toHaveBeenCalledWith("stt_local_transcribe", expect.anything());
+  });
+
+  test("explicit local selection without the engine stays disabled even with cloud keys (no silent cloud fallback)", async () => {
+    setOnline(true);
+    groqConfigured = true;
+    localModels = [{ id: "tiny_en", installed: true }];
+    localEngineBuiltIn = false;
+    activeModelPref = "local:tiny_en";
+    const { result } = renderHook(() => useVoiceComment({ kind: "add" }));
+
+    await waitFor(() =>
+      expect(result.current.disabledReason).toBe(
+        "Local engine missing — rebuild app with local-stt",
+      ),
+    );
+  });
+
+  test("model files with the engine still route local (regression)", async () => {
+    setOnline(true);
+    groqConfigured = false;
+    geminiConfigured = false;
+    localModels = [{ id: "tiny_en", installed: true }];
+    localEngineBuiltIn = true;
+    const { result } = renderHook(() => useVoiceComment({ kind: "add" }));
+
+    await waitFor(() => expect(result.current.disabledReason).toBeNull());
+    stopQueue.push({ path: "/voice/s5.wav", reason: "user" });
+    let text = "";
+    await act(async () => {
+      text = await result.current.stop();
+    });
+    expect(text).toBe("local draft");
   });
 });

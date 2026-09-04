@@ -40,7 +40,14 @@ interface CatalogEntry {
 
 interface Probe {
   localReady: boolean;
+  /** Model files present even when the engine isn't compiled in. */
+  localModelsInstalled: boolean;
+  /** Active local model id ("" when none matches installed). */
   activeLocalModel: string;
+  /** Explicit `local:<id>` selection in stt.active_model, if any. */
+  explicitLocalModel: string | null;
+  /** Whisper engine compiled into this build. */
+  localEngine: boolean;
   groqConfigured: boolean;
   geminiConfigured: boolean;
 }
@@ -60,7 +67,7 @@ export function resetVoiceAvailabilityForTests(): void {
 function probeAvailability(): Promise<Probe> {
   if (!probePromise) {
     probePromise = (async () => {
-      const [models, groq, gemini] = await Promise.all([
+      const [models, groq, gemini, engine] = await Promise.all([
         invokeCommand<{ models: CatalogEntry[] }>("list_stt_models").catch(
           () => null,
         ),
@@ -70,18 +77,31 @@ function probeAvailability(): Promise<Probe> {
         invokeCommand<{ configured: boolean }>("get_secret_status", {
           name: "gemini",
         }).catch(() => null),
+        // Ungated command: false on builds without the whisper engine, so a
+        // merely-installed model file can never report "ready" there.
+        invokeCommand<boolean>("stt_local_engine_available").catch(() => false),
       ]);
       const activeLocalModel = await getPref(PREF_KEYS.localModel, "");
+      const explicitLocalRaw = await getPref<string>(PREF_KEYS.activeModel, "auto");
+      const explicitLocalModel =
+        typeof explicitLocalRaw === "string" && explicitLocalRaw.startsWith("local:")
+          ? explicitLocalRaw.slice("local:".length)
+          : null;
       const installed = models?.models.filter((m) => m.installed) ?? [];
+      const localEngine = engine === true;
       const localReady =
+        localEngine &&
         installed.length > 0 &&
         (activeLocalModel === "" ||
           installed.some((m) => m.id === activeLocalModel));
       return {
         localReady,
+        localModelsInstalled: installed.length > 0,
         activeLocalModel: installed.some((m) => m.id === activeLocalModel)
           ? activeLocalModel
           : "",
+        explicitLocalModel,
+        localEngine,
         groqConfigured: groq?.configured ?? false,
         geminiConfigured: gemini?.configured ?? false,
       };
@@ -94,13 +114,24 @@ function probeAvailability(): Promise<Probe> {
 }
 
 /** Mirrors VoiceEditSheet's dual error shape (enveloped IpcCommandError vs raw SttError). */
-function errorMessage(err: unknown): string {
-  const raw = err as { error?: { message?: string }; kind?: string } | null;
+function errorMessage(err: unknown): string {  const raw = err as { error?: { message?: string }; kind?: string } | null;
   if (raw && typeof raw === "object") {
     if (raw.error?.message) return raw.error.message;
     if (typeof raw.kind === "string" && raw.kind) return raw.kind;
   }
   return err instanceof Error ? err.message : String(err);
+}
+
+/**
+ * Toast text for a voice-stop failure that keeps the backend reason instead
+ * of swallowing it (an opaque "failed" toast cost a full debug cycle: model
+ * installed but engine missing looks identical to a network error).
+ */
+export function voiceFailureMessage(err: unknown, fallback: string): string {
+  const detail = (err instanceof Error ? err.message : String(err ?? "")).trim();
+  if (!detail) return fallback;
+  const short = detail.length > 90 ? `${detail.slice(0, 90)}…` : detail;
+  return `${fallback}: ${short}`;
 }
 
 export function formatElapsedMs(ms: number): string {
@@ -111,6 +142,9 @@ export function formatElapsedMs(ms: number): string {
 const NEEDS_INTERNET = "Needs internet";
 const SETUP_SPEECH = "Set up speech in Settings";
 const SETUP_GEMINI = "Set up Gemini in Settings";
+/** Engine missing but the user explicitly chose local: never silently fall
+ * back to cloud (privacy) — tell them to rebuild instead. */
+const NEEDS_LOCAL_BUILD = "Local engine missing — rebuild app with local-stt";
 
 export function useVoiceComment(options: VoiceCommentOptions = {}): VoiceComment {
   const { kind = "add", original = "", enabled = true } = options;
@@ -162,6 +196,22 @@ export function useVoiceComment(options: VoiceCommentOptions = {}): VoiceComment
     // If a local model is installed & ready, local STT is always available (online or offline)!
     if (probe.localReady) return null;
 
+    // Explicit local choice without the compiled engine: never silently fall
+    // back to cloud (privacy) — recording would only fail at transcribe time.
+    if (!probe.localEngine && probe.explicitLocalModel !== null) {
+      return NEEDS_LOCAL_BUILD;
+    }
+
+    // Model files present but no engine and no usable cloud path: the missing
+    // engine (not the network) is the actionable blocker.
+    if (
+      !probe.localEngine &&
+      probe.localModelsInstalled &&
+      (offline || (!probe.groqConfigured && !probe.geminiConfigured))
+    ) {
+      return NEEDS_LOCAL_BUILD;
+    }
+
     // Otherwise, cloud STT is required:
     if (offline) return NEEDS_INTERNET;
     if (!probe.groqConfigured && !probe.geminiConfigured) {
@@ -184,6 +234,13 @@ export function useVoiceComment(options: VoiceCommentOptions = {}): VoiceComment
 
       const activeModel = await getPref<string>(PREF_KEYS.activeModel, "auto");
       const liveOffline = typeof navigator !== "undefined" && !navigator.onLine;
+
+      // Mid-session switch to an explicit local model on an engine-less
+      // build: the cached probe can't see it coming, so refuse loudly here
+      // instead of failing inside the missing command.
+      if (activeModel.startsWith("local:") && probe && !probe.localEngine) {
+        throw new Error(NEEDS_LOCAL_BUILD);
+      }
 
       // Use local STT if explicitly selected OR if offline OR if cloud keys are not configured
       const useLocal =

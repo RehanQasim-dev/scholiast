@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import { toast } from "./Toast";
-import { useVoiceComment } from "../voice/useVoiceComment";
+import { useVoiceComment, voiceFailureMessage } from "../voice/useVoiceComment";
 
 export interface DynamicAuraPillProps {
   onSave: (text: string) => void;
@@ -120,8 +120,8 @@ export default function DynamicAuraPill({ onSave, onCancel }: DynamicAuraPillPro
       } else {
         onCancel();
       }
-    } catch {
-      toast("Transcription failed");
+    } catch (err) {
+      toast(voiceFailureMessage(err, "Transcription failed"));
       onCancel();
     }
   }

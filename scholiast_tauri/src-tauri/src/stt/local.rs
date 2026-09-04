@@ -450,6 +450,17 @@ pub struct ModelListResponse {
     pub models: Vec<models::CatalogEntry>,
 }
 
+/// Whether the whisper inference engine is compiled into this build.
+/// Deliberately ungated: the catalog commands always exist, so without this
+/// the frontend cannot tell "model installed but engine missing" (record →
+/// guaranteed transcribe failure) apart from ready. The transcriber itself
+/// stays behind `local-stt`.
+#[tauri::command]
+#[allow(dead_code)]
+pub fn stt_local_engine_available() -> bool {
+    cfg!(feature = "local-stt")
+}
+
 #[tauri::command]
 #[allow(dead_code)]
 pub fn list_stt_models(app_handle: tauri::AppHandle) -> Result<ModelListResponse, String> {
