@@ -213,8 +213,8 @@ jobs:
           ANDROID_KEY_ALIAS: scholiast
           ANDROID_KEY_PASSWORD: scholiast123
         run: |
-          ./node_modules/.bin/tauri android build --apk --split-per-abi --target aarch64 armv7 x86_64
-          ./node_modules/.bin/tauri android build --apk --target aarch64 armv7 x86_64
+          ./node_modules/.bin/tauri android build --apk --split-per-abi --target aarch64 armv7 x86_64 --features local-stt
+          ./node_modules/.bin/tauri android build --apk --target aarch64 armv7 x86_64 --features local-stt
 
       - name: List APKs
         run: find scholiast_tauri/src-tauri/gen/android/app/build/outputs/apk -name "*.apk" -exec ls -lh {} \;

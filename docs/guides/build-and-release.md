@@ -49,7 +49,11 @@ pnpm build              # tsc + vite → dist/
 ```bash
 cd scholiast_tauri
 pnpm build
-./node_modules/.bin/tauri android build   # release splits: arm64-v8a, armeabi-v7a, x86_64
+# --features local-stt is mandatory for release: without the compiled whisper
+# engine, installed model files report "ready" but every local transcription
+# fails (the frontend guards this via stt_local_engine_available, but the
+# release APK must actually ship the engine).
+./node_modules/.bin/tauri android build --apk --split-per-abi --target aarch64 armv7 x86_64 --features local-stt   # release splits: arm64-v8a, armeabi-v7a, x86_64
 # outputs:
 # src-tauri/gen/android/app/build/outputs/apk/release/app-arm64-v8a-release.apk
 # src-tauri/gen/android/app/build/outputs/apk/release/app-armeabi-v7a-release.apk

@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import { Check, Copy, X } from "lucide-react";
-import DynamicAuraPill from "./DynamicAuraPill";
+import SwatchVoiceFlow from "./SwatchVoiceFlow";
 
 export type HighlightColor = "yellow" | "red" | "green";
 
@@ -89,7 +89,7 @@ export default function SwatchPopup({
   onComment,
   onClose,
 }: SwatchPopupProps) {
-  const [mode, setMode] = useState<"swatches" | "aura" | "comment">("swatches");
+  const [mode, setMode] = useState<"swatches" | "voice" | "comment">("swatches");
   const [selectedColor, setSelectedColor] = useState<HighlightColor>("yellow");
   const [text, setText] = useState("");
   const inputRef = useRef<HTMLTextAreaElement>(null);
@@ -121,7 +121,7 @@ export default function SwatchPopup({
   };
 
   const handleStartVoice = () => {
-    setMode("aura");
+    setMode("voice");
   };
 
   const handleSaveTextComment = () => {
@@ -144,14 +144,15 @@ export default function SwatchPopup({
       }}
       onMouseDown={(e) => e.stopPropagation()}
     >
-      {mode === "aura" ? (
-        /* Dynamic Aura Pill: 4-bar frequency visualizer + 2s VAD auto-commit */
-        <DynamicAuraPill
+      {mode === "voice" ? (
+        /* Voice flow: the strip morphs into a live wave bar (tap to stop),
+           then a review popup. Back returns to the strip. */
+        <SwatchVoiceFlow
           onSave={(spokenText) => {
             onSaveComment?.(selectedColor, spokenText);
             onClose();
           }}
-          onCancel={onClose}
+          onBack={() => setMode("swatches")}
         />
       ) : mode === "swatches" ? (
         /* Compact Swatch Strip */
