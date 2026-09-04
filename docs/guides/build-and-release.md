@@ -128,9 +128,14 @@ pnpm typecheck # tsc --noEmit, mirrors CI's "Verify frontend build" step
 # NDK clang wrappers are required even for `check` (ring/sqlite build scripts).
 export ANDROID_HOME=$HOME/Android/Sdk
 export NDK_HOME=$HOME/Android/Sdk/ndk/28.2.13676358
-export CC_aarch64_linux_android=$NDK_HOME/toolchains/llvm/prebuilt/linux-x86_64/bin/aarch64-linux-android21-clang
-export CC_armv7_linux_androideabi=$NDK_HOME/toolchains/llvm/prebuilt/linux-x86_64/bin/armv7a-linux-androideabi21-clang
-export CC_x86_64_linux_android=$NDK_HOME/toolchains/llvm/prebuilt/linux-x86_64/bin/x86_64-linux-android21-clang
+export NDK_BIN=$NDK_HOME/toolchains/llvm/prebuilt/linux-x86_64/bin
+export CC_aarch64_linux_android=$NDK_BIN/aarch64-linux-android21-clang
+export CC_armv7_linux_androideabi=$NDK_BIN/armv7a-linux-androideabi21-clang
+export CC_x86_64_linux_android=$NDK_BIN/x86_64-linux-android21-clang
+# cc-rs looks for <target>-ar on PATH; the NDK only ships llvm-ar.
+export AR_aarch64_linux_android=$NDK_BIN/llvm-ar
+export AR_armv7_linux_androideabi=$NDK_BIN/llvm-ar
+export AR_x86_64_linux_android=$NDK_BIN/llvm-ar
 cargo check --manifest-path src-tauri/Cargo.toml --target aarch64-linux-android
 cargo check --manifest-path src-tauri/Cargo.toml --target armv7-linux-androideabi
 cargo check --manifest-path src-tauri/Cargo.toml --target x86_64-linux-android
