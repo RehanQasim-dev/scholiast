@@ -53,6 +53,10 @@ pnpm build
 # engine, installed model files report "ready" but every local transcription
 # fails (the frontend guards this via stt_local_engine_available, but the
 # release APK must actually ship the engine).
+# The NDK bindgen exports (BINDGEN_EXTRA_CLANG_ARGS_* + sysroot in
+# scripts/env-android.sh, sourced by build-android.sh) are equally mandatory:
+# without them whisper-rs-sys parses host glibc headers and the 32-bit armv7
+# bindings fail their struct-size asserts.
 ./node_modules/.bin/tauri android build --apk --split-per-abi --target aarch64 armv7 x86_64 --features local-stt   # release splits: arm64-v8a, armeabi-v7a, x86_64
 # outputs:
 # src-tauri/gen/android/app/build/outputs/apk/release/app-arm64-v8a-release.apk

@@ -213,6 +213,15 @@ jobs:
           ANDROID_KEY_ALIAS: scholiast
           ANDROID_KEY_PASSWORD: scholiast123
         run: |
+          # whisper-rs-sys runs bindgen without a target sysroot, so it parses
+          # the HOST glibc headers (64-bit layouts) and the 32-bit armv7
+          # bindings fail their size asserts. Point bindgen at the NDK sysroot
+          # per target (same values as scholiast_tauri/scripts/env-android.sh).
+          NDK="$ANDROID_HOME/ndk/28.2.13676358"
+          SYSROOT="$NDK/toolchains/llvm/prebuilt/linux-x86_64/sysroot"
+          export BINDGEN_EXTRA_CLANG_ARGS_aarch64_linux_android="--sysroot=$SYSROOT --target=aarch64-linux-android24"
+          export BINDGEN_EXTRA_CLANG_ARGS_armv7_linux_androideabi="--sysroot=$SYSROOT --target=armv7a-linux-androideabi24"
+          export BINDGEN_EXTRA_CLANG_ARGS_x86_64_linux_android="--sysroot=$SYSROOT --target=x86_64-linux-android24"
           ./node_modules/.bin/tauri android build --apk --split-per-abi --target aarch64 armv7 x86_64 --features local-stt
           ./node_modules/.bin/tauri android build --apk --target aarch64 armv7 x86_64 --features local-stt
 
