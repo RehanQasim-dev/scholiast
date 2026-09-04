@@ -1,4 +1,4 @@
-import DriveSection from "../components/DriveSection";
+import DriveSyncCard from "../components/DriveSyncCard";
 import AboutSection from "../components/settings/AboutSection";
 import AppearanceSection from "../components/settings/AppearanceSection";
 import ExcalidrawSettingsSection from "../components/settings/ExcalidrawSettingsSection";
@@ -7,7 +7,6 @@ import ModelManagerSection from "../components/settings/ModelManagerSection";
 import PlaybackSection from "../components/settings/PlaybackSection";
 import PromptsEditor from "../components/settings/PromptsEditor";
 import SpeechSection from "../components/settings/SpeechSection";
-import SyncProgressCard from "../components/settings/SyncProgressCard";
 
 function Group({
   title,
@@ -48,14 +47,7 @@ export default function Settings() {
         </Group>
         <div className="lg:col-span-2">
           <Group title="Sync">
-            <div className="divide-y divide-hairline">
-              <div className="pb-5">
-                <DriveSection />
-              </div>
-              <div className="pt-5">
-                <SyncProgressCard />
-              </div>
-            </div>
+            <DriveSyncCard />
           </Group>
         </div>
         <Group title="Playback">

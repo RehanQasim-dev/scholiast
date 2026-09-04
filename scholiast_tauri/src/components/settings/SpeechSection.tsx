@@ -1,6 +1,6 @@
 import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { useState } from "react";
-import { Edit3, Check } from "lucide-react";
+import { useEffect, useMemo, useRef, useState } from "react";
+import { Check, ChevronDown, Cloud, Cpu, Edit3, Search, Sparkles, X } from "lucide-react";
 import { IpcCommandError, invokeCommand } from "../../lib/ipc";
 import { PREF_DEFAULTS, PREF_KEYS } from "../../lib/store";
 import { useOffline } from "../OfflineBanner";
@@ -156,7 +156,7 @@ function ProviderRow({ name, label, testCommand }: ProviderRowProps) {
             type="button"
             onClick={save}
             disabled={saving || !value.trim()}
-            className="h-12 min-h-[48px] rounded-md bg-accent px-4 text-sm font-medium text-[var(--sc-accent-text)] transition-opacity disabled:opacity-50"
+            className="btn-emerald h-12 min-h-[48px] px-5 text-sm"
           >
             {saving ? "Saving…" : "Save"}
           </button>
@@ -200,10 +200,240 @@ function ProviderRow({ name, label, testCommand }: ProviderRowProps) {
   );
 }
 
+interface CatalogEntry {
+  id: string;
+  label: string;
+  fileName?: string;
+  sizeBytes: number;
+  isDefault: boolean;
+  installed: boolean;
+}
+
+interface ModelListResponse {
+  models: CatalogEntry[];
+}
+
+interface ModelOption {
+  key: string;
+  provider: "local" | "groq" | "gemini";
+  label: string;
+  sublabel: string;
+  badge: string;
+}
+
 export default function SpeechSection() {
-  const [groqModel, setGroqModel] = usePref(PREF_KEYS.groqModel, String(PREF_DEFAULTS[PREF_KEYS.groqModel]));
-  const [geminiModel, setGeminiModel] = usePref(PREF_KEYS.geminiModel, String(PREF_DEFAULTS[PREF_KEYS.geminiModel]));
-  const [language, setLanguage] = usePref(PREF_KEYS.speechLanguage, String(PREF_DEFAULTS[PREF_KEYS.speechLanguage]));
+  const [activeModel, setActiveModel] = usePref(
+    PREF_KEYS.activeModel,
+    String(PREF_DEFAULTS[PREF_KEYS.activeModel]),
+  );
+  const [groqModel, setGroqModel] = usePref(
+    PREF_KEYS.groqModel,
+    String(PREF_DEFAULTS[PREF_KEYS.groqModel]),
+  );
+  const [geminiModel, setGeminiModel] = usePref(
+    PREF_KEYS.geminiModel,
+    String(PREF_DEFAULTS[PREF_KEYS.geminiModel]),
+  );
+  const [, setLocalModel] = usePref(
+    PREF_KEYS.localModel,
+    String(PREF_DEFAULTS[PREF_KEYS.localModel]),
+  );
+  const [language, setLanguage] = usePref(
+    PREF_KEYS.speechLanguage,
+    String(PREF_DEFAULTS[PREF_KEYS.speechLanguage]),
+  );
+
+  const [dropdownOpen, setDropdownOpen] = useState(false);
+  const [search, setSearch] = useState("");
+  const dropdownRef = useRef<HTMLDivElement>(null);
+
+  const localModelsQuery = useQuery({
+    queryKey: ["stt", "models"],
+    queryFn: () => invokeCommand<ModelListResponse>("list_stt_models"),
+    retry: false,
+  });
+
+  const installedLocalModels = useMemo(
+    () => (localModelsQuery.data?.models ?? []).filter((m) => m.installed),
+    [localModelsQuery.data?.models],
+  );
+
+  useEffect(() => {
+    if (!dropdownOpen) return;
+    const onMouseDown = (e: MouseEvent) => {
+      if (dropdownRef.current && !dropdownRef.current.contains(e.target as Node)) {
+        setDropdownOpen(false);
+      }
+    };
+    const onKeyDown = (e: KeyboardEvent) => {
+      if (e.key === "Escape") {
+        setDropdownOpen(false);
+      }
+    };
+    document.addEventListener("mousedown", onMouseDown);
+    document.addEventListener("keydown", onKeyDown);
+    return () => {
+      document.removeEventListener("mousedown", onMouseDown);
+      document.removeEventListener("keydown", onKeyDown);
+    };
+  }, [dropdownOpen]);
+
+  const allOptions = useMemo<ModelOption[]>(() => {
+    const list: ModelOption[] = [];
+
+    // 1. Local STT Models (On top)
+    for (const m of installedLocalModels) {
+      list.push({
+        key: `local:${m.id}`,
+        provider: "local",
+        label: m.label || m.fileName || m.id,
+        sublabel: m.fileName || m.id,
+        badge: "Local",
+      });
+    }
+
+    // 2. Groq Models (After local)
+    for (const [val, label] of GROQ_PRESETS) {
+      list.push({
+        key: `groq:${val}`,
+        provider: "groq",
+        label,
+        sublabel: val,
+        badge: "Groq",
+      });
+    }
+    if (!GROQ_PRESETS.some(([v]) => v === groqModel) && groqModel) {
+      list.push({
+        key: `groq:${groqModel}`,
+        provider: "groq",
+        label: `Custom: ${groqModel}`,
+        sublabel: groqModel,
+        badge: "Groq",
+      });
+    }
+
+    // 3. Gemini Models (After groq)
+    for (const [val, label] of GEMINI_PRESETS) {
+      list.push({
+        key: `gemini:${val}`,
+        provider: "gemini",
+        label,
+        sublabel: val,
+        badge: "Gemini",
+      });
+    }
+    if (!GEMINI_PRESETS.some(([v]) => v === geminiModel) && geminiModel) {
+      list.push({
+        key: `gemini:${geminiModel}`,
+        provider: "gemini",
+        label: `Custom: ${geminiModel}`,
+        sublabel: geminiModel,
+        badge: "Gemini",
+      });
+    }
+
+    return list;
+  }, [installedLocalModels, groqModel, geminiModel]);
+
+  const currentSelection = useMemo<ModelOption>(() => {
+    if (activeModel && activeModel !== "auto") {
+      const found = allOptions.find((o) => o.key === activeModel);
+      if (found) return found;
+      if (activeModel.startsWith("local:")) {
+        return {
+          key: activeModel,
+          provider: "local",
+          label: activeModel.slice(6),
+          sublabel: "Local GGML",
+          badge: "Local",
+        };
+      }
+      if (activeModel.startsWith("groq:")) {
+        return {
+          key: activeModel,
+          provider: "groq",
+          label: activeModel.slice(5),
+          sublabel: "Groq Whisper",
+          badge: "Groq",
+        };
+      }
+      if (activeModel.startsWith("gemini:")) {
+        return {
+          key: activeModel,
+          provider: "gemini",
+          label: activeModel.slice(7),
+          sublabel: "Gemini",
+          badge: "Gemini",
+        };
+      }
+    }
+
+    // Auto resolution: prioritize local if installed, else groq, else first available
+    if (installedLocalModels.length > 0) {
+      return allOptions.find((o) => o.provider === "local") || allOptions[0]!;
+    }
+    return (
+      allOptions.find((o) => o.key === `groq:${groqModel}`) ||
+      allOptions[0] || {
+        key: "groq:whisper-large-v3-turbo",
+        provider: "groq",
+        label: "Whisper Turbo (Fast)",
+        sublabel: "whisper-large-v3-turbo",
+        badge: "Groq",
+      }
+    );
+  }, [activeModel, allOptions, installedLocalModels, groqModel]);
+
+  const handleSelectOption = (opt: ModelOption) => {
+    setActiveModel(opt.key);
+    if (opt.provider === "local") {
+      setLocalModel(opt.key.slice("local:".length));
+    } else if (opt.provider === "groq") {
+      setGroqModel(opt.key.slice("groq:".length));
+    } else if (opt.provider === "gemini") {
+      setGeminiModel(opt.key.slice("gemini:".length));
+    }
+    setDropdownOpen(false);
+    setSearch("");
+  };
+
+  const query = search.trim().toLowerCase();
+
+  const filteredLocal = useMemo(() => {
+    const opts = allOptions.filter((o) => o.provider === "local");
+    if (!query) return opts;
+    return opts.filter(
+      (o) =>
+        o.label.toLowerCase().includes(query) ||
+        o.sublabel.toLowerCase().includes(query) ||
+        "local offline stt".includes(query),
+    );
+  }, [allOptions, query]);
+
+  const filteredGroq = useMemo(() => {
+    const opts = allOptions.filter((o) => o.provider === "groq");
+    if (!query) return opts;
+    return opts.filter(
+      (o) =>
+        o.label.toLowerCase().includes(query) ||
+        o.sublabel.toLowerCase().includes(query) ||
+        "groq cloud whisper".includes(query),
+    );
+  }, [allOptions, query]);
+
+  const filteredGemini = useMemo(() => {
+    const opts = allOptions.filter((o) => o.provider === "gemini");
+    if (!query) return opts;
+    return opts.filter(
+      (o) =>
+        o.label.toLowerCase().includes(query) ||
+        o.sublabel.toLowerCase().includes(query) ||
+        "gemini cloud google".includes(query),
+    );
+  }, [allOptions, query]);
+
+  const totalFilteredCount =
+    filteredLocal.length + filteredGroq.length + filteredGemini.length;
 
   return (
     <div aria-label="Speech" className="divide-y divide-hairline">
@@ -214,40 +444,204 @@ export default function SpeechSection() {
         <ProviderRow name="gemini" label="Gemini" testCommand="stt_test_gemini" />
       </div>
 
-      <div className="pt-5 grid gap-4 sm:grid-cols-2">
-        <label className="flex flex-col gap-1.5 text-sm font-medium text-text-2">
-          <span>Groq model</span>
-          <select
-            value={GROQ_PRESETS.some(([v]) => v === groqModel) ? groqModel : GROQ_PRESETS[0]![0]}
-            onChange={(event) => setGroqModel(event.target.value)}
-            data-testid="pref-stt.groq_model"
-            className="h-12 min-h-[48px] w-full rounded-lg border border-hairline bg-elevated px-3 text-sm text-text outline-none focus:border-accent"
+      <div className="pt-5 flex flex-col gap-4">
+        {/* Unified Searchable STT Model Selector */}
+        <div className="relative flex flex-col gap-1.5" ref={dropdownRef}>
+          <div className="flex items-center justify-between">
+            <span className="text-sm font-medium text-text-2">Speech-to-Text Model</span>
+            <span className="text-xs text-text-3">Local models prioritized</span>
+          </div>
+
+          <button
+            type="button"
+            data-testid="pref-stt.active_model"
+            onClick={() => setDropdownOpen((open) => !open)}
+            className="flex h-12 min-h-[48px] w-full items-center justify-between rounded-lg border border-hairline bg-elevated px-3 text-sm text-text outline-none transition-colors hover:border-accent/40 focus:border-accent focus:ring-1 focus:ring-accent/20"
+            aria-expanded={dropdownOpen}
+            aria-haspopup="listbox"
           >
-            {GROQ_PRESETS.map(([value, label]) => (
-              <option key={value} value={value}>{label}</option>
-            ))}
-            {!GROQ_PRESETS.some(([v]) => v === groqModel) && groqModel ? (
-              <option value={groqModel}>Custom: {groqModel}</option>
-            ) : null}
-          </select>
-        </label>
+            <div className="flex items-center gap-2.5 min-w-0">
+              {currentSelection.provider === "local" ? (
+                <Cpu size={16} className="text-accent shrink-0" />
+              ) : currentSelection.provider === "groq" ? (
+                <Cloud size={16} className="text-sky-400 shrink-0" />
+              ) : (
+                <Sparkles size={16} className="text-amber-400 shrink-0" />
+              )}
+              <span
+                className={`rounded px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wider shrink-0 ${
+                  currentSelection.provider === "local"
+                    ? "bg-accent/15 text-accent border border-accent/30"
+                    : currentSelection.provider === "groq"
+                      ? "bg-sky-500/15 text-sky-400 border border-sky-500/30"
+                      : "bg-amber-500/15 text-amber-400 border border-amber-500/30"
+                }`}
+              >
+                {currentSelection.badge}
+              </span>
+              <span className="font-medium truncate text-text">{currentSelection.label}</span>
+            </div>
+            <ChevronDown
+              size={16}
+              className={`text-text-3 shrink-0 ml-2 transition-transform duration-150 ${
+                dropdownOpen ? "rotate-180 text-text" : ""
+              }`}
+            />
+          </button>
+
+          {dropdownOpen && (
+            <div
+              className="absolute left-0 top-full z-50 mt-1.5 w-full rounded-xl border border-hairline bg-surface shadow-2xl overflow-hidden"
+              data-testid="stt-model-dropdown"
+            >
+              {/* Search Bar */}
+              <div className="p-2 border-b border-hairline bg-elevated/50">
+                <div className="flex items-center gap-2 px-3 py-2 rounded-lg border border-hairline bg-base focus-within:border-accent">
+                  <Search size={14} className="text-text-3 shrink-0" />
+                  <input
+                    type="text"
+                    data-testid="stt-model-search"
+                    autoFocus
+                    value={search}
+                    onChange={(e) => setSearch(e.target.value)}
+                    placeholder="Search speech models (local, groq, gemini)..."
+                    className="w-full bg-transparent text-xs text-text outline-none placeholder:text-text-3"
+                  />
+                  {search && (
+                    <button
+                      type="button"
+                      onClick={() => setSearch("")}
+                      className="text-text-3 hover:text-text"
+                    >
+                      <X size={13} />
+                    </button>
+                  )}
+                </div>
+              </div>
+
+              {/* Grouped Model List */}
+              <div className="max-h-72 overflow-y-auto divide-y divide-hairline/30">
+                {/* 1. LOCAL MODELS (ON TOP) */}
+                {(filteredLocal.length > 0 || installedLocalModels.length === 0) && (
+                  <div className="py-1">
+                    <div className="px-3 py-1.5 text-[11px] font-bold uppercase tracking-wider text-text-3 flex items-center gap-1.5">
+                      <Cpu size={13} className="text-accent" />
+                      <span>Local Models (On-Device)</span>
+                    </div>
+
+                    {installedLocalModels.length === 0 ? (
+                      <div className="px-3 py-2 text-xs text-text-3 italic">
+                        No local models installed. Import GGML models below in Local Models.
+                      </div>
+                    ) : (
+                      filteredLocal.map((opt) => {
+                        const isSelected = currentSelection.key === opt.key;
+                        return (
+                          <button
+                            key={opt.key}
+                            type="button"
+                            data-testid={`stt-model-option-${opt.key}`}
+                            onClick={() => handleSelectOption(opt)}
+                            className={`w-full flex items-center justify-between px-3 py-2 text-left text-xs transition-colors hover:bg-elevated ${
+                              isSelected
+                                ? "bg-accent/15 border-l-2 border-accent text-accent font-medium"
+                                : "text-text"
+                            }`}
+                          >
+                            <div className="min-w-0 pr-2">
+                              <div className="font-medium truncate">{opt.label}</div>
+                              <div className="text-[10px] text-text-3 font-mono truncate">
+                                {opt.sublabel}
+                              </div>
+                            </div>
+                            {isSelected && <Check size={14} className="text-accent shrink-0" />}
+                          </button>
+                        );
+                      })
+                    )}
+                  </div>
+                )}
+
+                {/* 2. GROQ MODELS */}
+                {filteredGroq.length > 0 && (
+                  <div className="py-1">
+                    <div className="px-3 py-1.5 text-[11px] font-bold uppercase tracking-wider text-text-3 flex items-center gap-1.5">
+                      <Cloud size={13} className="text-sky-400" />
+                      <span>Groq (Cloud Whisper)</span>
+                    </div>
+                    {filteredGroq.map((opt) => {
+                      const isSelected = currentSelection.key === opt.key;
+                      return (
+                        <button
+                          key={opt.key}
+                          type="button"
+                          data-testid={`stt-model-option-${opt.key}`}
+                          onClick={() => handleSelectOption(opt)}
+                          className={`w-full flex items-center justify-between px-3 py-2 text-left text-xs transition-colors hover:bg-elevated ${
+                            isSelected
+                              ? "bg-accent/15 border-l-2 border-accent text-accent font-medium"
+                              : "text-text"
+                          }`}
+                        >
+                          <div className="min-w-0 pr-2">
+                            <div className="font-medium truncate">{opt.label}</div>
+                            <div className="text-[10px] text-text-3 font-mono truncate">
+                              {opt.sublabel}
+                            </div>
+                          </div>
+                          {isSelected && <Check size={14} className="text-accent shrink-0" />}
+                        </button>
+                      );
+                    })}
+                  </div>
+                )}
+
+                {/* 3. GEMINI MODELS */}
+                {filteredGemini.length > 0 && (
+                  <div className="py-1">
+                    <div className="px-3 py-1.5 text-[11px] font-bold uppercase tracking-wider text-text-3 flex items-center gap-1.5">
+                      <Sparkles size={13} className="text-amber-400" />
+                      <span>Gemini (Cloud Multimodal)</span>
+                    </div>
+                    {filteredGemini.map((opt) => {
+                      const isSelected = currentSelection.key === opt.key;
+                      return (
+                        <button
+                          key={opt.key}
+                          type="button"
+                          data-testid={`stt-model-option-${opt.key}`}
+                          onClick={() => handleSelectOption(opt)}
+                          className={`w-full flex items-center justify-between px-3 py-2 text-left text-xs transition-colors hover:bg-elevated ${
+                            isSelected
+                              ? "bg-accent/15 border-l-2 border-accent text-accent font-medium"
+                              : "text-text"
+                          }`}
+                        >
+                          <div className="min-w-0 pr-2">
+                            <div className="font-medium truncate">{opt.label}</div>
+                            <div className="text-[10px] text-text-3 font-mono truncate">
+                              {opt.sublabel}
+                            </div>
+                          </div>
+                          {isSelected && <Check size={14} className="text-accent shrink-0" />}
+                        </button>
+                      );
+                    })}
+                  </div>
+                )}
+
+                {totalFilteredCount === 0 && (
+                  <div className="p-4 text-center text-xs text-text-3">
+                    No models found matching &ldquo;{search}&rdquo;
+                  </div>
+                )}
+              </div>
+            </div>
+          )}
+        </div>
+
+        {/* Speech Language Selector */}
         <label className="flex flex-col gap-1.5 text-sm font-medium text-text-2">
-          <span>Gemini model</span>
-          <select
-            value={GEMINI_PRESETS.some(([v]) => v === geminiModel) ? geminiModel : GEMINI_PRESETS[0]![0]}
-            onChange={(event) => setGeminiModel(event.target.value)}
-            data-testid="pref-stt.gemini_model"
-            className="h-12 min-h-[48px] w-full rounded-lg border border-hairline bg-elevated px-3 text-sm text-text outline-none focus:border-accent"
-          >
-            {GEMINI_PRESETS.map(([value, label]) => (
-              <option key={value} value={value}>{label}</option>
-            ))}
-            {!GEMINI_PRESETS.some(([v]) => v === geminiModel) && geminiModel ? (
-              <option value={geminiModel}>Custom: {geminiModel}</option>
-            ) : null}
-          </select>
-        </label>
-        <label className="flex flex-col gap-1.5 text-sm font-medium text-text-2 sm:col-span-2">
           <span>Speech language</span>
           <select
             value={language}

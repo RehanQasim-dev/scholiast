@@ -165,7 +165,7 @@ export default function NoteCard({ item, onDelete, onEdit }: NoteCardProps) {
         <Trash2 size={20} strokeWidth={2} className="text-white" aria-hidden />
       </div>
       <article
-        className="sc-note-terminal relative flex gap-3 bg-surface p-3 transition-transform duration-150 ease-out"
+        className="sc-note-terminal relative flex gap-2.5 bg-surface px-2.5 py-2 transition-transform duration-150 ease-out"
         style={{ transform: `translateX(${offsetX}px)` }}
         onPointerDown={onPointerDown}
         onPointerMove={onPointerMove}
@@ -261,7 +261,7 @@ export default function NoteCard({ item, onDelete, onEdit }: NoteCardProps) {
                   type="button"
                   onClick={() => void handleSave()}
                   disabled={saving || !draft.trim()}
-                  className="h-8 rounded-md bg-accent px-3 text-xs font-medium text-[var(--sc-accent-text)] transition-opacity hover:opacity-90 disabled:opacity-50"
+                  className="h-8 rounded-md bg-accent px-3 text-xs font-medium text-[var(--sc-accent-text)]"
                 >
                   {saving ? "Saving…" : "Save"}
                 </button>

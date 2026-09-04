@@ -2,6 +2,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import type { ReactNode } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useNavigate, useSearchParams } from "react-router-dom";
+import { ChevronUp, FileText } from "lucide-react";
 import ArticleView from "../reader/ArticleView";
 import AuthenticView from "../reader/AuthenticView";
 import ThreadPanel, {
@@ -78,7 +79,8 @@ export default function Reader() {
   }, [rawUrl, urlHash, setSearchParams]);
   const [drawerOpen, setDrawerOpen] = useState(false);
   const [annotationsOpen, setAnnotationsOpen] = useState(false);
-  const [threadSheetOpen, setThreadSheetOpen] = useState(false);
+  type SheetState = "closed" | "peek" | "expanded";
+  const [sheetState, setSheetState] = useState<SheetState>("closed");
   const [dockAppearanceOpen, setDockAppearanceOpen] = useState(false);
   const dockPopoverRef = useRef<HTMLDivElement>(null);
 
@@ -98,9 +100,95 @@ export default function Reader() {
   const handleHighlightClick = useCallback((highlightId: string) => {
     setFocusMode(false);
     setAnnotationsOpen(true);
-    setThreadSheetOpen(true);
+    setSheetState((prev) => (prev === "closed" ? "peek" : prev));
     setSelectRequest({ id: highlightId, nonce: Date.now() });
   }, []);
+
+  // Bottom edge swipe listener to open peek sheet when closed
+  const edgeTouchStartY = useRef<number | null>(null);
+  useEffect(() => {
+    if (!isNarrow || sheetState !== "closed") return;
+
+    const onTouchStart = (e: TouchEvent) => {
+      const touch = e.touches[0];
+      // Listen in safe zone above Android OS navigation bar (bottom 0-44px)
+      if (
+        touch &&
+        touch.clientY >= window.innerHeight - 150 &&
+        touch.clientY <= window.innerHeight - 45
+      ) {
+        edgeTouchStartY.current = touch.clientY;
+      } else {
+        edgeTouchStartY.current = null;
+      }
+    };
+
+    const onTouchEnd = (e: TouchEvent) => {
+      if (edgeTouchStartY.current === null) return;
+      const touch = e.changedTouches[0];
+      if (touch) {
+        const deltaY = touch.clientY - edgeTouchStartY.current;
+        if (deltaY < -30) {
+          setSheetState("peek");
+        }
+      }
+      edgeTouchStartY.current = null;
+    };
+
+    window.addEventListener("touchstart", onTouchStart, { passive: true });
+    window.addEventListener("touchend", onTouchEnd, { passive: true });
+    return () => {
+      window.removeEventListener("touchstart", onTouchStart);
+      window.removeEventListener("touchend", onTouchEnd);
+    };
+  }, [isNarrow, sheetState]);
+
+  // Handle gestures on the sheet handle/header
+  const sheetTouchStartY = useRef<number | null>(null);
+
+  const handleSheetTouchStart = (e: React.TouchEvent) => {
+    sheetTouchStartY.current = e.touches[0].clientY;
+  };
+
+  const handleSheetTouchEnd = (e: React.TouchEvent) => {
+    if (sheetTouchStartY.current === null) return;
+    const deltaY = e.changedTouches[0].clientY - sheetTouchStartY.current;
+    sheetTouchStartY.current = null;
+    if (deltaY < -25) {
+      if (sheetState === "peek") {
+        setSheetState("expanded");
+      }
+    } else if (deltaY > 25) {
+      setSheetState("closed");
+    }
+  };
+
+  const handleSheetHandleClick = () => {
+    if (sheetState === "peek") {
+      setSheetState("expanded");
+    } else if (sheetState === "expanded") {
+      setSheetState("peek");
+    }
+  };
+
+  // Double tap / double click on article canvas closes comments sheet
+  const lastArticleTapRef = useRef<number>(0);
+
+  const handleArticleTouchEnd = () => {
+    const now = Date.now();
+    if (now - lastArticleTapRef.current < 320) {
+      if (sheetState !== "closed") {
+        setSheetState("closed");
+      }
+    }
+    lastArticleTapRef.current = now;
+  };
+
+  const handleArticleDoubleClick = () => {
+    if (sheetState !== "closed") {
+      setSheetState("closed");
+    }
+  };
 
   useEffect(() => {
     void getPref<number>(PREF_KEYS.readerFontStep, 0)
@@ -246,13 +334,15 @@ export default function Reader() {
     <div
       ref={scrollRef}
       data-testid="article-scroller"
+      onDoubleClick={handleArticleDoubleClick}
+      onTouchEnd={handleArticleTouchEnd}
       className={
         isAuthentic
           ? "h-full min-h-0 flex-1 overflow-hidden bg-base"
           : `h-full min-h-0 flex-1 overflow-y-auto px-6 py-8 md:px-12 transition-colors duration-200 ${THEME_CLASSES[theme]}`
       }
       style={{
-        paddingBottom: isNarrow ? "calc(4rem + var(--sc-safe-bottom))" : undefined,
+        paddingBottom: isNarrow ? "calc(1.5rem + var(--sc-safe-bottom))" : undefined,
       }}
     >
       {libraryEmpty && !urlHash ? (
@@ -389,9 +479,9 @@ export default function Reader() {
           onSetColumnWidth={handleSetColumnWidth}
           onDelete={handleDelete}
           annotationsCount={annotationsCount}
-          annotationsOpen={isNarrow ? threadSheetOpen : annotationsOpen}
+          annotationsOpen={isNarrow ? sheetState !== "closed" : annotationsOpen}
           onToggleAnnotations={() => {
-            if (isNarrow) setThreadSheetOpen((v) => !v);
+            if (isNarrow) setSheetState((v) => (v === "closed" ? "peek" : "closed"));
             else setAnnotationsOpen((v) => !v);
           }}
           hideAppearanceOnTablet={!isNarrow}
@@ -475,17 +565,84 @@ export default function Reader() {
           ) : isNarrow ? (
             <div className="relative h-full w-full overflow-hidden">
               {articleContentNode}
-              {threadSheetOpen && (
-                <div className="fixed inset-0 z-40 flex flex-col justify-end">
-                  <div className="absolute inset-0 bg-black/40 backdrop-blur-[1px]" onClick={() => setThreadSheetOpen(false)} />
-                  <aside data-testid="thread-panel-slot" className="relative z-10 flex max-h-[45vh] h-[40vh] flex-col rounded-t-2xl border-t border-hairline bg-surface shadow-2xl pb-[var(--sc-safe-bottom)]">
-                    <div className="mx-auto my-2 h-1 w-12 rounded-full bg-text-3/40" />
-                    <div className="min-h-0 flex-1 overflow-hidden">
-                      <ThreadPanel urlHash={urlHash} selectRequest={selectRequest} />
-                    </div>
-                  </aside>
-                </div>
+              {sheetState === "closed" && (
+                <button
+                  type="button"
+                  data-testid="reader-comments-pill"
+                  onClick={() => setSheetState("peek")}
+                  onTouchStart={(e) => {
+                    edgeTouchStartY.current = e.touches[0].clientY;
+                  }}
+                  onTouchEnd={(e) => {
+                    if (edgeTouchStartY.current !== null) {
+                      const deltaY = e.changedTouches[0].clientY - edgeTouchStartY.current;
+                      if (deltaY < -15) {
+                        setSheetState("peek");
+                      }
+                      edgeTouchStartY.current = null;
+                    }
+                  }}
+                  aria-label="Open annotations sheet"
+                  className="fixed bottom-[calc(14px+var(--sc-safe-bottom))] left-1/2 -translate-x-1/2 z-30 flex items-center gap-2 rounded-full border border-hairline-strong bg-surface/95 px-3.5 py-1.5 text-xs font-medium text-text-2 shadow-lg shadow-black/40 backdrop-blur-md transition-all duration-150 active:scale-95 hover:text-text hover:border-accent/50"
+                >
+                  <FileText size={13} strokeWidth={2} className="text-accent" />
+                  <span>Annotations {annotationsCount > 0 ? `(${annotationsCount})` : ""}</span>
+                  <ChevronUp size={13} strokeWidth={2} className="text-text-3" />
+                </button>
               )}
+              {sheetState === "expanded" && (
+                <div
+                  data-testid="thread-sheet-scrim"
+                  className="fixed inset-0 z-40 bg-black/50 backdrop-blur-[1px] transition-opacity duration-200"
+                  onClick={() => setSheetState("closed")}
+                />
+              )}
+              <aside
+                data-testid="thread-panel-slot"
+                data-state={sheetState}
+                className={`fixed inset-x-0 bottom-0 z-50 flex flex-col rounded-t-2xl border-t border-hairline bg-surface shadow-2xl pb-[var(--sc-safe-bottom)] transition-all duration-300 ease-out ${
+                  sheetState === "closed"
+                    ? "pointer-events-none translate-y-full opacity-0 h-0"
+                    : sheetState === "peek"
+                    ? "h-[20vh] min-h-[140px] max-h-[25vh] translate-y-0 opacity-100"
+                    : "h-[70vh] max-h-[75vh] translate-y-0 opacity-100"
+                }`}
+              >
+                <div
+                  data-testid="thread-sheet-handle"
+                  className="flex w-full shrink-0 flex-col items-center pt-2.5 pb-1.5 cursor-pointer touch-none select-none"
+                  onTouchStart={handleSheetTouchStart}
+                  onTouchEnd={handleSheetTouchEnd}
+                  onClick={handleSheetHandleClick}
+                >
+                  <div className="h-1.5 w-12 rounded-full bg-text-3/40" />
+                  <div className="flex w-full items-center justify-between px-4 pt-1">
+                    <span className="text-xs font-semibold text-text-2">
+                      Annotations {annotationsCount > 0 ? `(${annotationsCount})` : ""}
+                    </span>
+                    <div className="flex items-center gap-2">
+                      <span className="text-[10px] text-text-3">
+                        {sheetState === "peek" ? "Swipe up to expand" : "Swipe down to close"}
+                      </span>
+                      <button
+                        type="button"
+                        data-testid="close-thread-sheet"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          setSheetState("closed");
+                        }}
+                        className="rounded p-1 text-text-3 hover:text-text"
+                        aria-label="Close annotations"
+                      >
+                        ✕
+                      </button>
+                    </div>
+                  </div>
+                </div>
+                <div className="min-h-0 flex-1 overflow-hidden">
+                  <ThreadPanel urlHash={urlHash} selectRequest={selectRequest} />
+                </div>
+              </aside>
             </div>
           ) : annotationsOpen && threadPanelNode ? (
             <SplitterPane left={articleContentNode} right={threadPanelNode} storageKey="layout.reader_split_ratio" defaultRatio={0.65} minRatio={0.4} maxRatio={0.8} />

@@ -25,6 +25,30 @@ function isYouTubeInput(input: string): boolean {
 
 const RECENT_KEY = ["videos", "recent"] as const;
 
+async function readClipboardText(): Promise<string> {
+  // 1. Android native bridge (bypasses WebView clipboard permissions)
+  const androidBridge = (
+    window as unknown as { AndroidBridge?: { getClipboardText?: () => string } }
+  ).AndroidBridge;
+  if (typeof androidBridge?.getClipboardText === "function") {
+    try {
+      const text = androidBridge.getClipboardText();
+      if (typeof text === "string" && text.length > 0) {
+        return text;
+      }
+    } catch (e) {
+      console.warn("AndroidBridge clipboard read failed", e);
+    }
+  }
+
+  // 2. Standard Web Clipboard API (browsers / desktop)
+  if (typeof navigator !== "undefined" && navigator.clipboard?.readText) {
+    return await navigator.clipboard.readText();
+  }
+
+  throw new Error("Clipboard API not available");
+}
+
 export default function OpenLinkField() {
   const [value, setValue] = useState("");
   const navigate = useNavigate();
@@ -32,8 +56,12 @@ export default function OpenLinkField() {
 
   const handlePasteFromClipboard = async () => {
     try {
-      const text = await navigator.clipboard.readText();
-      if (text) setValue(text.trim());
+      const text = await readClipboardText();
+      if (text && text.trim()) {
+        setValue(text.trim());
+      } else {
+        toast("Clipboard is empty");
+      }
     } catch {
       toast("Clipboard unavailable");
     }

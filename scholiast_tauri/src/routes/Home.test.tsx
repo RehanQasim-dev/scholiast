@@ -90,7 +90,7 @@ describe("Home", () => {
 
   test("card without resume data navigates without the param", async () => {
     renderHome();
-    fireEvent.click(await screen.findByRole("button", { name: /jNQXAC9IVRw/ }));
+    fireEvent.click(await screen.findByRole("button", { name: /Me at the zoo|jNQXAC9IVRw/ }));
     expect(screen.getByTestId("probe").textContent).toBe(
       "url=https%3A%2F%2Fyoutu.be%2FjNQXAC9IVRw",
     );
@@ -152,5 +152,19 @@ describe("Home", () => {
       expect(invokeMock).toHaveBeenCalledWith("add_article", { url: "https://example.com/article" });
     });
     expect(screen.getByTestId("probe").textContent).toContain("url=https%3A%2F%2Fexample.com%2Farticle");
+  });
+
+  test("paste button reads from AndroidBridge when available", async () => {
+    (window as unknown as { AndroidBridge?: { getClipboardText: () => string } }).AndroidBridge = {
+      getClipboardText: () => "https://example.com/pasted-via-bridge",
+    };
+    renderHome();
+    const pasteBtn = screen.getByLabelText("Paste from clipboard");
+    fireEvent.click(pasteBtn);
+    await waitFor(() => {
+      const input = screen.getByLabelText("Paste YouTube or URL...") as HTMLInputElement;
+      expect(input.value).toBe("https://example.com/pasted-via-bridge");
+    });
+    delete (window as unknown as { AndroidBridge?: unknown }).AndroidBridge;
   });
 });

@@ -159,8 +159,12 @@ export function useVoiceComment(options: VoiceCommentOptions = {}): VoiceComment
       if (!probe.geminiConfigured) return SETUP_GEMINI;
       return null;
     }
-    if (offline && !probe.localReady) return NEEDS_INTERNET;
-    if (!probe.groqConfigured && !probe.geminiConfigured && !(offline && probe.localReady)) {
+    // If a local model is installed & ready, local STT is always available (online or offline)!
+    if (probe.localReady) return null;
+
+    // Otherwise, cloud STT is required:
+    if (offline) return NEEDS_INTERNET;
+    if (!probe.groqConfigured && !probe.geminiConfigured) {
       return SETUP_SPEECH;
     }
     return null;
@@ -177,14 +181,26 @@ export function useVoiceComment(options: VoiceCommentOptions = {}): VoiceComment
         });
         return edited.trim();
       }
+
+      const activeModel = await getPref<string>(PREF_KEYS.activeModel, "auto");
       const liveOffline = typeof navigator !== "undefined" && !navigator.onLine;
-      if (liveOffline && probe?.localReady) {
+
+      // Use local STT if explicitly selected OR if offline OR if cloud keys are not configured
+      const useLocal =
+        activeModel.startsWith("local:") ||
+        (probe?.localReady && (liveOffline || (!probe.groqConfigured && !probe.geminiConfigured)));
+
+      if (useLocal && probe?.localReady) {
+        const customModel = activeModel.startsWith("local:")
+          ? activeModel.slice("local:".length)
+          : probe.activeLocalModel || null;
         return invokeCommand<string>("stt_local_transcribe", {
           wavPath: path,
           language,
-          modelPath: probe.activeLocalModel || null,
+          modelPath: customModel,
         }).then((text) => text.trim());
       }
+
       const text = await invokeCommand<string>("stt_transcribe", {
         wavPath: path,
         language,

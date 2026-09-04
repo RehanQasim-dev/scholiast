@@ -6,7 +6,7 @@ import { BookOpen, Play, Globe } from "lucide-react";
 import type { VideoSummary } from "../lib/ipc";
 import { getVideoItems, listRecentVideos } from "../lib/ipc";
 import { listArticles, type ArticleSummary } from "../lib/readerIpc";
-import { resolveChannelForVideo, getDomainFromUrl } from "../lib/channelStore";
+import { resolveVideoMeta, getDomainFromUrl } from "../lib/channelStore";
 
 function relativeTime(updatedAtMs: number): string {
   const seconds = Math.max(0, Math.round((Date.now() - updatedAtMs) / 1000));
@@ -68,19 +68,28 @@ type UnifiedRecentItem =
 function VideoCard({ video }: { video: VideoSummary }) {
   const navigate = useNavigate();
   const [channel, setChannel] = useState<string>("YouTube");
+  const [resolvedTitle, setResolvedTitle] = useState<string | null>(video.title ?? null);
   const hasResume = video.resumeAt > 0;
 
   useEffect(() => {
     if (video.videoId) {
-      void resolveChannelForVideo(video.videoId).then(setChannel);
+      void resolveVideoMeta(video.videoId).then((meta) => {
+        setChannel(meta.author);
+        if (meta.title && !video.title) {
+          setResolvedTitle(meta.title);
+        }
+      });
     }
-  }, [video.videoId]);
+  }, [video.videoId, video.title]);
 
   const openInPlayer = () => {
     navigate(
       `/player?url=${encodeURIComponent(video.url)}${hasResume ? `&resume=${Math.floor(video.resumeAt)}` : ""}`,
     );
   };
+
+  const displayTitle =
+    resolvedTitle ?? video.title ?? (video.videoId ? "YouTube Video" : video.url);
 
   return (
     <button
@@ -96,7 +105,7 @@ function VideoCard({ video }: { video: VideoSummary }) {
       </div>
       <div className="flex flex-1 flex-col gap-1.5 p-3.5">
         <h3 className="line-clamp-2 text-[13px] font-semibold leading-snug text-text transition-colors group-hover:text-accent">
-          {video.title ?? video.url}
+          {displayTitle}
         </h3>
         <div className="flex items-center gap-1.5 text-xs tabular-nums text-text-2">
           <Play size={12} strokeWidth={2} className="shrink-0 text-accent" />

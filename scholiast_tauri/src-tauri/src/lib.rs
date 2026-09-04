@@ -88,9 +88,7 @@ pub fn run() {
             commands::drive::delete_secret,
             capture::capture_frame,
             capture::cleanup_capture,
-            #[cfg(target_os = "linux")]
             capture::persist::save_frame_item,
-            #[cfg(target_os = "linux")]
             capture::persist::get_frame_item,
             commands::data::data_stats,
             commands::data::wipe_local_data,

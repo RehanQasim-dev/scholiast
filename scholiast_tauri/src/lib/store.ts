@@ -12,6 +12,7 @@ import { load, type Store } from "@tauri-apps/plugin-store";
 export const SETTINGS_FILE = "settings.json";
 
 export const PREF_KEYS = {
+  activeModel: "stt.active_model",
   groqModel: "stt.groq_model",
   geminiModel: "stt.gemini_model",
   addCommentPrompt: "prompt.add_comment",
@@ -39,6 +40,7 @@ export const PREF_KEYS = {
 } as const;
 
 export const PREF_DEFAULTS = {
+  [PREF_KEYS.activeModel]: "auto",
   [PREF_KEYS.groqModel]: "whisper-large-v3-turbo",
   [PREF_KEYS.geminiModel]: "gemini-flash-latest",
   [PREF_KEYS.speechLanguage]: "en",

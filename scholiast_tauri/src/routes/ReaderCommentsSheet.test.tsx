@@ -1,0 +1,262 @@
+import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
+import { fireEvent, render, screen } from "@testing-library/react";
+import { MemoryRouter } from "react-router-dom";
+import { invoke } from "@tauri-apps/api/core";
+import { afterEach, beforeAll, beforeEach, describe, expect, test, vi } from "vitest";
+import Reader from "./Reader";
+import { setPrefsStoreForTests } from "../lib/store";
+import type { ArticleSummary } from "../lib/readerIpc";
+
+vi.mock("@tauri-apps/api/core", () => ({ invoke: vi.fn() }));
+vi.mock("@tauri-apps/api/event", () => ({ listen: vi.fn(async () => () => {}) }));
+vi.mock("@tauri-apps/plugin-opener", () => ({ openUrl: vi.fn(async () => {}) }));
+
+const invokeMock = vi.mocked(invoke);
+
+const articles: ArticleSummary[] = [
+  {
+    urlHash: "hash-test",
+    url: "https://example.com/mobile-article",
+    title: "Mobile Gestures in Reader",
+    domain: "example.com",
+    updatedAt: Date.now(),
+  },
+];
+
+function fakePrefsStore() {
+  const data = new Map<string, unknown>();
+  return {
+    data,
+    get: async <T,>(key: string) => (data.has(key) ? (data.get(key) as T) : undefined),
+    set: async (key: string, value: unknown) => {
+      data.set(key, value);
+    },
+  };
+}
+
+function renderReaderMobile(initialUrl = "/reader?url=https%3A%2F%2Fexample.com%2Fmobile-article&h=hash-test") {
+  const client = new QueryClient({
+    defaultOptions: { queries: { retry: false } },
+  });
+  return render(
+    <QueryClientProvider client={client}>
+      <MemoryRouter initialEntries={[initialUrl]}>
+        <Reader />
+      </MemoryRouter>
+    </QueryClientProvider>,
+  );
+}
+
+describe("Mobile Reader Gesture Comments Sheet", () => {
+  const store = fakePrefsStore();
+
+  beforeAll(() => {
+    Object.defineProperty(Element.prototype, "scrollTo", {
+      configurable: true,
+      writable: true,
+      value: vi.fn(),
+    });
+    Object.defineProperty(window, "innerHeight", {
+      configurable: true,
+      writable: true,
+      value: 800,
+    });
+  });
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+    store.data.clear();
+    setPrefsStoreForTests(store);
+
+    window.matchMedia = vi.fn().mockImplementation((query: string) => ({
+      matches: true,
+      media: query,
+      onchange: null,
+      addListener: vi.fn(),
+      removeListener: vi.fn(),
+      addEventListener: vi.fn(),
+      removeEventListener: vi.fn(),
+      dispatchEvent: vi.fn(),
+    }));
+
+    invokeMock.mockImplementation(async (command: string) => {
+      if (command === "list_articles") return { ok: true, data: articles };
+      if (command === "get_page") {
+        return {
+          ok: true,
+          data: {
+            urlHash: "hash-test",
+            url: "https://example.com/mobile-article",
+            title: "Mobile Gestures in Reader",
+            body: "<p>Mobile reading requires zero bottom obstruction.</p>",
+            capturedAt: Date.now(),
+            updatedAt: Date.now(),
+          },
+        };
+      }
+      if (command === "list_highlights") {
+        return {
+          ok: true,
+          data: [
+            {
+              type: "text",
+              id: "hl-mobile-1",
+              content: "Mobile reading requires zero bottom obstruction.",
+              notes: ["Great point!<!--timestamp:123456-->"],
+              color: "yellow",
+              updatedAt: Date.now(),
+            },
+          ],
+        };
+      }
+      return { ok: true, data: null };
+    });
+  });
+
+  afterEach(() => {
+    vi.restoreAllMocks();
+  });
+
+  test("invariant 11: default state is closed with 0 height and no scrim", async () => {
+    renderReaderMobile();
+    const slot = await screen.findByTestId("thread-panel-slot");
+    expect(slot).toHaveAttribute("data-state", "closed");
+    expect(slot).toHaveClass("translate-y-full", "h-0", "opacity-0");
+    expect(screen.queryByTestId("thread-sheet-scrim")).not.toBeInTheDocument();
+  });
+
+  test("invariant 12: swipe up from bottom edge transitions to peek (20%)", async () => {
+    renderReaderMobile();
+    const slot = await screen.findByTestId("thread-panel-slot");
+    expect(slot).toHaveAttribute("data-state", "closed");
+
+    // Touch at bottom edge (clientY = 750 >= 800 - 80 = 720)
+    fireEvent.touchStart(window, {
+      touches: [{ clientY: 750 }],
+    });
+    // Move upward (deltaY = 650 - 750 = -100 < -30)
+    fireEvent.touchEnd(window, {
+      changedTouches: [{ clientY: 650 }],
+    });
+
+    expect(slot).toHaveAttribute("data-state", "peek");
+    expect(slot).toHaveClass("translate-y-0", "opacity-100");
+  });
+
+  test("invariant 13: swipe up on drag handle from peek expands to expanded (70%)", async () => {
+    renderReaderMobile();
+    const slot = await screen.findByTestId("thread-panel-slot");
+
+    // Open to peek via bottom swipe
+    fireEvent.touchStart(window, { touches: [{ clientY: 750 }] });
+    fireEvent.touchEnd(window, { changedTouches: [{ clientY: 650 }] });
+    expect(slot).toHaveAttribute("data-state", "peek");
+
+    // Swipe up on handle
+    const handle = screen.getByTestId("thread-sheet-handle");
+    fireEvent.touchStart(handle, { touches: [{ clientY: 600 }] });
+    fireEvent.touchEnd(handle, { changedTouches: [{ clientY: 500 }] }); // deltaY = -100 < -25
+
+    expect(slot).toHaveAttribute("data-state", "expanded");
+    expect(await screen.findByTestId("thread-sheet-scrim")).toBeInTheDocument();
+  });
+
+  test("invariant 14: swipe down on drag handle closes sheet completely", async () => {
+    renderReaderMobile();
+    const slot = await screen.findByTestId("thread-panel-slot");
+
+    // Open to peek
+    fireEvent.touchStart(window, { touches: [{ clientY: 750 }] });
+    fireEvent.touchEnd(window, { changedTouches: [{ clientY: 650 }] });
+    expect(slot).toHaveAttribute("data-state", "peek");
+
+    // Swipe down on handle
+    const handle = screen.getByTestId("thread-sheet-handle");
+    fireEvent.touchStart(handle, { touches: [{ clientY: 600 }] });
+    fireEvent.touchEnd(handle, { changedTouches: [{ clientY: 700 }] }); // deltaY = +100 > 25
+
+    expect(slot).toHaveAttribute("data-state", "closed");
+  });
+
+  test("invariant 15: double clicking or double tapping article area dismisses the sheet", async () => {
+    renderReaderMobile();
+    const slot = await screen.findByTestId("thread-panel-slot");
+
+    // Open to peek
+    fireEvent.touchStart(window, { touches: [{ clientY: 750 }] });
+    fireEvent.touchEnd(window, { changedTouches: [{ clientY: 650 }] });
+    expect(slot).toHaveAttribute("data-state", "peek");
+
+    // Double click on article scroller
+    const scroller = screen.getByTestId("article-scroller");
+    fireEvent.doubleClick(scroller);
+
+    expect(slot).toHaveAttribute("data-state", "closed");
+  });
+
+  test("close button and backdrop click dismiss the sheet", async () => {
+    renderReaderMobile();
+    const slot = await screen.findByTestId("thread-panel-slot");
+
+    // Open to peek
+    fireEvent.touchStart(window, { touches: [{ clientY: 750 }] });
+    fireEvent.touchEnd(window, { changedTouches: [{ clientY: 650 }] });
+    expect(slot).toHaveAttribute("data-state", "peek");
+
+    // Click close button
+    fireEvent.click(screen.getByTestId("close-thread-sheet"));
+    expect(slot).toHaveAttribute("data-state", "closed");
+
+    // Open and expand
+    fireEvent.touchStart(window, { touches: [{ clientY: 750 }] });
+    fireEvent.touchEnd(window, { changedTouches: [{ clientY: 650 }] });
+    const handle = screen.getByTestId("thread-sheet-handle");
+    fireEvent.click(handle); // clicking handle expands peek to expanded
+    expect(slot).toHaveAttribute("data-state", "expanded");
+
+    // Click scrim
+    const scrim = screen.getByTestId("thread-sheet-scrim");
+    fireEvent.click(scrim);
+    expect(slot).toHaveAttribute("data-state", "closed");
+  });
+
+  test("invariant 16: topbar annotations toggle opens and closes the comments sheet", async () => {
+    renderReaderMobile();
+    const slot = await screen.findByTestId("thread-panel-slot");
+    expect(slot).toHaveAttribute("data-state", "closed");
+
+    // Toggle via topbar button
+    const toggleBtn = screen.getByLabelText("Toggle annotations panel");
+    fireEvent.click(toggleBtn);
+    expect(slot).toHaveAttribute("data-state", "peek");
+
+    // Toggle off
+    fireEvent.click(toggleBtn);
+    expect(slot).toHaveAttribute("data-state", "closed");
+  });
+
+  test("invariant 17: floating comments pill opens sheet on tap without gesture conflict", async () => {
+    renderReaderMobile();
+    const slot = await screen.findByTestId("thread-panel-slot");
+    expect(slot).toHaveAttribute("data-state", "closed");
+
+    const pill = await screen.findByTestId("reader-comments-pill");
+    expect(pill).toBeInTheDocument();
+
+    fireEvent.click(pill);
+    expect(slot).toHaveAttribute("data-state", "peek");
+  });
+
+  test("invariant 18: touches in OS navigation zone (bottom 0-44px) are ignored to prevent conflict", async () => {
+    renderReaderMobile();
+    const slot = await screen.findByTestId("thread-panel-slot");
+    expect(slot).toHaveAttribute("data-state", "closed");
+
+    // Touch in dangerous Android home bar zone (clientY = 780 >= 800 - 45 = 755)
+    fireEvent.touchStart(window, { touches: [{ clientY: 780 }] });
+    fireEvent.touchEnd(window, { changedTouches: [{ clientY: 650 }] });
+
+    // Should NOT trigger sheet from OS navigation bar zone
+    expect(slot).toHaveAttribute("data-state", "closed");
+  });
+});

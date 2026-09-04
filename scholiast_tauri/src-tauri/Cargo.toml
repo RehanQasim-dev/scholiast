@@ -23,6 +23,7 @@ reqwest = { version = "0.12", default-features = false, features = [
   "multipart",
   "rustls-tls-webpki-roots",
 ] }
+image = { version = "0.25", default-features = false, features = ["jpeg", "png"] }
 scholiast-core = { path = "../crates/core" }
 serde = { workspace = true }
 serde_json = { workspace = true }
@@ -52,7 +53,6 @@ local-stt = ["dep:whisper-rs"]
 [target.'cfg(target_os = "linux")'.dependencies]
 cairo-rs = "0.18"
 gtk = "0.18"
-image = { version = "0.25", default-features = false, features = ["jpeg"] }
 webkit2gtk = "2"
 
 # No Android backend exists; `secrets.rs` falls back to an app-private file

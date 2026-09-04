@@ -1,10 +1,15 @@
 import { useEffect, useMemo, useState } from "react";
 import { useParams, useNavigate } from "react-router-dom";
 import { useQuery } from "@tanstack/react-query";
-import { ArrowLeft, Play, BookOpen, Clock } from "lucide-react";
+import { ArrowLeft, Play, BookOpen, Clock, FileText } from "lucide-react";
 import { listRecentVideos, getVideoItems, type VideoSummary } from "../lib/ipc";
 import { listArticles, type ArticleSummary } from "../lib/readerIpc";
-import { getCachedChannels, resolveChannelForVideo, getDomainFromUrl } from "../lib/channelStore";
+import {
+  getCachedChannels,
+  getCachedTitles,
+  resolveVideoMeta,
+  getDomainFromUrl,
+} from "../lib/channelStore";
 
 function relativeTime(updatedAtMs: number): string {
   const seconds = Math.max(0, Math.round((Date.now() - updatedAtMs) / 1000));
@@ -34,8 +39,9 @@ function VideoNotesBadge({ urlHash }: { urlHash: string }) {
   });
   const count = query.data?.length ?? 0;
   return (
-    <span className="inline-flex items-center gap-1 rounded-md bg-elevated px-2 py-0.5 text-xs font-medium text-text-2 border border-hairline">
-      📝 {count} {count === 1 ? "note" : "notes"}
+    <span className="inline-flex items-center gap-1.5 rounded-full bg-accent/15 px-2.5 py-0.5 text-xs font-medium text-accent border border-accent/30">
+      <FileText size={12} strokeWidth={2} />
+      <span>{count} {count === 1 ? "note" : "notes"}</span>
     </span>
   );
 }
@@ -46,6 +52,7 @@ export default function CollectionDetail() {
   const decodedId = decodeURIComponent(id ?? "");
 
   const [channelsMap, setChannelsMap] = useState<Record<string, string>>(() => getCachedChannels());
+  const [videoTitles, setVideoTitles] = useState<Record<string, string>>(() => getCachedTitles());
 
   const videosQuery = useQuery({
     queryKey: ["videos", "recent"],
@@ -59,15 +66,20 @@ export default function CollectionDetail() {
     enabled: type === "domain",
   });
 
-  // Resolve channels if channel view
+  // Resolve channels and titles if channel view
   useEffect(() => {
     if (type !== "channel" || !videosQuery.data) return;
     let cancelled = false;
     for (const v of videosQuery.data) {
-      if (v.videoId && !channelsMap[v.videoId]) {
-        void resolveChannelForVideo(v.videoId).then((author) => {
-          if (!cancelled && author) {
-            setChannelsMap((prev) => ({ ...prev, [v.videoId!]: author }));
+      if (v.videoId && (!channelsMap[v.videoId] || (!v.title && !videoTitles[v.videoId]))) {
+        void resolveVideoMeta(v.videoId).then((meta) => {
+          if (!cancelled) {
+            if (meta.author) {
+              setChannelsMap((prev) => ({ ...prev, [v.videoId!]: meta.author }));
+            }
+            if (meta.title) {
+              setVideoTitles((prev) => ({ ...prev, [v.videoId!]: meta.title! }));
+            }
           }
         });
       }
@@ -75,7 +87,7 @@ export default function CollectionDetail() {
     return () => {
       cancelled = true;
     };
-  }, [type, videosQuery.data, channelsMap]);
+  }, [type, videosQuery.data, channelsMap, videoTitles]);
 
   const channelVideos = useMemo<VideoSummary[]>(() => {
     if (type !== "channel" || !videosQuery.data) return [];
@@ -159,7 +171,7 @@ export default function CollectionDetail() {
               </div>
               <div className="flex flex-1 flex-col gap-2 p-3.5">
                 <h3 className="line-clamp-2 text-sm font-semibold text-text group-hover:text-accent transition-colors">
-                  {v.title ?? v.url}
+                  {(v.videoId ? videoTitles[v.videoId] : null) ?? v.title ?? (v.videoId ? "YouTube Video" : v.url)}
                 </h3>
                 <div className="mt-auto flex items-center justify-between text-xs text-text-2">
                   <VideoNotesBadge urlHash={v.urlHash} />

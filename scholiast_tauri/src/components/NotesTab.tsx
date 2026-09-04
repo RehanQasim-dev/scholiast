@@ -129,7 +129,7 @@ export function InSituCard({
     <article
       ref={cardRef}
       data-testid="in-situ-composer"
-      className="rounded-xl border border-accent/40 bg-surface/95 p-3 shadow-md shadow-black/20 ring-1 ring-accent/30 transition-all flex flex-col gap-2"
+      className="rounded-xl border border-accent/40 bg-surface/95 px-2.5 py-2 shadow-md shadow-black/20 ring-1 ring-accent/30 transition-all flex flex-col gap-1.5"
     >
       {/* Header: Timestamp Chip & Discard Button */}
       <div className="flex items-center justify-between">
@@ -597,7 +597,7 @@ export default function NotesTab({
       style={{ ["--sc-note-font" as unknown as string]: `${15 + fontStep}px` } as any}
     >
       {/* Scrollable Chronological Notes Stream */}
-      <div className="min-h-0 flex-1 overflow-y-auto p-3 flex flex-col gap-2">
+      <div className="min-h-0 flex-1 overflow-y-auto px-2.5 py-2 sm:px-3 sm:py-2.5 flex flex-col gap-1.5">
         {items.length === 0 && !activeComposer ? (
           <div className="my-auto flex flex-col items-center gap-1 rounded-lg border border-dashed border-hairline px-6 py-12 text-center">
             <p className="text-sm font-medium text-text">No notes yet.</p>
@@ -675,7 +675,7 @@ export default function NotesTab({
                 data-testid="mobile-voice-btn"
                 onClick={() => void handleMobileVoiceTap()}
                 disabled={voice.state === "transcribing" || Boolean(voice.disabledReason)}
-                className="flex-1 flex items-center justify-center gap-2 rounded-xl bg-accent px-4 py-2.5 text-sm font-semibold text-[var(--sc-accent-text)] shadow-sm shadow-accent/20 transition-all active:scale-95 disabled:opacity-40"
+                className="flex-1 flex items-center justify-center gap-2 rounded-xl bg-accent px-4 py-2.5 text-sm font-semibold text-[var(--sc-accent-text)] transition-all active:scale-95"
               >
                 {voice.state === "transcribing" ? (
                   <span className="h-4 w-4 animate-spin rounded-full border-2 border-[var(--sc-accent-text)] border-t-transparent" />

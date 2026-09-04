@@ -38,6 +38,10 @@ pub const PREF_GEMINI_MODEL: &str = "stt.gemini_model";
 /// Store pref holding the user-editable edit-comment prompt.
 pub const PREF_EDIT_PROMPT: &str = "prompt.edit_comment";
 
+/// Store pref overriding the active STT model (local, groq, or gemini).
+pub const PREF_ACTIVE_MODEL: &str = "stt.active_model";
+/// Store pref overriding the add-comment prompt.
+pub const PREF_ADD_PROMPT: &str = "prompt.add_comment";
 /// Default Groq model (plan §6.5.6).
 pub const DEFAULT_GROQ_MODEL: &str = "whisper-large-v3-turbo";
 /// Default Gemini model (plan §6.5.6).
@@ -413,21 +417,55 @@ fn pref(app: &tauri::AppHandle, key: &str) -> Option<String> {
     }
 }
 
-/// Tauri command: transcribe a finished WAV verbatim via Groq.
-/// Routing per plan §6.5.2 — a configured Groq key is required; language comes from
-/// the caller (the speech-language pref), the model from `stt.groq_model`.
+/// Tauri command: transcribe a finished WAV verbatim or prompted via Groq or Gemini.
+/// Routing per plan §6.5.2 — honors `stt.active_model`, falling back to whichever key is configured.
 #[tauri::command]
 pub async fn stt_transcribe(
     app_handle: tauri::AppHandle,
     wav_path: String,
     language: Option<String>,
 ) -> Result<Reply<String>, SttError> {
-    let model = pref(&app_handle, PREF_GROQ_MODEL).unwrap_or_else(|| DEFAULT_GROQ_MODEL.into());
-    let groq = GroqTranscriber::new(Arc::new(KeyringProvider), model);
-    let text = groq
-        .transcribe(Path::new(&wav_path), language.as_deref(), None)
-        .await?;
-    Ok(Reply::new(text))
+    let active_model = pref(&app_handle, PREF_ACTIVE_MODEL);
+    let keys = Arc::new(KeyringProvider);
+
+    let use_gemini = if let Some(ref am) = active_model {
+        if am.starts_with("gemini:") {
+            true
+        } else if am.starts_with("groq:") {
+            false
+        } else {
+            keys.key(KEY_GROQ).is_none() && keys.key(KEY_GEMINI).is_some()
+        }
+    } else {
+        keys.key(KEY_GROQ).is_none() && keys.key(KEY_GEMINI).is_some()
+    };
+
+    if use_gemini {
+        let model = active_model
+            .as_deref()
+            .and_then(|m| m.strip_prefix("gemini:"))
+            .map(str::to_string)
+            .or_else(|| pref(&app_handle, PREF_GEMINI_MODEL))
+            .unwrap_or_else(|| DEFAULT_GEMINI_MODEL.into());
+        let gemini = GeminiTranscriber::new(keys, model);
+        let prompt = pref(&app_handle, PREF_ADD_PROMPT);
+        let text = gemini
+            .transcribe(Path::new(&wav_path), language.as_deref(), prompt.as_deref())
+            .await?;
+        Ok(Reply::new(text))
+    } else {
+        let model = active_model
+            .as_deref()
+            .and_then(|m| m.strip_prefix("groq:"))
+            .map(str::to_string)
+            .or_else(|| pref(&app_handle, PREF_GROQ_MODEL))
+            .unwrap_or_else(|| DEFAULT_GROQ_MODEL.into());
+        let groq = GroqTranscriber::new(keys, model);
+        let text = groq
+            .transcribe(Path::new(&wav_path), language.as_deref(), None)
+            .await?;
+        Ok(Reply::new(text))
+    }
 }
 
 /// Tauri command: revise `original` by voice via Gemini (plan §6.5.3).

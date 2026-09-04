@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from "react";
-import { Check, X } from "lucide-react";
+import { Check, Copy, X } from "lucide-react";
 import DynamicAuraPill from "./DynamicAuraPill";
 
 export type HighlightColor = "yellow" | "red" | "green";
@@ -218,6 +218,24 @@ export default function SwatchPopup({
             className="flex h-7 w-7 items-center justify-center rounded-full text-text-2 transition-colors hover:bg-elevated hover:text-text cursor-pointer"
           >
             <ShapesDiagramIcon />
+          </button>
+
+          {/* Copy Selected Text Button */}
+          <button
+            type="button"
+            aria-label="Copy text"
+            title="Copy to clipboard"
+            data-testid="swatch-copy"
+            onClick={() => {
+              const sel = window.getSelection()?.toString();
+              if (sel) {
+                void navigator.clipboard?.writeText(sel).catch(() => {});
+              }
+              onClose();
+            }}
+            className="flex h-7 w-7 items-center justify-center rounded-full text-text-2 transition-colors hover:bg-elevated hover:text-text cursor-pointer"
+          >
+            <Copy size={13} strokeWidth={2} />
           </button>
         </div>
       ) : (

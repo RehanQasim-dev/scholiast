@@ -10,14 +10,12 @@
 pub mod blackframe;
 #[cfg(target_os = "linux")]
 pub mod linux_webkit;
-#[cfg(target_os = "linux")]
 pub mod persist;
 
 use scholiast_core::error::{Reply, ScholiastError};
 use serde::{Deserialize, Serialize};
 use tauri::{AppHandle, Manager};
 
-#[cfg(target_os = "linux")]
 use crate::store::internal;
 
 /// Crop rectangle in device pixels relative to the webview origin.
@@ -43,19 +41,10 @@ pub struct CaptureOut {
     pub url_hash: String,
 }
 
-#[cfg(not(target_os = "linux"))]
-fn unsupported() -> ScholiastError {
-    ScholiastError::Internal(
-        "frame capture is not implemented on this platform (Linux WebKitGTK only)".into(),
-    )
-}
-
-#[cfg(target_os = "linux")]
 const MAX_CAPTURE_WIDTH: u32 = 1280;
 
 /// Crops `rect` out of `img`, clamping out-of-bounds edges; errors when the
 /// intersection is empty.
-#[cfg(target_os = "linux")]
 pub(crate) fn crop_rect(
     img: &image::RgbaImage,
     rect: &CaptureRect,
@@ -83,7 +72,6 @@ pub(crate) fn crop_rect(
 
 /// Downscale to at most [`MAX_CAPTURE_WIDTH`] device-independent output width,
 /// then encode q80 JPEG into memory. Returns `(jpeg bytes, out_w, out_h)`.
-#[cfg(target_os = "linux")]
 pub(crate) fn encode_jpeg_q80(img: image::RgbaImage) -> Result<(Vec<u8>, u32, u32), String> {
     use image::codecs::jpeg::JpegEncoder;
     let (w, h) = (img.width(), img.height());
@@ -104,7 +92,38 @@ pub(crate) fn encode_jpeg_q80(img: image::RgbaImage) -> Result<(Vec<u8>, u32, u3
     Ok((out, scaled.width(), scaled.height()))
 }
 
-#[cfg(target_os = "linux")]
+async fn fetch_youtube_frame(video_id: &str) -> Result<image::RgbaImage, ScholiastError> {
+    let client = reqwest::Client::builder()
+        .timeout(std::time::Duration::from_secs(8))
+        .build()
+        .map_err(|e| ScholiastError::Internal(e.to_string()))?;
+
+    // Try maxresdefault first (1280x720)
+    let maxres_url = format!("https://img.youtube.com/vi/{video_id}/maxresdefault.jpg");
+    let mut bytes = match client.get(&maxres_url).send().await {
+        Ok(resp) if resp.status().is_success() => resp.bytes().await.ok(),
+        _ => None,
+    };
+
+    // Fallback to hqdefault (480x360)
+    if bytes.is_none() {
+        let hq_url = format!("https://img.youtube.com/vi/{video_id}/hqdefault.jpg");
+        if let Ok(resp) = client.get(&hq_url).send().await {
+            if resp.status().is_success() {
+                bytes = resp.bytes().await.ok();
+            }
+        }
+    }
+
+    let raw = bytes.ok_or_else(|| {
+        ScholiastError::Internal("failed to fetch frame snapshot from video source".into())
+    })?;
+
+    let decoded = image::load_from_memory(&raw)
+        .map_err(|e| ScholiastError::Internal(format!("failed to decode video frame: {e}")))?;
+    Ok(decoded.to_rgba8())
+}
+
 #[tauri::command]
 pub async fn capture_frame(
     app: AppHandle,
@@ -114,25 +133,48 @@ pub async fn capture_frame(
     let url_hash =
         scholiast_core::normalize::url_hash(&scholiast_core::normalize::normalize_url(&url));
 
-    // GTK draws must happen on the main thread; the harvest blocks on a
-    // channel there, so keep it off the async runtime workers.
-    let snap_app = app.clone();
-    let snapshot = tauri::async_runtime::spawn_blocking(move || {
-        linux_webkit::snapshot_current_webview(&snap_app)
-    })
-    .await
-    .map_err(internal)?
-    .map_err(internal)?;
+    #[cfg(target_os = "linux")]
+    let captured_img: Option<image::RgbaImage> = {
+        let snap_app = app.clone();
+        let snapshot_res = tauri::async_runtime::spawn_blocking(move || {
+            linux_webkit::snapshot_current_webview(&snap_app)
+        })
+        .await;
 
-    let cropped = crop_rect(&snapshot, &rect).map_err(ScholiastError::InvalidInput)?;
-    let (cw, ch) = (cropped.width(), cropped.height());
-    if blackframe::is_black_frame(cropped.as_raw(), cw, ch) {
-        return Err(ScholiastError::InvalidInput(
-            "black frame: the captured region has no visible content".into(),
-        ));
-    }
+        match snapshot_res {
+            Ok(Ok(snapshot)) => {
+                if let Ok(cropped) = crop_rect(&snapshot, &rect) {
+                    let (cw, ch) = (cropped.width(), cropped.height());
+                    if !blackframe::is_black_frame(cropped.as_raw(), cw, ch) {
+                        Some(cropped)
+                    } else {
+                        None
+                    }
+                } else {
+                    None
+                }
+            }
+            _ => None,
+        }
+    };
 
-    let (jpeg, out_w, out_h) = encode_jpeg_q80(cropped).map_err(internal)?;
+    #[cfg(not(target_os = "linux"))]
+    let captured_img: Option<image::RgbaImage> = None;
+
+    let final_img = match captured_img {
+        Some(img) => img,
+        None => {
+            if let Some(video_id) = scholiast_core::normalize::extract_video_id(&url) {
+                fetch_youtube_frame(&video_id).await?
+            } else {
+                return Err(ScholiastError::Internal(
+                    "frame capture is unavailable for this content".into(),
+                ));
+            }
+        }
+    };
+
+    let (jpeg, out_w, out_h) = encode_jpeg_q80(final_img).map_err(internal)?;
 
     let tmp_dir = app
         .path()
@@ -153,17 +195,6 @@ pub async fn capture_frame(
         h: out_h,
         url_hash,
     }))
-}
-
-#[cfg(not(target_os = "linux"))]
-#[tauri::command]
-pub async fn capture_frame(
-    _app: AppHandle,
-    _url: String,
-    _rect: CaptureRect,
-) -> Result<Reply<CaptureOut>, ScholiastError> {
-    let _ = (_rect.x, _rect.y, _rect.w, _rect.h);
-    Err(unsupported())
 }
 
 /// Deletes a temp capture file. Only paths inside the app's own `tmp/`
@@ -189,7 +220,6 @@ pub async fn cleanup_capture(app: AppHandle, path: String) -> Result<bool, Strin
 }
 
 /// Convenience for tests + temp filenames: unix millis.
-#[cfg(target_os = "linux")]
 pub(crate) fn now_stamp() -> u128 {
     std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)

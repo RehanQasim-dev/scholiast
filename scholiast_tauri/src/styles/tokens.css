@@ -28,8 +28,8 @@
   --sc-accent-hover: #085041;
   --sc-accent-press: #04342C;
   --sc-accent-focus: #1D9E75;
-  --sc-accent-disabled: #9FE1CB;
-  --sc-accent-disabled-text: #E1F5EE;
+  --sc-accent-disabled: #094738;
+  --sc-accent-disabled-text: rgba(255, 255, 255, 0.65);
   --sc-accent-subtle: rgba(15, 110, 86, 0.14);
   --sc-accent-timestamp: #1D9E75;
   --sc-accent-text: #FFFFFF;
@@ -41,8 +41,8 @@
   --sc-emerald-hover: #085041;
   --sc-emerald-press: #04342C;
   --sc-emerald-focus: #1D9E75;
-  --sc-emerald-disabled: #9FE1CB;
-  --sc-emerald-disabled-text: #E1F5EE;
+  --sc-emerald-disabled: #094738;
+  --sc-emerald-disabled-text: rgba(255, 255, 255, 0.65);
   --sc-rose: #f43f5e;
   --sc-hl-yellow: #d29600;
   --sc-hl-red: #dc3c5a;
@@ -197,9 +197,10 @@
   .btn-emerald:disabled {
     background: var(--sc-accent-disabled) !important;
     color: var(--sc-accent-disabled-text) !important;
+    border: 1px solid rgba(15, 110, 86, 0.25) !important;
     cursor: not-allowed;
     transform: none;
-    opacity: 1 !important;
+    opacity: 0.85 !important;
   }
 
   /* Any button with bg-accent inherits this preferred emerald palette & behavior */
@@ -232,9 +233,10 @@
   [role="button"].bg-accent:disabled {
     background-color: var(--sc-accent-disabled) !important;
     color: var(--sc-accent-disabled-text) !important;
+    border: 1px solid rgba(15, 110, 86, 0.25) !important;
     cursor: not-allowed;
     transform: none;
-    opacity: 1 !important;
+    opacity: 0.85 !important;
   }
 
   .sc-speed-sheet {

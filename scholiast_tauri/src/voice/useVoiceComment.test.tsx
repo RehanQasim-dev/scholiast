@@ -161,6 +161,30 @@ describe("useVoiceComment", () => {
     expect(invokeMock).not.toHaveBeenCalledWith("stt_transcribe", expect.anything());
   });
 
+  test("online with an installed local model and no cloud keys stays enabled and routes stt_local_transcribe", async () => {
+    setOnline(true);
+    groqConfigured = false;
+    geminiConfigured = false;
+    localModels = [{ id: "tiny_en", installed: true }];
+    const { result } = renderHook(() => useVoiceComment({ kind: "add" }));
+
+    await waitFor(() => expect(result.current.disabledReason).toBeNull());
+
+    stopQueue.push({ path: "/voice/s_local_online.wav", reason: "user" });
+    let text = "";
+    await act(async () => {
+      text = await result.current.stop();
+    });
+
+    expect(text).toBe("local draft");
+    expect(invokeMock).toHaveBeenCalledWith("stt_local_transcribe", {
+      wavPath: "/voice/s_local_online.wav",
+      language: "en",
+      modelPath: null,
+    });
+    expect(invokeMock).not.toHaveBeenCalledWith("stt_transcribe", expect.anything());
+  });
+
   test("offline without a local model dims the mic with 'Needs internet'", async () => {
     setOnline(false);
     const { result } = renderHook(() => useVoiceComment({ kind: "add" }));

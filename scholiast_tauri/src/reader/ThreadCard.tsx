@@ -153,7 +153,7 @@ export default function ThreadCard({
           onClick={onSelect}
           aria-expanded={active}
           data-testid="thread-quote"
-          className="block w-full cursor-pointer border-0 border-l-4 px-3 py-2.5 text-left"
+          className="block w-full cursor-pointer border-0 border-l-4 px-2.5 py-1.5 text-left"
           style={{
             borderLeftColor: token,
             backgroundColor: COLOR_BG_TOKENS[color] || "rgba(255, 255, 255, 0.06)",
@@ -204,7 +204,7 @@ export default function ThreadCard({
               {comments.map((comment) => (
                 <li
                   key={comment.id}
-                  className="group/comment border-b border-hairline px-3 py-2 last:border-b-0"
+                  className="group/comment border-b border-hairline px-2.5 py-1.5 last:border-b-0"
                 >
                   {editingId === comment.id ? (
                     <div>

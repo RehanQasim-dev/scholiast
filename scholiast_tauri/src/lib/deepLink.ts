@@ -11,7 +11,7 @@ const HTTP_URL_RE = /https?:\/\/[^\s"'<>]+/gi;
  * - plain text containing the first http(s) URL (ACTION_SEND extraText)
  * YouTube URLs open the player; anything else is ignored.
  */
-function routeForSharedText(raw: string): string | null {
+export function routeForSharedText(raw: string): string | null {
   let candidate = raw.trim();
   try {
     const parsed = new URL(candidate);
