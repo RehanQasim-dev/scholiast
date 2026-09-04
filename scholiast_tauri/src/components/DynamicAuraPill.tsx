@@ -153,7 +153,7 @@ export default function DynamicAuraPill({ onSave, onCancel }: DynamicAuraPillPro
               <span
                 key={i}
                 style={{ height: `${height}px` }}
-                className="w-1 rounded-full bg-accent transition-all duration-75 shadow-[0_0_8px_rgba(47,158,98,0.6)]"
+                className="w-1 rounded-full bg-accent transition-all duration-75 shadow-[0_0_8px_rgba(15,110,86,0.6)]"
               />
             ))}
           </div>

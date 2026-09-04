@@ -23,29 +23,38 @@
   --sc-text-2: #a1a1aa;
   --sc-text-3: #71717a;
 
-  /* Restrained, high-craft Emerald accent system */
-  --sc-accent: #10b981;
-  --sc-accent-press: #059669;
-  --sc-accent-subtle: rgba(16, 185, 129, 0.12);
-  --sc-accent-timestamp: #34d399;
-  --sc-accent-text: #ffffff;
-  --sc-accent-contrast: #ffffff;
+  /* Preferred Emerald Accent & Interactive Token System */
+  --sc-accent: #0F6E56;
+  --sc-accent-hover: #085041;
+  --sc-accent-press: #04342C;
+  --sc-accent-focus: #1D9E75;
+  --sc-accent-disabled: #9FE1CB;
+  --sc-accent-disabled-text: #E1F5EE;
+  --sc-accent-subtle: rgba(15, 110, 86, 0.14);
+  --sc-accent-timestamp: #1D9E75;
+  --sc-accent-text: #FFFFFF;
+  --sc-accent-contrast: #FFFFFF;
 
   /* Status and highlight tokens */
   --sc-amber: #f59e0b;
-  --sc-emerald: #10b981;
+  --sc-emerald: #0F6E56;
+  --sc-emerald-hover: #085041;
+  --sc-emerald-press: #04342C;
+  --sc-emerald-focus: #1D9E75;
+  --sc-emerald-disabled: #9FE1CB;
+  --sc-emerald-disabled-text: #E1F5EE;
   --sc-rose: #f43f5e;
   --sc-hl-yellow: #d29600;
   --sc-hl-red: #dc3c5a;
-  --sc-hl-green: #10b981;
+  --sc-hl-green: #0F6E56;
   --sc-hl-yellow-fill: rgba(210, 150, 0, 0.45);
   --sc-hl-red-fill: rgba(220, 60, 90, 0.45);
-  --sc-hl-green-fill: rgba(16, 185, 129, 0.45);
+  --sc-hl-green-fill: rgba(15, 110, 86, 0.45);
   --sc-hl-yellow-tint: rgba(210, 150, 0, 0.09);
   --sc-hl-red-tint: rgba(220, 60, 90, 0.07);
-  --sc-hl-green-tint: rgba(16, 185, 129, 0.09);
+  --sc-hl-green-tint: rgba(15, 110, 86, 0.12);
   --sc-danger: #f0526f;
-  --sc-success: #10b981;
+  --sc-success: #0F6E56;
 
   /* Geometry & rhythm */
   --sc-radius-sm: 8px;
@@ -79,7 +88,11 @@
   --color-text-2: var(--sc-text-2);
   --color-text-3: var(--sc-text-3);
   --color-accent: var(--sc-accent);
+  --color-accent-hover: var(--sc-accent-hover);
   --color-accent-press: var(--sc-accent-press);
+  --color-accent-focus: var(--sc-accent-focus);
+  --color-accent-disabled: var(--sc-accent-disabled);
+  --color-accent-text: var(--sc-accent-text);
   --color-hl-yellow: var(--sc-hl-yellow);
   --color-hl-red: var(--sc-hl-red);
   --color-hl-green: var(--sc-hl-green);
@@ -125,7 +138,7 @@
 
   /* Accessible, visible keyboard focus */
   :focus-visible {
-    outline: 2px solid var(--sc-accent);
+    outline: 2px solid var(--sc-accent-focus);
     outline-offset: 2px;
   }
 
@@ -134,9 +147,9 @@
   a,
   [role="button"] {
     transition:
-      transform var(--sc-dur-fast) var(--sc-ease-out),
+      background-color 0.15s ease,
+      transform 0.08s ease,
       opacity var(--sc-dur-fast) ease-out,
-      background-color var(--sc-dur-fast) ease-out,
       border-color var(--sc-dur-fast) ease-out,
       color var(--sc-dur-fast) ease-out;
   }
@@ -144,8 +157,84 @@
   button:active,
   a:active,
   [role="button"]:active {
-    transform: scale(0.97);
-    opacity: 0.92;
+    transform: scale(0.96);
+  }
+
+  /* Preferred Emerald Button (.btn-emerald) */
+  .btn-emerald,
+  button.btn-emerald {
+    background: var(--sc-accent);
+    color: var(--sc-accent-text);
+    font-family: inherit;
+    font-size: 15px;
+    font-weight: 500;
+    padding: 11px 22px;
+    border: none;
+    border-radius: var(--sc-radius-sm);
+    cursor: pointer;
+    transition: background-color 0.15s ease, transform 0.08s ease;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 8px;
+    line-height: 1.25;
+  }
+
+  .btn-emerald:hover:not(:disabled) {
+    background: var(--sc-accent-hover);
+  }
+
+  .btn-emerald:active:not(:disabled) {
+    background: var(--sc-accent-press);
+    transform: scale(0.96);
+  }
+
+  .btn-emerald:focus-visible {
+    outline: 2px solid var(--sc-accent-focus);
+    outline-offset: 2px;
+  }
+
+  .btn-emerald:disabled {
+    background: var(--sc-accent-disabled) !important;
+    color: var(--sc-accent-disabled-text) !important;
+    cursor: not-allowed;
+    transform: none;
+    opacity: 1 !important;
+  }
+
+  /* Any button with bg-accent inherits this preferred emerald palette & behavior */
+  button.bg-accent,
+  [role="button"].bg-accent {
+    background-color: var(--sc-accent);
+    color: var(--sc-accent-text);
+  }
+
+  button.bg-accent:hover:not(:disabled),
+  [role="button"].bg-accent:hover:not(:disabled) {
+    background-color: var(--sc-accent-hover);
+    opacity: 1;
+  }
+
+  button.bg-accent:active:not(:disabled),
+  [role="button"].bg-accent:active:not(:disabled) {
+    background-color: var(--sc-accent-press);
+    transform: scale(0.96);
+    opacity: 1;
+  }
+
+  button.bg-accent:focus-visible,
+  [role="button"].bg-accent:focus-visible {
+    outline: 2px solid var(--sc-accent-focus);
+    outline-offset: 2px;
+  }
+
+  button.bg-accent:disabled,
+  [role="button"].bg-accent:disabled {
+    background-color: var(--sc-accent-disabled) !important;
+    color: var(--sc-accent-disabled-text) !important;
+    cursor: not-allowed;
+    transform: none;
+    opacity: 1 !important;
   }
 
   .sc-speed-sheet {

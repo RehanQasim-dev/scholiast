@@ -240,7 +240,7 @@ export default function DiagramDraw() {
             appState: {
               viewBackgroundColor: "#090b0d",
               theme: "dark",
-              currentItemStrokeColor: "#10b981",
+              currentItemStrokeColor: "#0F6E56",
             },
           }}
           onChange={handleChange}
