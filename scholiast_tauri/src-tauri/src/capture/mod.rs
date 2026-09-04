@@ -44,7 +44,10 @@ pub struct CaptureOut {
 const MAX_CAPTURE_WIDTH: u32 = 1280;
 
 /// Crops `rect` out of `img`, clamping out-of-bounds edges; errors when the
-/// intersection is empty.
+/// intersection is empty. Linux-only: the WebKitGTK snapshot path is the sole
+/// caller (Android falls back to the YouTube thumbnail, where `rect` has no
+/// meaning).
+#[cfg(target_os = "linux")]
 pub(crate) fn crop_rect(
     img: &image::RgbaImage,
     rect: &CaptureRect,
@@ -130,6 +133,12 @@ pub async fn capture_frame(
     url: String,
     rect: CaptureRect,
 ) -> Result<Reply<CaptureOut>, ScholiastError> {
+    // `rect` is webview-device pixels: meaningful only for the Linux WebKitGTK
+    // snapshot crop below. On other platforms the YouTube-thumbnail fallback
+    // ignores it — read the fields explicitly so `unused`/`dead_code = "deny"`
+    // stays satisfied without any `#[allow]`.
+    #[cfg(not(target_os = "linux"))]
+    let _ = (rect.x, rect.y, rect.w, rect.h);
     let url_hash =
         scholiast_core::normalize::url_hash(&scholiast_core::normalize::normalize_url(&url));
 

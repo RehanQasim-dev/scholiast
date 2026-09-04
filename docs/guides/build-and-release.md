@@ -102,3 +102,45 @@ npx tsc --noEmit  # typecheck
 sudo apt install ./scholiast_tauri/src-tauri/target/release/bundle/deb/*.deb  # test install
 adb install scholiast_tauri/src-tauri/gen/android/app/build/outputs/apk/release/app-arm64-v8a-release.apk
 ```
+
+## Pre-CI Local Gates (mandatory before push / release)
+
+Why: the release workflow takes 20–25 min, and a host-only `cargo check`
+compiles the **Linux `cfg` only** — Android-only breakage (e.g. a
+`#[cfg(target_os = "linux")]` gate on code that Android now compiles, or a
+param that is used on Linux but unused on Android tripping the workspace
+`unused = "deny"` lint) passes locally and fails 9+ min into CI. These gates
+take seconds-to-~2 min cached and catch that class of failure. CI enforces the
+same via the `quick-gates` job, which fails fast before the build jobs start.
+
+One-time setup (Linux):
+```bash
+rustup target add aarch64-linux-android armv7-linux-androideabi x86_64-linux-android x86_64-unknown-linux-gnu
+# Android SDK + NDK 28.2.13676358 at $HOME/Android/Sdk (see Prerequisites above)
+```
+
+Run from `scholiast_tauri/` before every push that touches Rust or TypeScript:
+```bash
+cargo check   # host (Linux cfg): types + unused/dead_code deny, ~3s cached
+pnpm typecheck # tsc --noEmit, mirrors CI's "Verify frontend build" step
+
+# Android-cfg coverage (the gate that catches cross-platform cfg breakage).
+# NDK clang wrappers are required even for `check` (ring/sqlite build scripts).
+export ANDROID_HOME=$HOME/Android/Sdk
+export NDK_HOME=$HOME/Android/Sdk/ndk/28.2.13676358
+export CC_aarch64_linux_android=$NDK_HOME/toolchains/llvm/prebuilt/linux-x86_64/bin/aarch64-linux-android21-clang
+export CC_armv7_linux_androideabi=$NDK_HOME/toolchains/llvm/prebuilt/linux-x86_64/bin/armv7a-linux-androideabi21-clang
+export CC_x86_64_linux_android=$NDK_HOME/toolchains/llvm/prebuilt/linux-x86_64/bin/x86_64-linux-android21-clang
+cargo check --manifest-path src-tauri/Cargo.toml --target aarch64-linux-android
+cargo check --manifest-path src-tauri/Cargo.toml --target armv7-linux-androideabi
+cargo check --manifest-path src-tauri/Cargo.toml --target x86_64-linux-android
+```
+
+Notes:
+- First run per target compiles fresh deps (~1 min each); after that each
+  check is a few seconds.
+- Prefer `cfg`-gated code over `#[allow(unused)]`/`dead_code` when silencing a
+  platform-only warning (e.g. `#[cfg(not(target_os = "linux"))] let _ =
+  (rect.x, rect.y, rect.w, rect.h);`), per `scholiast_tauri/AGENTS.md`.
+- Full test suites (`cargo test`, `pnpm vitest run`) stay opt-in per the
+  no-casual-tests rule — run only targeted tests for the change at hand.

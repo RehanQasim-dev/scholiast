@@ -26,7 +26,59 @@ permissions:
   contents: write
 
 jobs:
+  # Fast-fail gate (~2-4 min): typecheck + cargo check on host AND all Android
+  # targets. A host-only check compiles the Linux cfg alone and misses
+  # Android-only breakage (stale #[cfg(target_os = "linux")] gates, params
+  # unused on non-Linux tripping `unused = "deny"`), which otherwise surfaces
+  # 9-25 min into the build jobs. Both build jobs wait on this.
+  quick-gates:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v5
+
+      - name: Setup Node
+        uses: actions/setup-node@v5
+        with:
+          node-version: 22
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v5
+        with:
+          version: 11
+
+      - name: Setup Rust (host + Android targets)
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: x86_64-unknown-linux-gnu,aarch64-linux-android,armv7-linux-androideabi,x86_64-linux-android
+
+      - name: Setup Android SDK
+        uses: android-actions/setup-android@v4
+
+      - name: Install NDK 28.2.13676358
+        run: sdkmanager "ndk;28.2.13676358" "platforms;android-36" "build-tools;36.0.0"
+
+      - name: Install frontend deps
+        working-directory: scholiast_tauri
+        run: pnpm install --frozen-lockfile
+
+      - name: Typecheck frontend
+        working-directory: scholiast_tauri
+        run: pnpm typecheck
+
+      - name: Cargo check (host + 3 Android targets)
+        working-directory: scholiast_tauri
+        run: |
+          NDK_HOME="${ANDROID_HOME}/ndk/28.2.13676358"
+          export CC_aarch64_linux_android="$NDK_HOME/toolchains/llvm/prebuilt/linux-x86_64/bin/aarch64-linux-android21-clang"
+          export CC_armv7_linux_androideabi="$NDK_HOME/toolchains/llvm/prebuilt/linux-x86_64/bin/armv7a-linux-androideabi21-clang"
+          export CC_x86_64_linux_android="$NDK_HOME/toolchains/llvm/prebuilt/linux-x86_64/bin/x86_64-linux-android21-clang"
+          cargo check --manifest-path src-tauri/Cargo.toml
+          cargo check --manifest-path src-tauri/Cargo.toml --target aarch64-linux-android
+          cargo check --manifest-path src-tauri/Cargo.toml --target armv7-linux-androideabi
+          cargo check --manifest-path src-tauri/Cargo.toml --target x86_64-linux-android
+
   build-deb:
+    needs: [quick-gates]
     runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@v5
@@ -81,6 +133,7 @@ jobs:
           if-no-files-found: error
 
   build-android:
+    needs: [quick-gates]
     runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@v5

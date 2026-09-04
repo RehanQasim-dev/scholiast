@@ -6,6 +6,7 @@ This file is the high-level router for agents working in this repository. Detail
 
 ## Hard Rules for Agents
 - **Do not run tests without a reason**: Never run test suites (`cargo test`, `vitest`, `npm test`, etc.) casually or without an explicit reason or necessity. Running test suites takes significant time and resources. Only run minimal, targeted tests when specifically verifying changes that require testing.
+- **Run the Pre-CI local gates before push**: After any Rust/TypeScript change, run the mandatory low-cost gates in [`docs/guides/build-and-release.md`](docs/guides/build-and-release.md) (§ Pre-CI Local Gates): host `cargo check` + `cargo check` for all 3 Android targets + `pnpm typecheck`. Host-only checks miss Android-`cfg` breakage that fails CI 9–25 min in.
 - **Consult Domain Glossary**: Always use the canonical terms defined in `CONTEXT.md`.
 - **Progressive Disclosure**: Consult the relevant subsystem doc in `docs/architecture/` on demand rather than loading the entire documentation tree.
 

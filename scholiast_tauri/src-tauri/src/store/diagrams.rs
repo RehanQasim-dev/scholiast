@@ -1,14 +1,10 @@
-#[cfg(target_os = "linux")]
 use scholiast_core::error::ScholiastError;
-#[cfg(target_os = "linux")]
 use serde::{Deserialize, Serialize};
 
-#[cfg(target_os = "linux")]
 use super::{dberr, Store};
 
 /// Contract for the `diagrams` table (Excalidraw scenes; image bytes live on
 /// disk at `png_path`, never in JSON).
-#[cfg(target_os = "linux")]
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct DiagramRow {
     pub id: String,
@@ -21,12 +17,10 @@ pub struct DiagramRow {
 }
 
 /// Contract for the `diagrams` table.
-#[cfg(target_os = "linux")]
 pub trait DiagramsRepo {
     async fn upsert_diagram(&self, diagram: &DiagramRow) -> Result<(), ScholiastError>;
 }
 
-#[cfg(target_os = "linux")]
 impl DiagramsRepo for Store<'_> {
     async fn upsert_diagram(&self, diagram: &DiagramRow) -> Result<(), ScholiastError> {
         sqlx::query(

@@ -37,7 +37,7 @@ Feature screens live under `src/routes/`, `src/player/`, `src/reader/`, `src/fra
 | `pnpm lint` | ESLint |
 | `pnpm typecheck` | `tsc --noEmit` (strict) |
 | `pnpm vitest run` | Frontend tests |
-| `cargo check` | Rust type-check + `unused`/`dead_code` deny (low-cost, no codegen — **always run after Rust changes and fix before commit**) |
+| `cargo check` | Rust type-check + `unused`/`dead_code` deny (low-cost, no codegen — **always run after Rust changes and fix before commit**). Host check alone compiles the Linux `cfg` only: also run the 3 Android-target checks in `../docs/guides/build-and-release.md` (§ Pre-CI Local Gates) |
 | `cargo clippy -- -D warnings` | Rust lint gate (workspace root, pedantic = warn) |
 | `cargo test` | Rust tests (workspace root) |
 | `pnpm tauri build --debug` | Bundle (deb target on Linux) |
