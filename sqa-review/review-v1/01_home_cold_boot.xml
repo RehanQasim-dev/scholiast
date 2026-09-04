@@ -1,0 +1,17 @@
+<?xml version='1.0' encoding='UTF-8'?>
+<hierarchy display="2" rotation="0" width="1080" height="1920" windows="1">
+<window id="47" type="1" layer="0" title="Scholiast" focused="true" active="true" hasRoot="true">
+<node index="0" text="" hint="" content-desc="" resource-id="" class="android.widget.FrameLayout" package="app.scholiast.app" pane-title="" tooltip="" checkable="false" checked="false" clickable="false" enabled="true" focusable="false" focused="false" scrollable="false" long-clickable="false" password="false" selected="false" bounds="[0,0][1080,1920]">
+<node index="0" text="" hint="" content-desc="" resource-id="" class="android.widget.LinearLayout" package="app.scholiast.app" pane-title="" tooltip="" checkable="false" checked="false" clickable="false" enabled="true" focusable="false" focused="false" scrollable="false" long-clickable="false" password="false" selected="false" bounds="[0,0][1080,1920]">
+<node index="0" text="" hint="" content-desc="" resource-id="" class="android.widget.FrameLayout" package="app.scholiast.app" pane-title="" tooltip="" checkable="false" checked="false" clickable="false" enabled="true" focusable="false" focused="false" scrollable="false" long-clickable="false" password="false" selected="false" bounds="[0,0][1080,1920]">
+<node index="0" text="" hint="" content-desc="" resource-id="" class="android.widget.LinearLayout" package="app.scholiast.app" pane-title="" tooltip="" checkable="false" checked="false" clickable="false" enabled="true" focusable="false" focused="false" scrollable="false" long-clickable="false" password="false" selected="false" bounds="[0,0][1080,1920]">
+<node index="0" text="" hint="" content-desc="" resource-id="" class="android.widget.FrameLayout" package="app.scholiast.app" pane-title="" tooltip="" checkable="false" checked="false" clickable="false" enabled="true" focusable="false" focused="false" scrollable="false" long-clickable="false" password="false" selected="false" bounds="[0,0][1080,1920]">
+<node index="0" text="" hint="" content-desc="" resource-id="" class="android.webkit.WebView" package="app.scholiast.app" pane-title="" tooltip="" checkable="false" checked="false" clickable="true" enabled="true" focusable="true" focused="false" scrollable="false" long-clickable="false" password="false" selected="false" bounds="[0,0][1080,1920]">
+</node>
+</node>
+</node>
+</node>
+</node>
+</node>
+</window>
+</hierarchy>

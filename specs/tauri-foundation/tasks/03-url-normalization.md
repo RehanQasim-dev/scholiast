@@ -1,0 +1,57 @@
+# 03: URL Normalization & Video ID Extraction
+
+**What to build:** URL Normalization & Video ID Extraction
+
+**Blocked by:** 02
+
+**Status:** completed
+
+- [x] core::normalize implements canonical URL hashing and video ID extraction (Invariant 1)
+
+## Scope & Implementation Notes
+# Task 03: URL Normalization & ID Generation
+
+Status: DONE
+Wave: 1
+Depends on: task-02
+
+## Scope & Owned Files
+- `scholiast_tauri/crates/core/src/normalize.rs`
+  - `normalize_url(&str) -> String` — strip fragment; drop `utm_*`, `fbclid`, `_ga`; YouTube-specific `t`/`start` stripping; keep order-stable query encoding identical to the TS/Kotlin ports.
+  - `url_hash(&str) -> String` — SHA-256 prefix, same length scheme as repo (`pageFileName` compat).
+  - `extract_video_id(&str) -> Option<String>` — watch?v=, youtu.be/, shorts/, live/.
+  - `page_file_name(hash) -> String` → `pages/page-<hash>.json`.
+  - `gen_video_id() -> String` — base36 ms timestamp + random suffix, matching `genVideoId`.
+
+## Reference sources (read before porting)
+- Extension: `../src/utils/highlighter.ts` (normalizeUrl), `shared/merge.ts` (pageFileName)
+- Kotlin port: `../android/app/src/main/java/com/scholiast/android/data/normalize/`
+
+## Acceptance Criteria
+- Unit tests ported from the Dart port (`normalize_test.dart`) — all vectors pass byte-for-byte.
+- Property test: normalize is idempotent; hash is stable.
+
+## Notes
+This module feeds Drive file naming and every FK — correctness here is data integrity.
+
+
+## Execution History & Log
+# LOG — task-03-url-normalization
+
+## [2026-08-23 20:43] t03-agent (claude)
+- **What I learned:**
+  - Canonical spec = `shared/url.ts` (20 EPHEMERAL_PARAMS) + `shared/merge.ts:371 pageFileName` (SHA-256, first 16 bytes, lowercase hex). Kotlin `Normalize.kt` is the behavioral reference for parser edges; Dart `scholiast_flutter/test/core/normalize_test.dart` is the vector authority.
+  - TS `genVideoId()` (`src/utils/video/video-storage.ts:114`) = `Date.now().toString(36) + Math.random().toString(36).slice(2,7)` → base36-ms + exactly 5 base36 chars.
+  - core crate has NO dependencies and file ownership forbids touching Cargo.toml → hand-rolled FIPS 180-4 SHA-256 (~70 lines) inside normalize.rs; validated byte-for-byte by the 18 TS hash fixtures. Randomness via `/dev/urandom`, sha256-of-nanos fallback for platforms without it.
+  - RFC 3986 §5.2.4 rule C gotcha: consuming a `/../` prefix must REPLACE it with `/` in the input buffer (`/../c` → `/c`), not strip it bare. My first cut also had an off-by-one moving segments WITH their trailing slash instead of leading slash (`i+2` vs `i+1` on the relative index) — both bugs were caught by the ported `resolves_dot_segments` vector, not by inspection. Ported vectors earn their keep.
+- **Decisions made:**
+  - Query re-encode follows the Kotlin/Dart-pinned rule: decode then re-encode every byte except alnum + `*-. _` (space→`+`, uppercase hex), original order kept, empty pairs dropped, decoded-name matching against the ephemeral set (so `utm%5Fsource` strips). Known divergence from strict WHATWG URLSearchParams, which leaves chars like `'!~()` unencoded — inherited deliberately from the Kotlin port so all TS fixtures pass byte-for-byte; only exotic query chars differ.
+  - Parser gate mirrors `java.net.URI` per Normalize.kt's documented divergences: any non-printable-ASCII byte (space, control, non-ASCII) or structurally invalid URL returns the INPUT UNCHANGED (no WHATWG percent-encoding of raw spaces); scheme must be ALPHA *(ALNUM / + - .)* followed by `//authority`; null host → unchanged. IPv6 compression / IDN→punycode NOT performed (same as Android).
+  - API per task.md arrow spec: `page_file_name(hash: &str) -> String` returns the full Drive path `pages/page-<hash>.json` (Kotlin splits this into pageFileName/pageFilePath; callers here do `page_file_name(&url_hash(url))`).
+  - Public surface: `normalize_url(&str)->String`, `url_hash(&str)->String` (32 lowercase hex), `extract_video_id(&str)->Option<String>` (watch?v= anywhere-in-query, youtu.be/, shorts/, embed/, live/, exact hosts youtube.com/www/m), `page_file_name`, `gen_video_id()`. No lib.rs change needed — task-01 already declared the module.
+  - gen_video_id suffix = 5 chars from urandom bytes `%36` (negligible modulo bias, irrelevant for IDs); format identical to JS output shape (base36 ms + 5 base36 chars).
+- **Open questions:**
+  - Combined `cargo test -p scholiast-core` currently aborts at sibling-owned `tests/golden_models.rs` (task-02): `video_item_full_round_trip` + `page_record_fixtures_round_trip_value_identically` fail; cargo fail-fast prevents later targets from running in the combined invocation. MY target is green via `cargo test -p scholiast-core --test normalize_test` (28/28). Integration task should re-run the full suite once task-02 lands.
+  - If strict-WHATWG parity on chars like `'` in queries ever matters (it doesn't for any pinned fixture), revisit form_encode's safe set.
+- **Progress:** normalize.rs fully implemented (parser, dot-segments, ephemeral filter, form-codec, SHA-256, video-id extraction, page_file_name, gen_video_id). tests/normalize_test.rs ports ALL 27 Dart test blocks (~110 assertions incl. the 18-hash TS fixture table and the 20-param loop) plus 1 added idempotency/stability property test over a 9-entry corpus. Gates: `cargo clippy -p scholiast-core --all-targets -- -D warnings` EXIT 0; `cargo test -p scholiast-core --test normalize_test` 28 passed / 0 failed (verified both standalone-scratch and in-workspace). task.md → DONE.
+

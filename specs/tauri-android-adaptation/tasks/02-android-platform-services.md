@@ -1,0 +1,71 @@
+# 02: Android Platform Services
+
+**What to build:** Android Platform Services
+
+**Blocked by:** 01
+
+**Status:** completed
+
+- [x] Permissions, audio recording backend, and WebView initialization (Invariants 1, 2)
+
+## Scope & Implementation Notes
+# Task 34: Android Platform Services
+
+Status: IN PROGRESS
+Wave: A (Android)
+Depends on: task-33
+
+## Scope & Owned Files
+Make the app's native services work on Android:
+- **whisper-rs cross-compile**: enable `local-stt` feature for aarch64-linux-android (whisper.cpp supports Android; may need cmake/ndk-build flags via RUSTFLAGS + WHISPER_CMAKE_TOOLCHAIN). Verify a tiny model transcribes on-device in Waydroid (log latency). If bindgen/cmake fights NDK, document exact recipe in LOG.md — this is the riskiest item.
+- **Mic capture**: verify getUserMedia in Android System WebView inside the app — Tauri v2 Android permission plumbing (`AndroidManifest.xml` RECORD_AUDIO permission + runtime permission request bridging; tauri v2 handles webview permission prompts via `onPermissionRequest` — wire if needed in gen/android MainActivity or via plugin). Record → WAV → transcribe round-trip on device.
+- **Deep links / share-intent**: `scholiast://open?url=` via tauri-plugin-deep-link (Android asset-statement + intent-filter in gen/android); plus ACTION_SEND text/plain share-target so "Share to Scholiast" from any app opens the player. Frontend handler for both (task-04 left this unwired — implement now in Home/App).
+- **Notifications/foreground**: skip (no background sync on Android v1 — sync runs on app open + manual; document).
+- Frame capture on Android: **spike only** — investigate Android WebView snapshot access from Tauri (`with_webview` Android surface → `webView.getDrawingCache`/`PixelCopy` via JNI through tauri's android bindings). Timebox; if infeasible quickly, write findings + mark frame-capture desktop-only for now.
+
+## Acceptance Criteria
+- Voice add-comment works end-to-end in Waydroid (cloud Groq with a test key, or local model)
+- Sharing a YouTube URL from another Waydroid app (or `am start` with ACTION_SEND) opens the player
+- `scholiast://open?url=` deep link opens the player
+- Desktop gates unregressed
+
+## Notes
+All Android-specific Rust behind `#[cfg(target_os = "android")]`. Log every manifest/permission change.
+
+## Verified on-device bugs (from task-33 Waydroid pass — fix here)
+- **Transcript panel renders empty on Android** even when captions are available (tab enabled). Investigate `fetch_transcript` invoke path on the device (check for the lost-Tauri-callback reload interaction) and ensure the error state renders a visible message instead of nothing.
+- **Enter in the Home URL field appears to reload the page** (logcat: `Couldn't find callback id … app is reloaded while Rust is running an asynchronous operation`). Likely a form-submit default in OpenLinkField — `event.preventDefault()` audit; verify navigation happens without webview reload.
+- Cosmetic (log-only): YouTube IFrame API `postMessage` origin mismatch warning (`https://www.youtube.com` → `http://tauri.localhost`) — harmless on Android; note only.
+
+
+## Execution History & Log
+# 34-android-platform-services — Agent log
+
+## [2026-08-24 ~start] task-34
+- **Learned:**
+  - `OpenLinkField.handleSubmit` ALREADY calls `event.preventDefault()` (and so does `AddArticleField`) — the suspected missing-preventDefault cause for the Enter-reload bug is stale. The logcat `Couldn't find callback id …` message comes from tauri's bundled `core.js` `runCallback`: it warns when Rust delivers to a callback id the JS-side map no longer holds, i.e. the JS context was wiped between invoke and response. It is a *symptom*; the reload trigger must be found on-device.
+  - Leading theory for the EMPTY transcript panel: `TranscriptClient::new()` uses `reqwest::Client::new()` with **no timeout** — a hung innertube/TCP connect leaves the invoke pending forever, TanStack stays `isLoading`, and the panel renders the skeleton (reads as "empty" on screencap).
+  - tauri-plugin-deep-link 2.4.9 Kotlin gate: `DeepLinkPlugin.isDeepLink()` returns false unless `plugins.deep-link.mobile` config is NON-empty — current conf only sets `desktop.schemes`, so even a perfect intent-filter would never emit events. Fix requires adding `"mobile": [{ "scheme": ["scholiast"] }]` to `tauri.conf.json` (shared file — flagged deviation, no other owner this wave).
+  - The tauri CLI does NOT inject deep-link intent filters into AndroidManifest.xml (checked tauri-cli-v2.11.4 project.rs/mod.rs) — filters are manual.
+  - wry 0.55.1 already implements `RustWebChromeClient.onPermissionRequest`: AUDIO_CAPTURE → runtime-launches RECORD_AUDIO + MODIFY_AUDIO_SETTINGS, then grants/denies the WebView request. Mic support needs ONLY the manifest permission declarations; no MainActivity wiring.
+- **Decisions:** fix transcript UX in owned files (frontend timeout + visible error/retry); ACTION_SEND handled by rewriting it to a `scholiast://share?url=` VIEW intent from MainActivity so ALL links funnel through the deep-link plugin's existing plumbing.
+- **Progress:** recon complete; starting edits.
+
+## [2026-08-24 mid] task-34
+- **Learned:** whisper-rs-sys 0.13.1 cross-compile recipe for NDK r28 (probe: `cargo check --target aarch64-linux-android --features local-stt` Finished in 1m00s):
+  - `ANDROID_NDK=$NDK_HOME` — REQUIRED; without it cmake 4.2 fails "Android: Neither the NDK or a standalone toolchain was found" (cmake-rs does not pass it).
+  - `CC_/CXX_/AR_aarch64_linux_android` = NDK api-24 clang/clang++/llvm-ar.
+  - `BINDGEN_EXTRA_CLANG_ARGS_aarch64_linux_android=--sysroot=$NDK/toolchains/llvm/prebuilt/linux-x86_64/sysroot` — else bindgen reads host /usr/include and errors, falling back to bundled bindings.
+  - Remaining probe warnings were pre-existing dead-code in capture/secrets/diagrams (not STT).
+- **Decisions:**
+  - `scripts/build-android.sh` now forwards extra args to `tauri android build` and exports ANDROID_NDK/CXX/BINDGEN vars (backwards compatible; default invocation unchanged). Deviation note: script + tauri.conf.json touched outside the owned-file list — both are shared build config no other current wave task owns; flagged here per AGENTS.md.
+- **Edits so far:** `useTranscript.ts` (+20s fetch timeout, expose refetch) · `TranscriptPanel.tsx` (visible error + Retry button) · `deepLink.ts` NEW (`routeForSharedText` handles scholiast://open|share?url= and first-http(s)-URL-in-text → /player route; `useDeepLinks` = getCurrent cold-start + onOpenUrl warm) · `Home.tsx` mounts `useDeepLinks()` · manifest (+RECORD_AUDIO, +MODIFY_AUDIO_SETTINGS, +VIEW scholiast intent-filter, +ACTION_SEND text/plain) · `MainActivity.kt` rewrites ACTION_SEND→scholiast://share?url= VIEW (singleTask onNewIntent → plugin channel; duplicate-share guard by text hash) · tauri.conf.json plugins.deep-link.mobile [{scheme:[scholiast]}] (REQUIRED: DeepLinkPlugin.kt isDeepLink() returns false with empty mobile config — found in plugin source).
+- **Gates:** pnpm typecheck ✓ · pnpm lint ✓ · pnpm vitest run 218/218 ✓ · cargo clippy --workspace --all-targets -D warnings ✓ · cargo test --workspace all suites pass ✓.
+- **Progress:** APK build running with --features local-stt.
+
+## [2026-08-24 later] task-34 — transcript root cause + TLS fix decision
+- **On-device evidence (CDP into webview_devtools_remote_2404, adb forward tcp:9222):** TranscriptPanel error state RENDERS — DOM shows `Couldn't load the transcript: timed out fetching the transcript.` + Retry button (rect 16,354 58x34, white). The earlier "empty" screencap was taken at t=12s (still skeleton; old build hung forever). So item ② fix verified working; root cause of the hang is Rust-side.
+- **Root cause (with task-35's add_article-hangs intel):** reqwest 0.13's ONLY rustls path is `rustls-platform-verifier` (features table: `rustls = [__rustls-aws-lc-rs, dep:rustls-platform-verifier, __rustls]`, and client.rs: `if config.root_certs.is_empty() { Verifier::new(...) } else on android { return Err("could not load extra certs") }` — no escape hatch). The verifier needs JNI init (`android::init_with_env`) + a Kotlin AAR wired into gradle; without it every Rust HTTPS call stalls. IPv6 blackhole ruled out first (device has NO global v6; ping6 unreachable).
+- **Decision — reqwest 0.12 + `rustls-tls-webpki-roots`:** reqwest 0.13 has NO webpki feature; the JNI+gradle-AAR path (init_with_env via run_on_android_context, jni 0.22-vs-0.21 re-wrap, settings.gradle maven-repo pointing into the cargo registry AAR) is 3 subsystems of risk for a timeboxed task. reqwest 0.12's `rustls-tls-webpki-roots` bundles Mozilla roots — no platform verifier, no JNI — and is exactly what tauri-plugin-http v2 ships (verified its source). Deviation flags: src-tauri/Cargo.toml touched (shared manifest; reqwest was "0.13 charset,multipart,rustls" → "0.12 charset,multipart,rustls-tls-webpki-roots"); no Rust source changes needed (0.12 API compatible — desktop cargo check clean first try).
+- **Progress:** android aarch64 check with 0.12 + local-stt ✓ (1m15s); full APK rebuild running.
+

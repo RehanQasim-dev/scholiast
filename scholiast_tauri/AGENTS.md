@@ -1,8 +1,8 @@
 # AGENTS.md — scholiast_tauri
 
-Conventions and hard rules for every agent working in `scholiast_tauri/`. The plan
-(`../scholiast_tauri_app_plan.md`) is the authority; the task board (`../tauri-tasks/`)
-assigns work. Log per-task progress in your `tauri-tasks/<task>/LOG.md`.
+Conventions and hard rules for every agent working in `scholiast_tauri/`. The modular feature specifications
+(`../specs/tauri-*/` and shared specs `../specs/google-drive-sync/`, `../specs/portable-anchoring/`) are the authorities;
+the feature task boards (`../specs/<feature-slug>/tasks/`) track execution.
 
 ## Domain ownership — the No-Overlap Rule (plan §3.2, binding)
 

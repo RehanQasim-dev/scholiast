@@ -1,0 +1,30 @@
+Applications Memory Usage (in Kilobytes):
+Uptime: 35535256 Realtime: 56544209
+
+** MEMINFO in pid 3325 [app.scholiast.app] **
+                   Pss  Private  Private  SwapPss      Rss     Heap     Heap     Heap
+                 Total    Dirty    Clean    Dirty    Total     Size    Alloc     Free
+                ------   ------   ------   ------   ------   ------   ------   ------
+  Native Heap    40400    40316       16      153    41228    69696    61545     3716
+  Dalvik Heap    39556    39408      108      362    40144    57524    19175    38349
+ Dalvik Other     9055     3240        0       12    15120                           
+        Stack     3692     3692        0        0     3696                           
+    Other dev       31       12       16        0      344                           
+     .so mmap    19391      644     6680      139    63244                           
+    .jar mmap     9164        0     1488        0    45332                           
+    .apk mmap   149295     2380   143196        0   155056                           
+    .ttf mmap    11779        0    11512        0    12220                           
+    .dex mmap      265        4      112        0     1112                           
+    .oat mmap      303        0        4        0     2236                           
+    .art mmap    12415     8768     2408      375    24428                           
+   Other mmap    18965      672    14228        1    24280                           
+      Unknown   176190   176080       12       34   176656                           
+        TOTAL   491577   275216   179780     1076   605096   127220    80720    42065
+ 
+ App Summary
+                       Pss(KB)                        Rss(KB)
+                        ------                         ------
+           Java Heap:    50584                          64572
+         Native Heap:    40316                          41228
+                Code:   166060                         290820
+               Stack:     3692                           3696
