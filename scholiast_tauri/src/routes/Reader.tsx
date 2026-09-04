@@ -39,6 +39,13 @@ import {
   setPref,
 } from "../lib/store";
 import { useReaderKeyboard } from "../lib/useReaderKeyboard";
+import {
+  beginSheetDrag,
+  moveSheetDrag,
+  releaseSheetHeight,
+  snapSheet,
+  type SheetDrag,
+} from "./sheetSnap";
 import useIsNarrow from "../hooks/useIsNarrow";
 
 const MIN_FONT_STEP = -2;
@@ -89,8 +96,10 @@ export default function Reader() {
   }, [rawUrl, urlHash, setSearchParams]);
   const [drawerOpen, setDrawerOpen] = useState(false);
   const [annotationsOpen, setAnnotationsOpen] = useState(false);
-  type SheetState = "closed" | "peek" | "expanded";
+  type SheetState = "closed" | "peek" | "half" | "expanded";
   const [sheetState, setSheetState] = useState<SheetState>("closed");
+  /** Live sheet height (px) while a thumb drag is in flight; null when settled. */
+  const [dragHeight, setDragHeight] = useState<number | null>(null);
   const [dockAppearanceOpen, setDockAppearanceOpen] = useState(false);
   const dockPopoverRef = useRef<HTMLDivElement>(null);
 
@@ -110,12 +119,13 @@ export default function Reader() {
   const handleHighlightClick = useCallback((highlightId: string) => {
     setFocusMode(false);
     setAnnotationsOpen(true);
-    setSheetState((prev) => (prev === "closed" ? "peek" : prev));
+    setSheetState((prev) => (prev === "closed" ? "half" : prev));
     setSelectRequest({ id: highlightId, nonce: Date.now() });
   }, []);
 
-  // Bottom edge swipe listener to open peek sheet when closed
-  const edgeTouchStartY = useRef<number | null>(null);
+  // Bottom edge swipe: quick swipe opens the sheet at half height; a longer
+  // press-drag follows the thumb live and snaps on release.
+  const edgeDrag = useRef<SheetDrag | null>(null);
   useEffect(() => {
     if (!isNarrow || sheetState !== "closed") return;
 
@@ -129,57 +139,85 @@ export default function Reader() {
         touch.clientY >= window.innerHeight - 90 &&
         touch.clientY <= window.innerHeight - 45
       ) {
-        edgeTouchStartY.current = touch.clientY;
+        edgeDrag.current = beginSheetDrag(touch.clientY);
       } else {
-        edgeTouchStartY.current = null;
+        edgeDrag.current = null;
       }
+    };
+
+    const onTouchMove = (e: TouchEvent) => {
+      const track = edgeDrag.current;
+      const touch = e.touches[0];
+      if (!track || !touch) return;
+      // Engage only once the thumb clearly moves upward; downward moves are
+      // article scrolls, not sheet drags.
+      if (!track.moved && touch.clientY > track.startY - 12) return;
+      setDragHeight(moveSheetDrag(track, touch.clientY, window.innerHeight));
     };
 
     const onTouchEnd = (e: TouchEvent) => {
-      if (edgeTouchStartY.current === null) return;
-      const touch = e.changedTouches[0];
-      if (touch) {
-        const deltaY = touch.clientY - edgeTouchStartY.current;
-        if (deltaY < -30) {
-          setSheetState("peek");
+      const track = edgeDrag.current;
+      edgeDrag.current = null;
+      if (!track) return;
+      if (!track.moved) {
+        const touch = e.changedTouches[0];
+        if (touch && touch.clientY - track.startY < -30) {
+          setSheetState("half");
         }
+        return;
       }
-      edgeTouchStartY.current = null;
+      const releaseY = e.changedTouches[0]?.clientY ?? track.prevY;
+      const vh = window.innerHeight;
+      setSheetState(
+        snapSheet(releaseSheetHeight(releaseY, vh), vh, track.velocityY),
+      );
+      setDragHeight(null);
     };
 
     window.addEventListener("touchstart", onTouchStart, { passive: true });
+    window.addEventListener("touchmove", onTouchMove, { passive: true });
     window.addEventListener("touchend", onTouchEnd, { passive: true });
     return () => {
       window.removeEventListener("touchstart", onTouchStart);
+      window.removeEventListener("touchmove", onTouchMove);
       window.removeEventListener("touchend", onTouchEnd);
     };
   }, [isNarrow, sheetState]);
 
-  // Handle gestures on the sheet handle/header
-  const sheetTouchStartY = useRef<number | null>(null);
+  // Handle gestures on the sheet handle/header: the sheet follows the thumb
+  // live and snaps on release; a tap (no move) toggles half/expanded.
+  const handleDrag = useRef<SheetDrag | null>(null);
 
   const handleSheetTouchStart = (e: React.TouchEvent) => {
-    sheetTouchStartY.current = e.touches[0].clientY;
+    handleDrag.current = beginSheetDrag(e.touches[0].clientY);
+  };
+
+  const handleSheetTouchMove = (e: React.TouchEvent) => {
+    const track = handleDrag.current;
+    const touch = e.touches[0];
+    if (!track || !touch) return;
+    // The handle is touch-none (no scroll to fight), so follow both
+    // directions live — down to shrink/dismiss, up to grow.
+    setDragHeight(moveSheetDrag(track, touch.clientY, window.innerHeight));
   };
 
   const handleSheetTouchEnd = (e: React.TouchEvent) => {
-    if (sheetTouchStartY.current === null) return;
-    const deltaY = e.changedTouches[0].clientY - sheetTouchStartY.current;
-    sheetTouchStartY.current = null;
-    if (deltaY < -25) {
-      if (sheetState === "peek") {
-        setSheetState("expanded");
-      }
-    } else if (deltaY > 25) {
-      setSheetState("closed");
-    }
+    const track = handleDrag.current;
+    handleDrag.current = null;
+    if (!track || !track.moved) return;
+    const releaseY = e.changedTouches[0]?.clientY ?? track.prevY;
+    const vh = window.innerHeight;
+    setSheetState(
+      snapSheet(releaseSheetHeight(releaseY, vh), vh, track.velocityY),
+    );
+    setDragHeight(null);
   };
 
   const handleSheetHandleClick = () => {
-    if (sheetState === "peek") {
+    if (sheetState === "peek" || sheetState === "half") {
       setSheetState("expanded");
     } else if (sheetState === "expanded") {
-      setSheetState("peek");
+      setSheetState("half");
     }
   };
 
@@ -585,7 +623,7 @@ export default function Reader() {
           annotationsCount={annotationsCount}
           annotationsOpen={isNarrow ? sheetState !== "closed" : annotationsOpen}
           onToggleAnnotations={() => {
-            if (isNarrow) setSheetState((v) => (v === "closed" ? "peek" : "closed"));
+            if (isNarrow) setSheetState((v) => (v === "closed" ? "half" : "closed"));
             else setAnnotationsOpen((v) => !v);
           }}
           hideAppearanceOnTablet={!isNarrow}
@@ -673,19 +711,7 @@ export default function Reader() {
                 <button
                   type="button"
                   data-testid="reader-comments-pill"
-                  onClick={() => setSheetState("peek")}
-                  onTouchStart={(e) => {
-                    edgeTouchStartY.current = e.touches[0].clientY;
-                  }}
-                  onTouchEnd={(e) => {
-                    if (edgeTouchStartY.current !== null) {
-                      const deltaY = e.changedTouches[0].clientY - edgeTouchStartY.current;
-                      if (deltaY < -15) {
-                        setSheetState("peek");
-                      }
-                      edgeTouchStartY.current = null;
-                    }
-                  }}
+                  onClick={() => setSheetState("half")}
                   aria-label="Open annotations sheet"
                   className="fixed bottom-[calc(14px+var(--sc-safe-bottom))] left-1/2 -translate-x-1/2 z-30 flex items-center gap-2 rounded-full border border-hairline-strong bg-surface/95 px-3.5 py-1.5 text-xs font-medium text-text-2 shadow-lg shadow-black/40 backdrop-blur-md transition-all duration-150 active:scale-95 hover:text-text hover:border-accent/50"
                 >
@@ -704,18 +730,28 @@ export default function Reader() {
               <aside
                 data-testid="thread-panel-slot"
                 data-state={sheetState}
-                className={`fixed inset-x-0 bottom-0 z-50 flex flex-col rounded-t-2xl border-t border-hairline bg-surface shadow-2xl pb-[var(--sc-safe-bottom)] transition-all duration-300 ease-out ${
-                  sheetState === "closed"
+                style={dragHeight !== null ? { height: dragHeight } : undefined}
+                className={`fixed inset-x-0 bottom-0 z-50 flex flex-col rounded-t-2xl border-t border-hairline bg-surface shadow-2xl pb-[var(--sc-safe-bottom)] ease-out ${
+                  // Live drag renders every frame: no transition while the
+                  // thumb is down, otherwise animate between snap points.
+                  dragHeight !== null ? "transition-none" : "transition-all duration-300"
+                } ${
+                  sheetState === "closed" && dragHeight === null
                     ? "pointer-events-none translate-y-full opacity-0 h-0"
-                    : sheetState === "peek"
+                    : sheetState === "peek" && dragHeight === null
                     ? "h-[20vh] min-h-[140px] max-h-[25vh] translate-y-0 opacity-100"
-                    : "h-[70vh] max-h-[75vh] translate-y-0 opacity-100"
+                    : sheetState === "half" && dragHeight === null
+                    ? "h-[50vh] min-h-[240px] max-h-[55vh] translate-y-0 opacity-100"
+                    : dragHeight === null
+                    ? "h-[70vh] max-h-[75vh] translate-y-0 opacity-100"
+                    : "translate-y-0 opacity-100"
                 }`}
               >
                 <div
                   data-testid="thread-sheet-handle"
                   className="flex w-full shrink-0 flex-col items-center pt-2.5 pb-1.5 cursor-pointer touch-none select-none"
                   onTouchStart={handleSheetTouchStart}
+                  onTouchMove={handleSheetTouchMove}
                   onTouchEnd={handleSheetTouchEnd}
                   onClick={handleSheetHandleClick}
                 >
@@ -726,7 +762,11 @@ export default function Reader() {
                     </span>
                     <div className="flex items-center gap-2">
                       <span className="text-[10px] text-text-3">
-                        {sheetState === "peek" ? "Swipe up to expand" : "Swipe down to close"}
+                        {sheetState === "peek"
+                          ? "Swipe up to expand"
+                          : sheetState === "half"
+                          ? "Drag handle to resize · swipe down to close"
+                          : "Swipe down to close"}
                       </span>
                       <button
                         type="button"

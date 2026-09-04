@@ -125,12 +125,12 @@ describe("Mobile Reader Gesture Comments Sheet", () => {
     expect(screen.queryByTestId("thread-sheet-scrim")).not.toBeInTheDocument();
   });
 
-  test("invariant 12: swipe up from bottom edge transitions to peek (20%)", async () => {
+  test("invariant 12: swipe up from bottom edge opens at half height", async () => {
     renderReaderMobile();
     const slot = await screen.findByTestId("thread-panel-slot");
     expect(slot).toHaveAttribute("data-state", "closed");
 
-    // Touch at bottom edge (clientY = 750 >= 800 - 80 = 720)
+    // Touch at bottom edge (clientY = 750 >= 800 - 90 = 710)
     fireEvent.touchStart(window, {
       touches: [{ clientY: 750 }],
     });
@@ -139,41 +139,59 @@ describe("Mobile Reader Gesture Comments Sheet", () => {
       changedTouches: [{ clientY: 650 }],
     });
 
-    expect(slot).toHaveAttribute("data-state", "peek");
+    expect(slot).toHaveAttribute("data-state", "half");
     expect(slot).toHaveClass("translate-y-0", "opacity-100");
   });
 
-  test("invariant 13: swipe up on drag handle from peek expands to expanded (70%)", async () => {
+  test("invariant 12b: edge drag follows the thumb live, snaps on release", async () => {
     renderReaderMobile();
     const slot = await screen.findByTestId("thread-panel-slot");
 
-    // Open to peek via bottom swipe
+    fireEvent.touchStart(window, { touches: [{ clientY: 740 }] });
+    fireEvent.touchMove(window, { touches: [{ clientY: 600 }] });
+    // Live height tracks the thumb before release (800 - 600).
+    expect(slot.style.height).toBe("200px");
+    fireEvent.touchEnd(window, { changedTouches: [{ clientY: 600 }] });
+
+    expect(slot).toHaveAttribute("data-state", "half");
+    expect(slot.style.height).toBe("");
+  });
+
+  test("invariant 13: drag handle up from half expands to expanded (70%)", async () => {
+    renderReaderMobile();
+    const slot = await screen.findByTestId("thread-panel-slot");
+
+    // Open to half via bottom swipe
     fireEvent.touchStart(window, { touches: [{ clientY: 750 }] });
     fireEvent.touchEnd(window, { changedTouches: [{ clientY: 650 }] });
-    expect(slot).toHaveAttribute("data-state", "peek");
+    expect(slot).toHaveAttribute("data-state", "half");
 
-    // Swipe up on handle
+    // Drag up on handle: sheet follows live, settles expanded
     const handle = screen.getByTestId("thread-sheet-handle");
     fireEvent.touchStart(handle, { touches: [{ clientY: 600 }] });
-    fireEvent.touchEnd(handle, { changedTouches: [{ clientY: 500 }] }); // deltaY = -100 < -25
+    fireEvent.touchMove(handle, { touches: [{ clientY: 300 }] });
+    expect(slot.style.height).toBe("500px");
+    fireEvent.touchEnd(handle, { changedTouches: [{ clientY: 300 }] });
 
     expect(slot).toHaveAttribute("data-state", "expanded");
     expect(await screen.findByTestId("thread-sheet-scrim")).toBeInTheDocument();
   });
 
-  test("invariant 14: swipe down on drag handle closes sheet completely", async () => {
+  test("invariant 14: drag handle down far closes sheet completely", async () => {
     renderReaderMobile();
     const slot = await screen.findByTestId("thread-panel-slot");
 
-    // Open to peek
+    // Open to half
     fireEvent.touchStart(window, { touches: [{ clientY: 750 }] });
     fireEvent.touchEnd(window, { changedTouches: [{ clientY: 650 }] });
-    expect(slot).toHaveAttribute("data-state", "peek");
+    expect(slot).toHaveAttribute("data-state", "half");
 
-    // Swipe down on handle
+    // Drag down on handle past the close threshold
     const handle = screen.getByTestId("thread-sheet-handle");
-    fireEvent.touchStart(handle, { touches: [{ clientY: 600 }] });
-    fireEvent.touchEnd(handle, { changedTouches: [{ clientY: 700 }] }); // deltaY = +100 > 25
+    fireEvent.touchStart(handle, { touches: [{ clientY: 400 }] });
+    fireEvent.touchMove(handle, { touches: [{ clientY: 700 }] });
+    expect(slot.style.height).toBe("100px");
+    fireEvent.touchEnd(handle, { changedTouches: [{ clientY: 740 }] });
 
     expect(slot).toHaveAttribute("data-state", "closed");
   });
@@ -182,10 +200,10 @@ describe("Mobile Reader Gesture Comments Sheet", () => {
     renderReaderMobile();
     const slot = await screen.findByTestId("thread-panel-slot");
 
-    // Open to peek
+    // Open to half
     fireEvent.touchStart(window, { touches: [{ clientY: 750 }] });
     fireEvent.touchEnd(window, { changedTouches: [{ clientY: 650 }] });
-    expect(slot).toHaveAttribute("data-state", "peek");
+    expect(slot).toHaveAttribute("data-state", "half");
 
     // Double click on article scroller
     const scroller = screen.getByTestId("article-scroller");
@@ -198,10 +216,10 @@ describe("Mobile Reader Gesture Comments Sheet", () => {
     renderReaderMobile();
     const slot = await screen.findByTestId("thread-panel-slot");
 
-    // Open to peek
+    // Open to half
     fireEvent.touchStart(window, { touches: [{ clientY: 750 }] });
     fireEvent.touchEnd(window, { changedTouches: [{ clientY: 650 }] });
-    expect(slot).toHaveAttribute("data-state", "peek");
+    expect(slot).toHaveAttribute("data-state", "half");
 
     // Click close button
     fireEvent.click(screen.getByTestId("close-thread-sheet"));
@@ -211,7 +229,7 @@ describe("Mobile Reader Gesture Comments Sheet", () => {
     fireEvent.touchStart(window, { touches: [{ clientY: 750 }] });
     fireEvent.touchEnd(window, { changedTouches: [{ clientY: 650 }] });
     const handle = screen.getByTestId("thread-sheet-handle");
-    fireEvent.click(handle); // clicking handle expands peek to expanded
+    fireEvent.click(handle); // clicking handle expands half to expanded
     expect(slot).toHaveAttribute("data-state", "expanded");
 
     // Click scrim
@@ -228,7 +246,7 @@ describe("Mobile Reader Gesture Comments Sheet", () => {
     // Toggle via topbar button
     const toggleBtn = screen.getByLabelText("Toggle annotations panel");
     fireEvent.click(toggleBtn);
-    expect(slot).toHaveAttribute("data-state", "peek");
+    expect(slot).toHaveAttribute("data-state", "half");
 
     // Toggle off
     fireEvent.click(toggleBtn);
@@ -244,7 +262,7 @@ describe("Mobile Reader Gesture Comments Sheet", () => {
     expect(pill).toBeInTheDocument();
 
     fireEvent.click(pill);
-    expect(slot).toHaveAttribute("data-state", "peek");
+    expect(slot).toHaveAttribute("data-state", "half");
   });
 
   test("invariant 18: touches in OS navigation zone (bottom 0-44px) are ignored to prevent conflict", async () => {

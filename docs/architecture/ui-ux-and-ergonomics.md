@@ -70,10 +70,17 @@ Summoned immediately above the text selection on lift:
 - **Action Buttons**: Text Comment (`[💬]`), Voice Note (`[💬🎙️]`), Diagram / Canvas (`[📐]`).
 - Clean, focused layout without tag pickers; tags live inside the comment composer.
 
-### 3.3 Dynamic Aura Voice Flow
-- Tapping `[💬🎙️]` smoothly morphs the floating pill into a 4-bar dynamic audio visualizer responding to live microphone amplitude via Web Audio API.
+### 3.3 Dynamic Aura Voice Flow- Tapping `[💬🎙️]` smoothly morphs the floating pill into a 4-bar dynamic audio visualizer responding to live microphone amplitude via Web Audio API.
 - Voice Activity Detection (VAD) detects 2.0s of silence to terminate recording automatically.
 - Instant commit to SQLite upon completion with a 2-second non-blocking undo toast: `Saved: "[transcribed text]..." [ Undo ]`.
+
+### 3.4 Live-Drag Sheets (Thumb-Following Standard)
+Every draggable bottom sheet follows the thumb in real time and settles on release — never discrete state jumps that need repeated swipes:
+1. **First open lands usable**: programmatic opens (pill, toggle, highlight tap) go straight to the `half` snap (~50vh), not a peek that needs a second swipe.
+2. **Live height while dragging**: `touchmove` renders the sheet height every frame (`transition-none` during the drag, so CSS never lags the thumb); edge-zone drags engage only on clear upward movement so article scrolls are never hijacked.
+3. **Snap on release**: nearest of `closed / peek (20%) / half (50%) / expanded (70%)`, biased one step by fling velocity (`snapSheet` in `scholiast_tauri/src/routes/sheetSnap.ts` — pure and unit-tested).
+4. **Fixed menus are exempt**: small fixed-height sheets (playback-speed menu, comment editor) don't drag and stay as-is.
+5. Applies today to the Reader annotations sheet; any future draggable sheet must follow the same snap module, not its own gesture math.
 
 ---
 
