@@ -4011,6 +4011,7 @@ dependencies = [
  "tauri",
  "tauri-build",
  "tauri-plugin-deep-link",
+ "tauri-plugin-mobile-sharetarget",
  "tauri-plugin-opener",
  "tauri-plugin-store",
  "tempfile",
@@ -5009,6 +5010,22 @@ dependencies = [
  "url",
  "windows-registry",
  "windows-result 0.3.4",
+]
+
+[[package]]
+name = "tauri-plugin-mobile-sharetarget"
+version = "2.0.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "7584deef603add43a4ce8e8abb8034fd1cc9de27a8ba08b1e66a6adddb1e1495"
+dependencies = [
+ "anyhow",
+ "crossbeam-queue",
+ "jni",
+ "serde",
+ "serde_json",
+ "tauri",
+ "tauri-plugin",
+ "thiserror 2.0.20",
 ]
 
 [[package]]

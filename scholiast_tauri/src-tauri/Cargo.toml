@@ -31,6 +31,7 @@ sha2 = "0.10"
 sqlx = { workspace = true }
 tauri = { version = "2", features = ["protocol-asset"] }
 tauri-plugin-deep-link = "2"
+tauri-plugin-mobile-sharetarget = "2"
 tauri-plugin-opener = "2"
 tauri-plugin-store = "2"
 whisper-rs = { version = "0.14", optional = true }

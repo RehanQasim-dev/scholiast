@@ -121,10 +121,12 @@ export default function Reader() {
 
     const onTouchStart = (e: TouchEvent) => {
       const touch = e.touches[0];
-      // Listen in safe zone above Android OS navigation bar (bottom 0-44px)
+      // Listen in safe zone above Android OS navigation bar (bottom 0-44px).
+      // Kept to a slim ~45px strip at the very bottom edge so casual
+      // article swipes never open the sheet by accident.
       if (
         touch &&
-        touch.clientY >= window.innerHeight - 150 &&
+        touch.clientY >= window.innerHeight - 90 &&
         touch.clientY <= window.innerHeight - 45
       ) {
         edgeTouchStartY.current = touch.clientY;

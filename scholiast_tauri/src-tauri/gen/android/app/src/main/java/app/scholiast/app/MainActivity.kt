@@ -19,6 +19,8 @@ import java.util.concurrent.TimeUnit
 class MainActivity : TauriActivity() {
   override val handleBackNavigation: Boolean = true
   private var lastShareHash = 0
+  /** Set from JS on every selectionchange; read on the UI thread below. */
+  @Volatile private var selectionInEditable: Boolean = false
 
   override fun onCreate(savedInstanceState: Bundle?) {
     enableEdgeToEdge()
@@ -61,6 +63,12 @@ class MainActivity : TauriActivity() {
         }
       }
     }, "AndroidBridge")
+    webView.addJavascriptInterface(object {
+      @JavascriptInterface
+      fun setSelectionEditable(editable: Boolean) {
+        selectionInEditable = editable
+      }
+    }, "AndroidSelection")
   }
 
   override fun onNewIntent(intent: Intent) {
@@ -69,11 +77,24 @@ class MainActivity : TauriActivity() {
   }
 
   /**
-   * Suppress the OS-level floating text selection Action Mode (Copy, Share, Select all)
-   * so the in-app annotation SwatchPopup is not covered or obstructed.
+   * Suppress the OS floating text-selection toolbar (Copy, Share, Select
+   * all) over article text so the in-app SwatchPopup stays reachable.
+   * Emptying the menu (rather than killing the mode) preserves the
+   * selection and its handles: Android 6+ does not render an empty floating
+   * menu at all. Selections inside editable fields (reply boxes, inputs)
+   * keep the system menu so copy/paste keeps working there — JS reports
+   * the current selection kind via AndroidSelection.setSelectionEditable.
+   *
+   * (Returning null from onWindowStartingActionMode was tried before: it
+   * does NOT suppress anything, it just declines a *custom* mode and the
+   * system builds the default toolbar anyway.)
    */
-  override fun onWindowStartingActionMode(callback: ActionMode.Callback?): ActionMode? = null
-  override fun onWindowStartingActionMode(callback: ActionMode.Callback?, type: Int): ActionMode? = null
+  override fun onActionModeStarted(mode: ActionMode) {
+    if (!selectionInEditable) {
+      mode.menu?.clear()
+    }
+    super.onActionModeStarted(mode)
+  }
 
   /** ACTION_SEND text/plain → scholiast://share?url= VIEW intent, so the
    * deep-link plugin's single pipeline delivers it to the frontend. */

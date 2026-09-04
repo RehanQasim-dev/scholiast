@@ -5,6 +5,7 @@ import type { ReaderTheme } from "../components/reader/ReaderTopBar";
 import SwatchPopup, { type HighlightColor } from "../components/SwatchPopup";
 import { getAuthenticHtml, saveHighlight } from "../lib/readerIpc";
 import { getDarkReaderScript } from "../lib/darkReaderScript";
+import { setSelectionEditableFlag } from "../lib/selectionBridge";
 import { toast } from "../components/Toast";
 
 export interface AuthenticViewProps {
@@ -70,6 +71,8 @@ export default function AuthenticView({
       if (e.data.type === "SELECTION_CLEARED") {
         setSelection(null);
       } else if (e.data.type === "TEXT_SELECTED") {
+        // Iframe article text is never editable: keep the OS toolbar off it.
+        setSelectionEditableFlag(false);
         const { text, rect } = e.data;
         if (!text || !rect || !containerRef.current) {
           setSelection(null);

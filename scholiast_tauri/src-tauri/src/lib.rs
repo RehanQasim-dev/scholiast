@@ -44,6 +44,10 @@ pub fn run() {
         .plugin(tauri_plugin_store::Builder::default().build())
         .plugin(tauri_plugin_opener::init())
         .plugin(tauri_plugin_deep_link::init())
+        // ACTION_SEND share target (YouTube/Chrome "Share → Scholiast"):
+        // the deep-link plugin only sees ACTION_VIEW, so SEND text arrives
+        // through this queue instead (consumed in lib/deepLink.ts).
+        .plugin(tauri_plugin_mobile_sharetarget::init())
         .setup(|app| {
             let data_dir = app.path().app_data_dir()?;
             #[cfg(target_os = "android")]

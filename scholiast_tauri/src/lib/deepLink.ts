@@ -1,6 +1,8 @@
 import { useEffect } from "react";
 import { useNavigate } from "react-router-dom";
+import { listen } from "@tauri-apps/api/event";
 import { getCurrent, onOpenUrl } from "@tauri-apps/plugin-deep-link";
+import { popIntentQueueAndExtractText } from "tauri-plugin-mobile-sharetarget-api";
 import { extractVideoId } from "../routes/Player";
 
 const HTTP_URL_RE = /https?:\/\/[^\s"'<>]+/gi;
@@ -43,16 +45,44 @@ export function useDeepLinks(): void {
   useEffect(() => {
     let disposed = false;
     let disposeListen: (() => void) | undefined;
+    let disposeFocus: (() => void) | undefined;
+    // One share arrives twice (SEND queue + rewritten VIEW intent) — route it once.
+    let lastRoutedPath = "";
+    let lastRoutedAt = 0;
+
+    const navigateOnce = (path: string) => {
+      const now = Date.now();
+      if (path === lastRoutedPath && now - lastRoutedAt < 2000) return;
+      lastRoutedPath = path;
+      lastRoutedAt = now;
+      navigate(path);
+    };
 
     const handle = (urls: readonly string[] | string | null) => {
       if (disposed || !urls) return;
       for (const raw of typeof urls === "string" ? [urls] : urls) {
         const path = routeForSharedText(raw);
         if (path) {
-          navigate(path);
+          navigateOnce(path);
           break;
         }
       }
+    };
+
+    // Android ACTION_SEND (YouTube/Chrome share sheet) never reaches the
+    // deep-link plugin — it only sees ACTION_VIEW. The sharetarget plugin
+    // queues SEND text instead: drain it on launch and every re-focus
+    // (warm share while the app is already running).
+    const consumeShareQueue = () => {
+      void popIntentQueueAndExtractText()
+        .then((text) => {
+          if (disposed || !text) return;
+          const path = routeForSharedText(text);
+          if (path) navigateOnce(path);
+        })
+        .catch(() => {
+          /* plugin unavailable (desktop / older build) */
+        });
     };
 
     try {
@@ -65,6 +95,13 @@ export function useDeepLinks(): void {
           else disposeListen = fn;
         })
         .catch(() => {});
+      consumeShareQueue();
+      void listen("tauri://focus", consumeShareQueue)
+        .then((fn) => {
+          if (disposed) fn();
+          else disposeFocus = fn;
+        })
+        .catch(() => {});
     } catch {
       /* tauri deep-link API unavailable (desktop test env / not configured) */
     }
@@ -72,6 +109,7 @@ export function useDeepLinks(): void {
     return () => {
       disposed = true;
       disposeListen?.();
+      disposeFocus?.();
     };
   }, [navigate]);
 }
