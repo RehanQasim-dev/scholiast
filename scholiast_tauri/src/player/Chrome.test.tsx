@@ -1,6 +1,6 @@
 import { act, cleanup, fireEvent, render, screen } from "@testing-library/react";
 import { createRef } from "react";
-import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import Chrome from "./Chrome";
 import {
   getPlayerSnapshot,
@@ -181,5 +181,29 @@ describe("Chrome", () => {
     expect(screen.getByTestId("chrome-topbar")).toHaveTextContent("Lecture");
     fireEvent.click(screen.getByRole("button", { name: "Back to library" }));
     expect(backed).toBe(true);
+  });
+
+  it("hides the top title bar when the stage is tapped (title gone)", () => {
+    vi.useFakeTimers();
+    try {
+      const { player } = makeFakePlayer();
+      playerBridge.attach(player);
+      const stageRef = createRef<HTMLDivElement>();
+      render(
+        <div ref={stageRef}>
+          <Chrome stageRef={stageRef} title="Lecture" onBack={() => {}} />
+        </div>,
+      );
+      expect(screen.getByTestId("chrome-topbar").className).toContain("opacity-100");
+
+      fireEvent.click(screen.getByTestId("chrome-root"));
+      act(() => {
+        vi.advanceTimersByTime(400);
+      });
+
+      expect(screen.getByTestId("chrome-topbar").className).toContain("opacity-0");
+    } finally {
+      vi.useRealTimers();
+    }
   });
 });
