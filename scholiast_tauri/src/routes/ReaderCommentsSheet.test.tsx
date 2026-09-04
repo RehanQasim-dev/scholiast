@@ -238,19 +238,22 @@ describe("Mobile Reader Gesture Comments Sheet", () => {
     expect(slot).toHaveAttribute("data-state", "closed");
   });
 
-  test("invariant 16: topbar annotations toggle opens and closes the comments sheet", async () => {
+  test("invariant 16: mobile topbar offers Swipe toggle instead of notes (sheet opens via pill)", async () => {
     renderReaderMobile();
-    const slot = await screen.findByTestId("thread-panel-slot");
-    expect(slot).toHaveAttribute("data-state", "closed");
+    // Notes toggle is replaced by the Swipe toggle on narrow screens
+    expect(screen.queryByLabelText("Toggle annotations panel")).not.toBeInTheDocument();
+    const swipeToggle = await screen.findByTestId("reader-swipe-toggle");
+    expect(swipeToggle).toHaveAttribute("aria-pressed", "false");
+    fireEvent.click(swipeToggle);
+    expect(swipeToggle).toHaveAttribute("aria-pressed", "true");
+    fireEvent.click(swipeToggle);
+    expect(swipeToggle).toHaveAttribute("aria-pressed", "false");
 
-    // Toggle via topbar button
-    const toggleBtn = screen.getByLabelText("Toggle annotations panel");
-    fireEvent.click(toggleBtn);
+    // Notes sheet still opens via the floating pill
+    const slot = screen.getByTestId("thread-panel-slot");
+    expect(slot).toHaveAttribute("data-state", "closed");
+    fireEvent.click(await screen.findByTestId("reader-comments-pill"));
     expect(slot).toHaveAttribute("data-state", "half");
-
-    // Toggle off
-    fireEvent.click(toggleBtn);
-    expect(slot).toHaveAttribute("data-state", "closed");
   });
 
   test("invariant 17: floating comments pill opens sheet on tap without gesture conflict", async () => {

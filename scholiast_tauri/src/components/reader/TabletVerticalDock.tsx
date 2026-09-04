@@ -1,5 +1,5 @@
 import { useNavigate } from "react-router-dom";
-import { FileText, Globe, Library, PanelLeft, Type } from "lucide-react";
+import { FileText, Globe, Library, MoveHorizontal, PanelLeft, Type } from "lucide-react";
 
 export interface TabletVerticalDockProps {
   hasArticle: boolean;
@@ -10,6 +10,8 @@ export interface TabletVerticalDockProps {
   annotationsOpen?: boolean;
   onToggleAnnotations?: () => void;
   onOpenAppearance?: () => void;
+  swipeMode?: boolean;
+  onToggleSwipe?: () => void;
   active?: "library" | "annotations" | null;
 }
 
@@ -22,6 +24,8 @@ export default function TabletVerticalDock({
   annotationsOpen = false,
   onToggleAnnotations,
   onOpenAppearance,
+  swipeMode = false,
+  onToggleSwipe,
 }: TabletVerticalDockProps) {
   const navigate = useNavigate();
   return (
@@ -77,6 +81,23 @@ export default function TabletVerticalDock({
           className="flex h-11 w-11 min-h-[44px] min-w-[44px] items-center justify-center rounded-xl text-text-2 transition-colors hover:bg-elevated hover:text-text"
         >
           <Type size={18} strokeWidth={2} />
+        </button>
+      )}
+
+      {hasArticle && onToggleSwipe && (
+        <button
+          type="button"
+          aria-label="Toggle swipe select"
+          aria-pressed={swipeMode}
+          data-testid="tablet-dock-swipe"
+          onClick={onToggleSwipe}
+          className={`flex h-11 w-11 min-h-[44px] min-w-[44px] items-center justify-center rounded-xl transition-colors ${
+            swipeMode
+              ? "bg-elevated text-accent ring-1 ring-accent/30"
+              : "text-text-2 hover:bg-elevated hover:text-text"
+          }`}
+        >
+          <MoveHorizontal size={18} strokeWidth={2} />
         </button>
       )}
 

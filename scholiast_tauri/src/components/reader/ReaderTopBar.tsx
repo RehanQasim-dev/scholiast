@@ -4,6 +4,7 @@ import {
   ArrowLeft,
   FileText,
   Globe,
+  MoveHorizontal,
   Trash2,
   Type,
   X,
@@ -36,6 +37,12 @@ export interface ReaderTopBarProps {
   hideAppearanceOnTablet?: boolean;
   hideViewModeOnTablet?: boolean;
   hideAnnotationsOnTablet?: boolean;
+  /** "Swipe" select mode (finger drags select without long-press). */
+  swipeMode?: boolean;
+  onToggleSwipe?: () => void;
+  /** Narrow screens: Swipe toggle replaces the Notes toggle (notes stay
+   * reachable via bottom-up swipe + floating pill). */
+  showSwipeToggle?: boolean;
 }
 
 export default function ReaderTopBar({
@@ -59,6 +66,9 @@ export default function ReaderTopBar({
   hideAppearanceOnTablet = false,
   hideViewModeOnTablet = false,
   hideAnnotationsOnTablet = false,
+  swipeMode = false,
+  onToggleSwipe,
+  showSwipeToggle = false,
 }: ReaderTopBarProps) {
   const [popoverOpen, setPopoverOpen] = useState(false);
   const [dialogOpen, setDialogOpen] = useState(false);
@@ -303,30 +313,48 @@ export default function ReaderTopBar({
               )}
             </div>
 
-            {/* Annotations Panel Toggle */}
-            {onToggleAnnotations && (
+            {/* Swipe-select Toggle (narrow): replaces the Notes toggle */}
+            {showSwipeToggle && onToggleSwipe ? (
               <button
                 type="button"
-                aria-label="Toggle annotations panel"
-                onClick={onToggleAnnotations}
-                className={`flex h-9 items-center gap-1.5 rounded-md px-2.5 text-xs font-medium transition-colors border ${hideAnnotationsOnTablet ? "lg:hidden" : ""} ${
-                  annotationsOpen
+                aria-label="Toggle swipe select"
+                aria-pressed={swipeMode}
+                data-testid="reader-swipe-toggle"
+                onClick={onToggleSwipe}
+                className={`flex h-9 items-center gap-1.5 rounded-md px-2.5 text-xs font-medium transition-colors border ${
+                  swipeMode
                     ? "bg-[rgba(58,166,125,0.14)] border-accent/20 text-accent"
                     : "border-transparent text-text-2 hover:bg-elevated hover:text-text"
                 }`}
               >
-                <FileText size={15} strokeWidth={2} />
-                <span>Notes</span>
-                {annotationsCount > 0 && (
-                  <span
-                    className={`rounded-full px-1.5 py-0.2 font-mono text-[10px] font-semibold leading-none ${
-                      annotationsOpen ? "bg-white text-accent" : "bg-elevated text-text"
-                    }`}
-                  >
-                    {annotationsCount}
-                  </span>
-                )}
+                <MoveHorizontal size={15} strokeWidth={2} />
+                <span>Swipe</span>
               </button>
+            ) : (
+              onToggleAnnotations && (
+                <button
+                  type="button"
+                  aria-label="Toggle annotations panel"
+                  onClick={onToggleAnnotations}
+                  className={`flex h-9 items-center gap-1.5 rounded-md px-2.5 text-xs font-medium transition-colors border ${hideAnnotationsOnTablet ? "lg:hidden" : ""} ${
+                    annotationsOpen
+                      ? "bg-[rgba(58,166,125,0.14)] border-accent/20 text-accent"
+                      : "border-transparent text-text-2 hover:bg-elevated hover:text-text"
+                  }`}
+                >
+                  <FileText size={15} strokeWidth={2} />
+                  <span>Notes</span>
+                  {annotationsCount > 0 && (
+                    <span
+                      className={`rounded-full px-1.5 py-0.2 font-mono text-[10px] font-semibold leading-none ${
+                        annotationsOpen ? "bg-white text-accent" : "bg-elevated text-text"
+                      }`}
+                    >
+                      {annotationsCount}
+                    </span>
+                  )}
+                </button>
+              )
             )}
           </>
         )}

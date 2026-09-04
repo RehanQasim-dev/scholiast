@@ -96,6 +96,8 @@ export default function Reader() {
   }, [rawUrl, urlHash, setSearchParams]);
   const [drawerOpen, setDrawerOpen] = useState(false);
   const [annotationsOpen, setAnnotationsOpen] = useState(false);
+  /** "Swipe" mode: finger drags select text without long-press (narrow + dock). */
+  const [swipeMode, setSwipeMode] = useState(false);
   type SheetState = "closed" | "peek" | "half" | "expanded";
   const [sheetState, setSheetState] = useState<SheetState>("closed");
   /** Live sheet height (px) while a thumb drag is in flight; null when settled. */
@@ -127,7 +129,7 @@ export default function Reader() {
   // press-drag follows the thumb live and snaps on release.
   const edgeDrag = useRef<SheetDrag | null>(null);
   useEffect(() => {
-    if (!isNarrow || sheetState !== "closed") return;
+    if (!isNarrow || sheetState !== "closed" || swipeMode) return;
 
     const onTouchStart = (e: TouchEvent) => {
       const touch = e.touches[0];
@@ -182,7 +184,7 @@ export default function Reader() {
       window.removeEventListener("touchmove", onTouchMove);
       window.removeEventListener("touchend", onTouchEnd);
     };
-  }, [isNarrow, sheetState]);
+  }, [isNarrow, sheetState, swipeMode]);
 
   // Handle gestures on the sheet handle/header: the sheet follows the thumb
   // live and snaps on release; a tap (no move) toggles half/expanded.
@@ -494,6 +496,7 @@ export default function Reader() {
           onOpenDiagram={(highlightId) => {
             navigate("/diagram", { state: { urlHash, highlightId } });
           }}
+          swipeSelect={swipeMode}
         />
       )}
     </>
@@ -629,6 +632,9 @@ export default function Reader() {
           hideAppearanceOnTablet={!isNarrow}
           hideViewModeOnTablet={!isNarrow}
           hideAnnotationsOnTablet={!isNarrow}
+          swipeMode={swipeMode}
+          onToggleSwipe={() => setSwipeMode((v) => !v)}
+          showSwipeToggle={isNarrow}
         />
       </div>
 
@@ -645,6 +651,8 @@ export default function Reader() {
               annotationsOpen={annotationsOpen}
               onToggleAnnotations={() => setAnnotationsOpen((v) => !v)}
               onOpenAppearance={() => setDockAppearanceOpen((v) => !v)}
+              swipeMode={swipeMode}
+              onToggleSwipe={() => setSwipeMode((v) => !v)}
             />
             {dockAppearanceOpen && (
               <div

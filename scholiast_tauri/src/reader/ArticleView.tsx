@@ -10,6 +10,7 @@ import {
 } from "./highlightPaint";
 import type { HighlightForPaint, PaintStats } from "./highlightPaint";
 import { useHighlights } from "./useHighlights";
+import { classifySwipeIntent } from "./swipeSelect";
 import { saveComment } from "../lib/readerIpc";
 import "./reader-typography.css";
 import "./highlight-overlays.css";
@@ -47,6 +48,8 @@ export interface ArticleViewProps {
   onHighlightCreated?: (highlightId: string) => void;
   /** Opens diagram editor for a highlight. */
   onOpenDiagram?: (highlightId: string) => void;
+  /** "Swipe" mode: plain finger drags extend the selection (no long-press). */
+  swipeSelect?: boolean;
 }
 
 /**
@@ -71,6 +74,7 @@ export default function ArticleView({
   onHighlightClick,
   onHighlightCreated,
   onOpenDiagram,
+  swipeSelect = false,
 }: ArticleViewProps) {
   const bodyRef = useRef<HTMLDivElement>(null);
 
@@ -172,6 +176,7 @@ export default function ArticleView({
           onHighlightClick={onHighlightClick}
           onHighlightCreated={onHighlightCreated}
           onOpenDiagram={onOpenDiagram}
+          swipeSelect={swipeSelect}
         />
       ) : null}
     </article>
@@ -186,6 +191,8 @@ interface HighlightsLayerProps {
   onHighlightClick?: (highlightId: string) => void;
   onHighlightCreated?: (highlightId: string) => void;
   onOpenDiagram?: (highlightId: string) => void;
+  /** "Swipe" mode: plain finger drags extend the selection (no long-press). */
+  swipeSelect?: boolean;
 }
 
 /**
@@ -201,6 +208,7 @@ function HighlightsLayer({
   onHighlightClick,
   onHighlightCreated,
   onOpenDiagram,
+  swipeSelect = false,
 }: HighlightsLayerProps) {
   const { highlights, paintRootRef, createFromSelection } = useHighlights(urlHash);
   const [popupAnchor, setPopupAnchor] = useState<{
@@ -348,6 +356,73 @@ function HighlightsLayer({
       window.removeEventListener("resize", dismiss);
     };
   }, [selectionInRange, showPopupForSelection]);
+
+  // Swipe-select mode: a plain finger drag extends the DOM selection without
+  // long-press. The container runs `touch-action: pan-y` while enabled, so
+  // vertical pans scroll natively and only horizontal movement reaches us;
+  // diagonal drags are disambiguated per gesture (a scroll verdict hands the
+  // gesture back for the rest of the touch). On release the settle-timer
+  // flow above opens the SwatchPopup untouched.
+  useEffect(() => {
+    const root = containerRef.current;
+    if (!swipeSelect || !root) return;
+    const prevTouchAction = root.style.touchAction;
+    root.style.touchAction = "pan-y";
+
+    let anchor: CaretPosition | null = null;
+    let startX = 0;
+    let startY = 0;
+    let scrolling = false;
+
+    const onTouchStart = (e: TouchEvent) => {
+      scrolling = false;
+      anchor = null;
+      if (e.touches.length !== 1) return;
+      const t = e.touches[0];
+      startX = t.clientX;
+      startY = t.clientY;
+      const pos = caretPointAt(t.clientX, t.clientY);
+      if (pos && root.contains(pos.node)) anchor = pos;
+    };
+
+    const onTouchMove = (e: TouchEvent) => {
+      const t = e.touches[0];
+      if (!t || !anchor || scrolling) return;
+      const intent = classifySwipeIntent(t.clientX - startX, t.clientY - startY);
+      if (intent === "undecided") return;
+      if (intent === "scroll") {
+        scrolling = true;
+        anchor = null;
+        return;
+      }
+      const pos = caretPointAt(t.clientX, t.clientY);
+      if (!pos || !root.contains(pos.node)) return;
+      const sel = window.getSelection();
+      if (!sel) return;
+      try {
+        sel.setBaseAndExtent(anchor.node, anchor.offset, pos.node, pos.offset);
+      } catch {
+        anchor = null;
+      }
+    };
+
+    const onTouchEnd = () => {
+      anchor = null;
+      scrolling = false;
+    };
+
+    root.addEventListener("touchstart", onTouchStart, { passive: true });
+    root.addEventListener("touchmove", onTouchMove, { passive: true });
+    root.addEventListener("touchend", onTouchEnd, { passive: true });
+    root.addEventListener("touchcancel", onTouchEnd, { passive: true });
+    return () => {
+      root.style.touchAction = prevTouchAction;
+      root.removeEventListener("touchstart", onTouchStart);
+      root.removeEventListener("touchmove", onTouchMove);
+      root.removeEventListener("touchend", onTouchEnd);
+      root.removeEventListener("touchcancel", onTouchEnd);
+    };
+  }, [swipeSelect, containerRef]);
 
   const handlePickColor = useCallback(
     (color: HighlightColor) => {
