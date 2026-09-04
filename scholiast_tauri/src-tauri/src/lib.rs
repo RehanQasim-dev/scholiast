@@ -5,6 +5,7 @@ use tauri::Manager;
 mod capture;
 mod commands;
 mod drive;
+pub mod player_server;
 mod reader;
 mod secrets;
 mod stt;
@@ -29,6 +30,11 @@ async fn app_health(state: tauri::State<'_, AppState>) -> Result<Health, String>
     Ok(Health { ok: true })
 }
 
+#[tauri::command]
+fn get_player_server_url(state: tauri::State<'_, AppState>) -> Result<Option<String>, String> {
+    Ok(state.player_server_url.clone())
+}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     #[cfg(target_os = "linux")]
@@ -49,6 +55,7 @@ pub fn run() {
         })
         .invoke_handler(tauri::generate_handler![
             app_health,
+            get_player_server_url,
             commands::videos::upsert_video,
             commands::videos::list_recent_videos,
             commands::videos::get_video_items,

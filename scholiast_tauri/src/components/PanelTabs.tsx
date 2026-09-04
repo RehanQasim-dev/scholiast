@@ -1,18 +1,29 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
-import { Edit3, FileText, Settings } from "lucide-react";
-import { usePlayerEvent } from "../player/playerBridge";
+import { Edit3, FileText, Plus, Settings } from "lucide-react";
+import {
+  getPlayerSnapshot,
+  playerBridge,
+  usePlayerEvent,
+} from "../player/playerBridge";
 import TranscriptPanel from "../player/TranscriptPanel";
 import { getVideoItems, upsertVideo } from "../lib/ipc";
 import { getPref, PREF_KEYS, setPref } from "../lib/store";
-import NotesTab from "./NotesTab";
+import NotesTab, { type ActiveComposerState, type CapturedFrameMeta } from "./NotesTab";
 
 type Tab = "notes" | "transcript";
 
 interface PanelTabsProps {
   url: string;
   videoId?: string | null;
-  onCaptureFrame?: () => Promise<{ path: string; w: number; h: number; urlHash: string } | null>;
+  onCaptureFrame?: () => Promise<CapturedFrameMeta | null>;
+  tab?: Tab;
+  onTabChange?: (tab: Tab) => void;
+  onAddNote?: () => void;
+  composer?: ActiveComposerState | null;
+  onComposerChange?: (c: ActiveComposerState | null) => void;
+  isMobile?: boolean;
+  isTablet?: boolean;
 }
 
 const MIN_FONT_STEP = -2;
@@ -22,8 +33,25 @@ function clampFontStep(v: number): number {
   return Math.min(MAX_FONT_STEP, Math.max(MIN_FONT_STEP, Math.round(v)));
 }
 
-export default function PanelTabs({ url, videoId, onCaptureFrame }: PanelTabsProps) {
-  const [tab, setTab] = useState<Tab>("notes");
+export default function PanelTabs({
+  url,
+  videoId,
+  onCaptureFrame,
+  tab: controlledTab,
+  onTabChange,
+  onAddNote,
+  composer,
+  onComposerChange,
+  isMobile,
+  isTablet,
+}: PanelTabsProps) {
+  const [internalTab, setInternalTab] = useState<Tab>("notes");
+  const currentTab = controlledTab !== undefined ? controlledTab : internalTab;
+  const setTab = (t: Tab) => {
+    if (onTabChange) onTabChange(t);
+    setInternalTab(t);
+  };
+
   const [captionsAvailable, setCaptionsAvailable] = useState(false);
   const [fontStep, setFontStep] = useState(0);
   const [settingsOpen, setSettingsOpen] = useState(false);
@@ -71,6 +99,24 @@ export default function PanelTabs({ url, videoId, onCaptureFrame }: PanelTabsPro
   });
   const notesCount = useMemo(() => (itemsQuery.data ?? []).length, [itemsQuery.data]);
 
+  const handleAddNoteClick = () => {
+    if (onAddNote) {
+      onAddNote();
+    } else {
+      const snap = getPlayerSnapshot();
+      const wasPlaying = snap.playing;
+      if (wasPlaying) playerBridge.commands.pause();
+      if (onComposerChange) {
+        onComposerChange({
+          timestamp: snap.time,
+          draft: "",
+          wasPlaying,
+          autoFocus: true,
+        });
+      }
+    }
+  };
+
   const segBase =
     "sc-hit flex flex-1 items-center justify-center gap-1.5 rounded-md text-xs font-medium transition-colors duration-[var(--sc-dur-fast)] ease-out";
   const segActive = "bg-elevated text-text";
@@ -82,9 +128,9 @@ export default function PanelTabs({ url, videoId, onCaptureFrame }: PanelTabsPro
         <button
           type="button"
           onClick={() => setTab("notes")}
-          aria-current={tab === "notes" ? "page" : undefined}
+          aria-current={currentTab === "notes" ? "page" : undefined}
           data-testid="panel-tab-notes"
-          className={`${segBase} ${tab === "notes" ? segActive : segIdle}`}
+          className={`${segBase} ${currentTab === "notes" ? segActive : segIdle}`}
         >
           <Edit3 size={16} strokeWidth={2} aria-hidden />
           <span>Notes</span>
@@ -95,15 +141,27 @@ export default function PanelTabs({ url, videoId, onCaptureFrame }: PanelTabsPro
         <button
           type="button"
           onClick={() => setTab("transcript")}
-          aria-current={tab === "transcript" ? "page" : undefined}
+          aria-current={currentTab === "transcript" ? "page" : undefined}
           data-testid="panel-tab-transcript"
           title={captionsAvailable ? undefined : "No captions for this video — add notes manually"}
-          className={`${segBase} ${tab === "transcript" ? segActive : segIdle} ${!captionsAvailable ? "opacity-60" : ""}`}
+          className={`${segBase} ${currentTab === "transcript" ? segActive : segIdle} ${!captionsAvailable ? "opacity-60" : ""}`}
         >
           <FileText size={16} strokeWidth={2} aria-hidden />
           <span>Transcript</span>
         </button>
-        <div className="relative ml-auto" ref={settingsRef}>
+        <div className="relative ml-auto flex items-center gap-1" ref={settingsRef}>
+          {currentTab === "notes" && (
+            <button
+              type="button"
+              aria-label="Add note at current timestamp"
+              title="Add note (N)"
+              data-testid="add-note-button"
+              onClick={handleAddNoteClick}
+              className="flex h-8 w-8 items-center justify-center rounded-md text-text-2 hover:bg-elevated hover:text-accent transition-all active:scale-95"
+            >
+              <Plus size={16} strokeWidth={2.2} />
+            </button>
+          )}
           <button
             type="button"
             aria-label="Note display settings"
@@ -149,8 +207,16 @@ export default function PanelTabs({ url, videoId, onCaptureFrame }: PanelTabsPro
           )}
         </div>
       </div>
-      {tab === "notes" ? (
-        <NotesTab url={url} onCaptureFrame={onCaptureFrame} fontStep={fontStep} />
+      {currentTab === "notes" ? (
+        <NotesTab
+          url={url}
+          onCaptureFrame={onCaptureFrame}
+          fontStep={fontStep}
+          composer={composer}
+          onComposerChange={onComposerChange}
+          isMobile={isMobile}
+          isTablet={isTablet}
+        />
       ) : (
         <TranscriptPanel url={url} videoId={videoId ?? null} />
       )}

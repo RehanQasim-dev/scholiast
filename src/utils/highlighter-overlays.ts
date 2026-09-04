@@ -111,6 +111,8 @@ function findTextNodeAtOffset(element: Element, offset: number): { node: Node, o
 	return null;
 }
 
+const collapseWs = (s: string): string => s.replace(/\s+/g, ' ').trim();
+
 export function renderTextHighlight(highlight: {
 	id: string;
 	xpath: string;
@@ -118,6 +120,7 @@ export function renderTextHighlight(highlight: {
 	endOffset: number;
 	color?: string;
 	anchor?: AnnotationAnchor;
+	content?: string;
 }): void {
 	const hl = ensureUserHighlight(highlight.color || 'yellow');
 	if (!hl) return;
@@ -148,6 +151,7 @@ function resolveTextHighlightRange(highlight: {
 	startOffset: number;
 	endOffset: number;
 	anchor?: AnnotationAnchor;
+	content?: string;
 }): Range | null {
 	const anchor = highlight.anchor;
 	// Native path only for web-origin highlights (no anchor = legacy web highlight).
@@ -161,7 +165,25 @@ function resolveTextHighlightRange(highlight: {
 				const range = document.createRange();
 				range.setStart(start.node, start.offset);
 				range.setEnd(end.node, end.offset);
-				if (!range.collapsed) return range;
+				if (!range.collapsed) {
+					// Verify that the text at this structural xpath actually matches the highlight.
+					// If the DOM shifted or another page was loaded in an SPA, the structural
+					// xpath may match an unrelated element with different text.
+					const expected = anchor?.quote.quote;
+					if (expected) {
+						if (collapseWs(range.toString()) === collapseWs(expected)) {
+							return range;
+						}
+					} else if (highlight.content) {
+						const rangeText = collapseWs(range.toString());
+						const contentText = collapseWs(highlight.content.replace(/<[^>]*>/g, ' '));
+						if (rangeText && (rangeText === contentText || contentText.includes(rangeText))) {
+							return range;
+						}
+					} else {
+						return range;
+					}
+				}
 			}
 		}
 	}
@@ -904,6 +926,14 @@ export function triggerHighlightRecovery() {
 	}, 1000);
 }
 
+export function cancelHighlightRecovery(): void {
+	if (recoveryPoller) {
+		clearInterval(recoveryPoller as any);
+		recoveryPoller = null;
+	}
+	recoveryAttempts = 0;
+}
+
 // Reposition element overlays after layout changes. Text highlights paint
 // against the live text via CSS.highlights and reposition natively.
 function updateHighlightOverlayPositions() {
@@ -1121,6 +1151,7 @@ export function syncHoverListener(): void {
 
 // Remove all existing highlight overlays from the page
 export function removeExistingHighlights() {
+	cancelHighlightRecovery();
 	document.querySelectorAll('.obsidian-highlight-overlay').forEach(el => el.remove());
 	clearTextHighlights();
 	hideHighlightActionMenu();

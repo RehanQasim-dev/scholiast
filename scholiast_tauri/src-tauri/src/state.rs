@@ -7,6 +7,7 @@ use sqlx::{
 
 pub struct AppState {
     pub pool: SqlitePool,
+    pub player_server_url: Option<String>,
 }
 
 impl AppState {
@@ -19,6 +20,16 @@ impl AppState {
             .foreign_keys(true);
         let pool = SqlitePoolOptions::new().connect_with(options).await?;
         sqlx::migrate!("./migrations").run(&pool).await?;
-        Ok(Self { pool })
+        let player_server_url = match crate::player_server::start_player_server().await {
+            Ok(handle) => Some(handle.url),
+            Err(e) => {
+                eprintln!("[AppState] failed to start player server: {e}");
+                None
+            }
+        };
+        Ok(Self {
+            pool,
+            player_server_url,
+        })
     }
 }

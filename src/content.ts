@@ -415,6 +415,10 @@ declare global {
 		} else if (request.action === "getReaderModeState") {
 			sendResponse({ isActive: document.documentElement.classList.contains('obsidian-reader-active') });
 			return true;
+		} else if (request.action === "pageNavigated") {
+			void handlePageNavigation();
+			sendResponse({ success: true });
+			return true;
 		}
 		return true;
 	});
@@ -460,6 +464,43 @@ declare global {
 		if (hs.commentTheme) document.body.dataset.obCommentTheme = hs.commentTheme;
 		if (hs.commentTextSize) document.body.dataset.obCommentSize = hs.commentTextSize;
 	});
+
+	let currentNormalizedUrl = highlighter.normalizeUrl(window.location.href);
+	let isNavigating = false;
+
+	async function handlePageNavigation(force = false) {
+		const newNormalizedUrl = highlighter.normalizeUrl(window.location.href);
+		if (!force && newNormalizedUrl === currentNormalizedUrl) {
+			void jumpToHashHighlight();
+			return;
+		}
+
+		currentNormalizedUrl = newNormalizedUrl;
+		if (isNavigating) return;
+		isNavigating = true;
+
+		try {
+			// Cancel any active recovery polling from previous page
+			highlighter.cancelHighlightRecovery();
+
+			// Reload highlights for new page (calls applyHighlights internally,
+			// tearing down previous overlays/comment boxes if empty, or painting new ones)
+			await highlighter.loadHighlights();
+			highlighter.setPageTitle(document.title);
+
+			// Reload drawings for new page (clears SVG if empty or paints new strokes)
+			await pencil.loadDrawings();
+
+			if (generalSettings.alwaysShowHighlights && highlighter.getHighlights().length > 0) {
+				await ensureHighlighterCSS();
+			}
+
+			updateHasHighlights();
+			void jumpToHashHighlight();
+		} finally {
+			isNavigating = false;
+		}
+	}
 
 	async function initializeHighlighter() {
 		await loadSettings();
@@ -512,6 +553,48 @@ declare global {
 	// Initialize highlighter
 	initializeHighlighter();
 
+	// SPA Navigation: re-anchor or clear annotations when the page navigates client-side
+	// (e.g. GitHub Turbo/PJAX file tree browsing, YouTube watch transitions, etc.)
+	window.addEventListener('popstate', () => { void handlePageNavigation(); });
+	document.addEventListener('turbo:load', () => { void handlePageNavigation(true); });
+	document.addEventListener('turbo:render', () => { void handlePageNavigation(true); });
+	document.addEventListener('pjax:end', () => { void handlePageNavigation(true); });
+	document.addEventListener('yt-navigate-finish', () => { void handlePageNavigation(true); });
+
+	// Link clicks that could trigger client-side navigation
+	document.addEventListener('click', (e) => {
+		const link = (e.target as HTMLElement)?.closest('a');
+		if (link && link.href && !link.href.startsWith('javascript:')) {
+			setTimeout(() => { void handlePageNavigation(); }, 50);
+		}
+	}, true);
+
+	// Patch history.pushState and history.replaceState for SPAs without custom events
+	const origPushState = history.pushState;
+	if (typeof origPushState === 'function') {
+		history.pushState = function(...args) {
+			const result = origPushState.apply(this, args);
+			void handlePageNavigation();
+			return result;
+		};
+	}
+	const origReplaceState = history.replaceState;
+	if (typeof origReplaceState === 'function') {
+		history.replaceState = function(...args) {
+			const result = origReplaceState.apply(this, args);
+			void handlePageNavigation();
+			return result;
+		};
+	}
+
+	// Lightweight URL watchdog fallback for SPAs with detached routers
+	setInterval(() => {
+		const norm = highlighter.normalizeUrl(window.location.href);
+		if (norm !== currentNormalizedUrl) {
+			void handlePageNavigation();
+		}
+	}, 1000);
+
 	// Expose highlighter API on window so reader-script.js (a separate
 	// webpack bundle injected when reader mode activates) can delegate
 	// all state operations to this single module instance. Without this,
@@ -533,6 +616,7 @@ declare global {
 		saveHighlights: highlighter.saveHighlights,
 		removeExistingHighlights,
 		ensureHighlighterCSS: () => { ensureHighlighterCSS(); },
+		cancelHighlightRecovery: highlighter.cancelHighlightRecovery,
 	} satisfies highlighter.HighlighterAPI;
 
 	// Call updateHasHighlights when the page loads

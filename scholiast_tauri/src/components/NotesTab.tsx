@@ -3,12 +3,18 @@ import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useNavigate } from "react-router-dom";
 import { listen } from "@tauri-apps/api/event";
 import { convertFileSrc } from "@tauri-apps/api/core";
-import { Camera, Clock, Keyboard, Mic, MicOff, Send, X } from "lucide-react";
+import { Camera, Check, Clock, Keyboard, Mic, Square, X } from "lucide-react";
 import { deleteVideoItem, getVideoItems, upsertVideo, invokeCommand } from "../lib/ipc";
 import NoteCard, { type TimelineItem } from "./NoteCard";
+import AudioWave from "./AudioWave";
 import { toast } from "./Toast";
 import { formatElapsedMs, useVoiceComment } from "../voice/useVoiceComment";
-import { getPlayerSnapshot, subscribePlayerState } from "../player/playerBridge";
+import {
+  getPlayerSnapshot,
+  playerBridge,
+} from "../player/playerBridge";
+import useIsNarrow from "../hooks/useIsNarrow";
+import useIsTablet from "../hooks/useIsTablet";
 
 export function orderItems(items: TimelineItem[]): TimelineItem[] {
   return [...items].sort((a, b) => {
@@ -44,11 +50,194 @@ export interface CapturedFrameMeta {
   urlHash: string;
 }
 
+export interface ActiveComposerState {
+  timestamp: number;
+  draft: string;
+  wasPlaying: boolean;
+  capturedFrame?: CapturedFrameMeta | null;
+  autoFocus?: boolean;
+}
+
+interface InSituCardProps {
+  composer: ActiveComposerState;
+  onSave: (text: string, frame?: CapturedFrameMeta | null) => Promise<void>;
+  onCancel: () => void;
+  onDrawFrame?: (frame: CapturedFrameMeta) => void;
+  onRemoveFrame?: () => void;
+}
+
+export function InSituCard({
+  composer,
+  onSave,
+  onCancel,
+  onDrawFrame,
+  onRemoveFrame,
+}: InSituCardProps) {
+  const [draft, setDraft] = useState(composer.draft);
+  const [isMultiLine, setIsMultiLine] = useState(false);
+  const [saving, setSaving] = useState(false);
+  const textareaRef = useRef<HTMLTextAreaElement | null>(null);
+  const cardRef = useRef<HTMLElement | null>(null);
+
+  useEffect(() => {
+    if (typeof cardRef.current?.scrollIntoView === "function") {
+      cardRef.current.scrollIntoView({ behavior: "smooth", block: "nearest" });
+    }
+  }, []);
+
+  useEffect(() => {
+    const el = textareaRef.current;
+    if (!el) return;
+    const hasNewline = draft.includes("\n");
+    const isLong = draft.length >= 35;
+    const isTaller = el.scrollHeight > 38;
+    setIsMultiLine(hasNewline || isLong || isTaller);
+
+    el.style.height = "auto";
+    el.style.height = `${Math.min(el.scrollHeight, 130)}px`;
+  }, [draft]);
+
+  const handleCommit = async () => {
+    if (!draft.trim() && !composer.capturedFrame) return;
+    setSaving(true);
+    try {
+      await onSave(draft.trim(), composer.capturedFrame);
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const handleKeyDown = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
+    if (e.key === "Escape") {
+      e.preventDefault();
+      e.stopPropagation();
+      onCancel();
+      return;
+    }
+    if (e.key === "Enter") {
+      if (e.shiftKey || e.ctrlKey || e.metaKey) {
+        e.preventDefault();
+        e.stopPropagation();
+        void handleCommit();
+      } else {
+        e.stopPropagation();
+      }
+    }
+  };
+
+  return (
+    <article
+      ref={cardRef}
+      data-testid="in-situ-composer"
+      className="rounded-xl border border-accent/40 bg-surface/95 p-3 shadow-md shadow-black/20 ring-1 ring-accent/30 transition-all flex flex-col gap-2"
+    >
+      {/* Header: Timestamp Chip & Discard Button */}
+      <div className="flex items-center justify-between">
+        <span className="inline-flex items-center gap-1 rounded-full bg-accent/15 border border-accent/30 px-2 py-0.5 font-mono text-[11px] font-medium text-accent">
+          <Clock size={11} strokeWidth={2} />
+          {formatVideoTime(composer.timestamp)}
+        </span>
+        <button
+          type="button"
+          onClick={onCancel}
+          aria-label="Discard note"
+          title="Discard (Esc)"
+          className="flex h-5 w-5 items-center justify-center rounded-full text-text-3 hover:bg-elevated hover:text-text transition-colors"
+        >
+          <X size={13} />
+        </button>
+      </div>
+
+      {/* Captured Frame Thumbnail if present */}
+      {composer.capturedFrame && (
+        <div className="relative inline-flex items-center gap-2 rounded-lg border border-hairline bg-elevated p-1.5">
+          <img
+            src={convertFileSrc(composer.capturedFrame.path)}
+            alt="Captured frame"
+            onClick={() => onDrawFrame?.(composer.capturedFrame!)}
+            className="h-12 w-20 object-cover rounded cursor-pointer border border-hairline hover:opacity-90"
+            title="Tap to draw over frame"
+          />
+          <div className="text-xs text-text-2">
+            <span className="font-mono">{formatVideoTime(composer.timestamp)}</span>
+            <p className="text-[11px] text-text-3">Tap image to draw</p>
+          </div>
+          {onRemoveFrame && (
+            <button
+              type="button"
+              onClick={onRemoveFrame}
+              aria-label="Remove captured frame"
+              className="ml-auto flex h-5 w-5 items-center justify-center rounded-full text-text-3 hover:bg-surface hover:text-text"
+            >
+              <X size={12} />
+            </button>
+          )}
+        </div>
+      )}
+
+      {/* Dynamic Save Button: Inline for line 1, shifts below text on multi-line */}
+      {!isMultiLine ? (
+        <div className="flex items-center gap-2">
+          <textarea
+            ref={textareaRef}
+            value={draft}
+            onChange={(e) => setDraft(e.target.value)}
+            onKeyDown={handleKeyDown}
+            autoFocus={composer.autoFocus !== false}
+            placeholder="Write a note…"
+            rows={1}
+            className="min-h-[36px] flex-1 resize-none bg-transparent py-1 px-1 text-sm text-text outline-none placeholder:text-text-3 font-normal"
+          />
+          <button
+            type="button"
+            onClick={() => void handleCommit()}
+            disabled={saving || (!draft.trim() && !composer.capturedFrame)}
+            data-testid="save-note-btn-inline"
+            className="shrink-0 flex items-center gap-1 rounded-lg bg-accent px-3 py-1.5 text-xs font-semibold text-[var(--sc-accent-text)] shadow-sm hover:opacity-90 active:scale-95 disabled:opacity-30 transition-all"
+          >
+            <Check size={14} strokeWidth={2.5} />
+            <span>Save</span>
+          </button>
+        </div>
+      ) : (
+        <div className="flex flex-col gap-1.5">
+          <textarea
+            ref={textareaRef}
+            value={draft}
+            onChange={(e) => setDraft(e.target.value)}
+            onKeyDown={handleKeyDown}
+            autoFocus={composer.autoFocus !== false}
+            placeholder="Write a note…"
+            className="w-full resize-none bg-transparent py-1 px-1 text-sm text-text outline-none placeholder:text-text-3 font-normal min-h-[50px] max-h-[130px] overflow-y-auto"
+          />
+          <div className="flex items-center justify-between pt-1.5 border-t border-hairline/60">
+            <span className="text-[11px] text-text-3 font-mono">Shift+Enter to save • Esc to cancel</span>
+            <button
+              type="button"
+              onClick={() => void handleCommit()}
+              disabled={saving || (!draft.trim() && !composer.capturedFrame)}
+              data-testid="save-note-btn-bottom"
+              className="shrink-0 flex items-center gap-1 rounded-lg bg-accent px-3 py-1.5 text-xs font-semibold text-[var(--sc-accent-text)] shadow-sm hover:opacity-90 active:scale-95 disabled:opacity-30 transition-all"
+            >
+              <Check size={14} strokeWidth={2.5} />
+              <span>Save</span>
+            </button>
+          </div>
+        </div>
+      )}
+    </article>
+  );
+}
+
 interface NotesTabProps {
   url: string;
   deleteGraceMs?: number;
   onCaptureFrame?: () => Promise<CapturedFrameMeta | null>;
   fontStep?: number;
+  composer?: ActiveComposerState | null;
+  onComposerChange?: (c: ActiveComposerState | null) => void;
+  isMobile?: boolean;
+  isTablet?: boolean;
 }
 
 interface PendingDelete {
@@ -61,6 +250,10 @@ export default function NotesTab({
   deleteGraceMs = 5000,
   onCaptureFrame,
   fontStep = 0,
+  composer: controlledComposer,
+  onComposerChange,
+  isMobile,
+  isTablet,
 }: NotesTabProps) {
   const queryClient = useQueryClient();
   const navigate = useNavigate();
@@ -68,27 +261,27 @@ export default function NotesTab({
   const pendingRef = useRef<PendingDelete | null>(null);
   const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
-  // Composer state
-  const [draft, setDraft] = useState("");
-  const [useTimestamp, setUseTimestamp] = useState(true);
-  const [capturedFrame, setCapturedFrame] = useState<CapturedFrameMeta | null>(null);
-  const [submitting, setSubmitting] = useState(false);
-  const [currentTime, setCurrentTime] = useState(() => getPlayerSnapshot().time);
-  const textareaRef = useRef<HTMLTextAreaElement | null>(null);
-  const listEndRef = useRef<HTMLDivElement | null>(null);
+  // Composer internal state fallback if uncontrolled
+  const [internalComposer, setInternalComposer] = useState<ActiveComposerState | null>(null);
+  const activeComposer = controlledComposer !== undefined ? controlledComposer : internalComposer;
+  const setComposerState = (c: ActiveComposerState | null) => {
+    if (onComposerChange) onComposerChange(c);
+    setInternalComposer(c);
+  };
+
+  const isNarrowHook = useIsNarrow();
+  const isTabletHook = useIsTablet();
+  const isNarrowDevice = isMobile !== undefined ? isMobile : (isNarrowHook && !isTabletHook && !isTablet);
+
+  const [mobileVoiceWasPlaying, setMobileVoiceWasPlaying] = useState(false);
+  const [mobileVoiceTimestamp, setMobileVoiceTimestamp] = useState(0);
 
   const voice = useVoiceComment({
     kind: "add",
     enabled: true,
   });
 
-  // Track player time live for the timestamp chip
-  useEffect(() => {
-    const unsubscribe = subscribePlayerState(() => {
-      setCurrentTime(getPlayerSnapshot().time);
-    });
-    return () => unsubscribe();
-  }, []);
+  const listEndRef = useRef<HTMLDivElement | null>(null);
 
   const videoQuery = useQuery({
     queryKey: ["video", url],
@@ -118,12 +311,8 @@ export default function NotesTab({
           if (cancelled) fn();
           else dispose = fn;
         })
-        .catch(() => {
-          /* tauri event API unavailable (e.g. mocked test env) */
-        });
-    } catch {
-      /* tauri event API unavailable (e.g. mocked test env) */
-    }
+        .catch(() => {});
+    } catch {}
     return () => {
       cancelled = true;
       dispose?.();
@@ -132,15 +321,10 @@ export default function NotesTab({
 
   useEffect(
     () => () => {
-      // Leaving the panel with an un-undone delete: commit it.
       if (timerRef.current) clearTimeout(timerRef.current);
       const candidate = pendingRef.current;
       if (candidate && urlHash) {
-        void deleteVideoItem({ urlHash, itemId: candidate.item.id }).catch(
-          () => {
-            /* offline-safe: next reconcile re-surfaces the item */
-          },
-        );
+        void deleteVideoItem({ urlHash, itemId: candidate.item.id }).catch(() => {});
       }
     },
     [urlHash],
@@ -153,9 +337,7 @@ export default function NotesTab({
     }
     try {
       await deleteVideoItem({ urlHash: urlHash!, itemId: candidate.item.id });
-    } catch {
-      /* offline-safe: next reconcile re-surfaces the item */
-    }
+    } catch {}
     void queryClient.invalidateQueries({ queryKey: ["videoItems", urlHash] });
   };
 
@@ -201,66 +383,137 @@ export default function NotesTab({
     }
   };
 
-  const handleMicToggle = async () => {
-    if (voice.recording) {
-      try {
-        const text = await voice.stop();
-        if (text) {
-          setDraft((prev) => (prev ? `${prev} ${text}` : text));
-        }
-      } catch {
-        toast("Voice transcription failed");
-      }
-    } else {
-      try {
-        await voice.start();
-      } catch {
-        toast("Microphone unavailable");
-      }
-    }
-  };
+  const handleSaveComposer = async (text: string, frame?: CapturedFrameMeta | null) => {
+    if (!text && !frame) return;
+    if (!urlHash || !activeComposer) return;
 
-  const handleCapture = async () => {
-    if (!onCaptureFrame) return;
     try {
-      const frame = await onCaptureFrame();
-      if (frame) {
-        setCapturedFrame(frame);
-      }
-    } catch {
-      toast("Frame capture failed");
-    }
-  };
-
-  const handleSend = async () => {
-    const text = draft.trim();
-    if (!text && !capturedFrame) return;
-    if (!urlHash) return;
-
-    setSubmitting(true);
-    try {
-      const videoTime = useTimestamp ? currentTime : 0;
+      const videoTime = activeComposer.timestamp;
       const note = text ? `${text}<!--timestamp:${Date.now()}-->` : "";
       const itemId = genVideoItemId();
 
       const newItem: TimelineItem = {
         id: itemId,
-        kind: capturedFrame ? "frame" : "note",
+        kind: frame ? "frame" : "note",
         videoTime,
         notes: note ? [note] : [],
         updatedAt: Date.now(),
-        frame: capturedFrame ? { w: capturedFrame.w, h: capturedFrame.h } : undefined,
+        frame: frame ? { w: frame.w, h: frame.h } : undefined,
       };
 
       await invokeCommand("save_video_item", { urlHash, item: newItem });
       await queryClient.invalidateQueries({ queryKey: ["videoItems", urlHash] });
-      setDraft("");
-      setCapturedFrame(null);
-      listEndRef.current?.scrollIntoView({ behavior: "smooth" });
+      const resume = activeComposer.wasPlaying;
+      setComposerState(null);
+      if (resume) {
+        playerBridge.commands.play();
+      }
     } catch {
       toast("Couldn't save note");
+    }
+  };
+
+  const handleCancelComposer = () => {
+    if (!activeComposer) return;
+    const resume = activeComposer.wasPlaying;
+    setComposerState(null);
+    if (resume) {
+      playerBridge.commands.play();
+    }
+  };
+
+  const handleDrawFrame = (frame: CapturedFrameMeta) => {
+    navigate("/frame", {
+      state: {
+        urlHash,
+        url,
+        tmpPath: frame.path,
+        w: frame.w,
+        h: frame.h,
+        videoTime: activeComposer?.timestamp ?? 0,
+      },
+    });
+  };
+
+  const handleRemoveFrame = () => {
+    if (activeComposer) {
+      setComposerState({ ...activeComposer, capturedFrame: null });
+    }
+  };
+
+  // Mobile Bottom Bar handlers
+  const handleMobileVoiceTap = async () => {
+    if (voice.recording) {
+      try {
+        const text = await voice.stop();
+        setComposerState({
+          timestamp: mobileVoiceTimestamp,
+          draft: text || "",
+          wasPlaying: mobileVoiceWasPlaying,
+          autoFocus: false, // Don't autofocus to avoid pop-up keyboard
+        });
+      } catch {
+        toast("Voice transcription failed");
+        if (mobileVoiceWasPlaying) playerBridge.commands.play();
+      }
+    } else {
+      const snap = getPlayerSnapshot();
+      const wasPlaying = snap.playing;
+      if (wasPlaying) playerBridge.commands.pause();
+      setMobileVoiceWasPlaying(wasPlaying);
+      setMobileVoiceTimestamp(snap.time);
+
+      try {
+        await voice.start();
+      } catch {
+        toast("Microphone unavailable");
+        if (wasPlaying) playerBridge.commands.play();
+      }
+    }
+  };
+
+  const handleCancelMobileVoice = async () => {
+    try {
+      await voice.cancel();
     } finally {
-      setSubmitting(false);
+      if (mobileVoiceWasPlaying) playerBridge.commands.play();
+    }
+  };
+
+  const handleMobileTypeTap = () => {
+    const snap = getPlayerSnapshot();
+    const wasPlaying = snap.playing;
+    if (wasPlaying) playerBridge.commands.pause();
+
+    setComposerState({
+      timestamp: snap.time,
+      draft: "",
+      wasPlaying,
+      autoFocus: true,
+    });
+  };
+
+  const handleCaptureFrameClick = async () => {
+    if (!onCaptureFrame) return;
+    const snap = getPlayerSnapshot();
+    const wasPlaying = snap.playing;
+    if (wasPlaying) playerBridge.commands.pause();
+
+    const frame = await onCaptureFrame();
+    if (frame) {
+      if (activeComposer) {
+        setComposerState({ ...activeComposer, capturedFrame: frame });
+      } else {
+        setComposerState({
+          timestamp: snap.time,
+          draft: "",
+          wasPlaying,
+          capturedFrame: frame,
+          autoFocus: true,
+        });
+      }
+    } else if (wasPlaying) {
+      playerBridge.commands.play();
     }
   };
 
@@ -292,11 +545,60 @@ export default function NotesTab({
 
   const items = itemsQuery.data ?? [];
 
+  // Build rendered list with InSituCard chronologically inserted
+  const renderList = () => {
+    if (!activeComposer) {
+      return items.map((item) => (
+        <NoteCard key={item.id} item={item} onDelete={startDelete} onEdit={handleEdit} />
+      ));
+    }
+
+    const elements: React.ReactNode[] = [];
+    let inserted = false;
+
+    for (const item of items) {
+      if (!inserted && activeComposer.timestamp <= item.videoTime) {
+        elements.push(
+          <InSituCard
+            key="active-composer"
+            composer={activeComposer}
+            onSave={handleSaveComposer}
+            onCancel={handleCancelComposer}
+            onDrawFrame={handleDrawFrame}
+            onRemoveFrame={handleRemoveFrame}
+          />,
+        );
+        inserted = true;
+      }
+      elements.push(
+        <NoteCard key={item.id} item={item} onDelete={startDelete} onEdit={handleEdit} />,
+      );
+    }
+
+    if (!inserted) {
+      elements.push(
+        <InSituCard
+          key="active-composer"
+          composer={activeComposer}
+          onSave={handleSaveComposer}
+          onCancel={handleCancelComposer}
+          onDrawFrame={handleDrawFrame}
+          onRemoveFrame={handleRemoveFrame}
+        />,
+      );
+    }
+
+    return elements;
+  };
+
   return (
-    <div className="flex h-full min-h-0 flex-col overflow-hidden bg-surface" style={{ ["--sc-note-font" as unknown as string]: `${15 + fontStep}px` } as any}>
-      {/* Scrollable Notes Stream */}
+    <div
+      className="flex h-full min-h-0 flex-col overflow-hidden bg-surface"
+      style={{ ["--sc-note-font" as unknown as string]: `${15 + fontStep}px` } as any}
+    >
+      {/* Scrollable Chronological Notes Stream */}
       <div className="min-h-0 flex-1 overflow-y-auto p-3 flex flex-col gap-2">
-        {items.length === 0 ? (
+        {items.length === 0 && !activeComposer ? (
           <div className="my-auto flex flex-col items-center gap-1 rounded-lg border border-dashed border-hairline px-6 py-12 text-center">
             <p className="text-sm font-medium text-text">No notes yet.</p>
             <p className="text-xs text-text-3">
@@ -305,9 +607,7 @@ export default function NotesTab({
             </p>
           </div>
         ) : (
-          items.map((item) => (
-            <NoteCard key={item.id} item={item} onDelete={startDelete} onEdit={handleEdit} />
-          ))
+          renderList()
         )}
         <div ref={listEndRef} />
       </div>
@@ -328,137 +628,90 @@ export default function NotesTab({
         </div>
       )}
 
-      {/* Sleek Pinned Composer at Bottom */}
-      <div className="shrink-0 border-t border-hairline bg-surface/90 backdrop-blur-md p-2.5">
-        {/* Frame preview if captured */}
-        {capturedFrame && (
-          <div className="mb-2 relative inline-flex items-center gap-2 rounded-lg border border-hairline bg-elevated p-1.5">
-            <img
-              src={convertFileSrc(capturedFrame.path)}
-              alt="Captured frame"
-              onClick={() => {
-                navigate("/frame", {
-                  state: {
-                    urlHash,
-                    url,
-                    tmpPath: capturedFrame.path,
-                    w: capturedFrame.w,
-                    h: capturedFrame.h,
-                    videoTime: currentTime,
-                  },
-                });
-              }}
-              className="h-12 w-20 object-cover rounded cursor-pointer border border-hairline hover:opacity-90"
-              title="Tap to draw over frame"
-            />
-            <div className="text-xs text-text-2">
-              <span className="font-mono">{formatVideoTime(currentTime)}</span>
-              <p className="text-[11px] text-text-3">Tap image to draw</p>
+      {/* Mobile-Only 3-Action Bottom Bar (Hidden completely on Desktop & Tablet) */}
+      {isNarrowDevice && (
+        <div className="shrink-0 border-t border-hairline bg-surface/95 backdrop-blur-md p-2.5">
+          {voice.recording ? (
+            /* Live Audio Wave Visualizer while recording */
+            <div
+              data-testid="mobile-wave-bar"
+              className="flex items-center justify-between gap-3 rounded-full border border-[color:var(--sc-danger)]/40 bg-base/90 px-3.5 py-2 shadow-sm"
+            >
+              <div className="flex items-center gap-2 text-xs text-[color:var(--sc-danger)]">
+                <span className="h-2 w-2 rounded-full bg-[color:var(--sc-danger)] animate-ping" />
+                <AudioWave bars={5} className="text-[var(--sc-danger)]" />
+                <span className="font-mono tabular-nums font-medium">
+                  {formatElapsedMs(voice.elapsedMs)}
+                </span>
+              </div>
+              <div className="flex items-center gap-1.5">
+                <button
+                  type="button"
+                  onClick={() => void handleMobileVoiceTap()}
+                  className="flex items-center gap-1 rounded-full bg-[color:var(--sc-danger)] px-3 py-1 text-xs font-semibold text-white shadow-sm hover:opacity-90 active:scale-95"
+                >
+                  <Square size={12} fill="currentColor" />
+                  <span>Stop</span>
+                </button>
+                <button
+                  type="button"
+                  onClick={() => void handleCancelMobileVoice()}
+                  aria-label="Cancel recording"
+                  className="flex h-6 w-6 items-center justify-center rounded-full text-text-3 hover:text-text active:scale-95"
+                >
+                  <X size={14} />
+                </button>
+              </div>
             </div>
-            <button
-              type="button"
-              onClick={() => setCapturedFrame(null)}
-              className="ml-2 flex h-5 w-5 items-center justify-center rounded-full text-text-3 hover:bg-surface hover:text-text"
-              title="Discard frame"
+          ) : (
+            /* 3-Action Pill Bar */
+            <div
+              data-testid="mobile-action-bar"
+              className="flex items-center gap-2"
             >
-              <X size={12} />
-            </button>
-          </div>
-        )}
-
-        {/* Voice recording progress status */}
-        {voice.recording && (
-          <div className="mb-1.5 flex items-center gap-2 px-1 text-xs text-[color:var(--sc-danger)]">
-            <span className="h-2 w-2 rounded-full bg-[color:var(--sc-danger)] animate-ping" />
-            <span>Recording voice note ({formatElapsedMs(voice.elapsedMs)})</span>
-          </div>
-        )}
-
-        {/* Composer Row */}
-        <div className="sc-note-terminal flex items-end gap-1.5 rounded-xl border border-hairline bg-base/80 p-1.5 transition-colors focus-within:border-accent focus-within:ring-1 focus-within:ring-accent/30">
-          <div className="mb-1 shrink-0">
-            <button
-              type="button"
-              onClick={() => setUseTimestamp((v) => !v)}
-              title={useTimestamp ? "Timestamp enabled (tap to disable)" : "Timestamp disabled (tap to enable)"}
-              className={`inline-flex items-center gap-1 rounded-full px-2 py-0.5 font-mono text-[11px] tabular-nums font-medium transition-colors ${
-                useTimestamp
-                  ? "bg-accent/20 text-accent border border-accent/40"
-                  : "bg-elevated text-text-3 border border-hairline opacity-60"
-              }`}
-            >
-              <Clock size={11} strokeWidth={2} />
-              {useTimestamp ? formatVideoTime(currentTime) : "None"}
-            </button>
-          </div>
-
-          <textarea
-            ref={textareaRef}
-            value={draft}
-            onChange={(e) => setDraft(e.target.value)}
-            onKeyDown={(e) => {
-              if (e.key === "Enter" && !e.shiftKey) {
-                e.preventDefault();
-                void handleSend();
-              }
-            }}
-            placeholder="Write or speak a note…"
-            rows={1}
-            className="min-h-[36px] max-h-24 min-w-0 flex-1 resize-none bg-transparent py-1.5 px-1 text-text outline-none placeholder:text-text-3"
-          />
-
-          <div className="flex items-center gap-1 mb-0.5 shrink-0">
-            {onCaptureFrame && (
+              {/* Voice Note (STT) - Prominent Emerald Action Pill */}
               <button
                 type="button"
-                title="Capture frame snapshot"
-                onClick={() => void handleCapture()}
-                className="flex h-8 w-8 items-center justify-center rounded-lg text-text-2 transition-colors hover:bg-elevated hover:text-text active:scale-95"
+                data-testid="mobile-voice-btn"
+                onClick={() => void handleMobileVoiceTap()}
+                disabled={voice.state === "transcribing" || Boolean(voice.disabledReason)}
+                className="flex-1 flex items-center justify-center gap-2 rounded-xl bg-accent px-4 py-2.5 text-sm font-semibold text-[var(--sc-accent-text)] shadow-sm shadow-accent/20 transition-all active:scale-95 disabled:opacity-40"
               >
-                <Camera size={18} strokeWidth={2} />
+                {voice.state === "transcribing" ? (
+                  <span className="h-4 w-4 animate-spin rounded-full border-2 border-[var(--sc-accent-text)] border-t-transparent" />
+                ) : (
+                  <Mic size={18} strokeWidth={2.2} />
+                )}
+                <span>Voice Note</span>
               </button>
-            )}
-            <button
-              type="button"
-              title="Toggle keyboard"
-              onClick={() => textareaRef.current?.focus()}
-              className="flex h-8 w-8 items-center justify-center rounded-lg text-text-2 transition-colors hover:bg-elevated hover:text-text active:scale-95"
-            >
-              <Keyboard size={18} strokeWidth={2} />
-            </button>
-            <button
-              type="button"
-              title={voice.disabledReason ?? (voice.recording ? "Stop recording" : "Record voice note")}
-              onClick={() => void handleMicToggle()}
-              disabled={voice.state === "transcribing" || Boolean(voice.disabledReason)}
-              className={`relative flex h-8 w-8 items-center justify-center rounded-lg transition-all active:scale-95 ${
-                voice.recording
-                  ? "bg-[color:var(--sc-danger)] text-white animate-pulse"
-                  : voice.disabledReason
-                    ? "text-text-3 opacity-40 cursor-not-allowed"
-                    : "text-text-2 hover:bg-elevated hover:text-text"
-              }`}
-            >
-              {voice.state === "transcribing" ? (
-                <span className="h-4 w-4 animate-spin rounded-full border-2 border-accent border-t-transparent" />
-              ) : voice.recording ? (
-                <MicOff size={18} strokeWidth={2} />
-              ) : (
-                <Mic size={18} strokeWidth={2} />
+
+              {/* Frame Capture */}
+              {onCaptureFrame && (
+                <button
+                  type="button"
+                  data-testid="mobile-frame-btn"
+                  onClick={() => void handleCaptureFrameClick()}
+                  title="Capture frame snapshot"
+                  className="flex h-11 w-11 items-center justify-center rounded-xl border border-hairline bg-elevated text-text-2 transition-colors hover:text-text active:scale-95"
+                >
+                  <Camera size={20} strokeWidth={2} />
+                </button>
               )}
-            </button>
-            <button
-              type="button"
-              title="Save note"
-              onClick={() => void handleSend()}
-              disabled={submitting || (!draft.trim() && !capturedFrame)}
-              className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-accent text-[var(--sc-accent-text)] shadow-sm shadow-accent/20 transition-all hover:opacity-90 active:scale-95 disabled:opacity-30 disabled:shadow-none"
-            >
-              <Send size={16} strokeWidth={2} />
-            </button>
-          </div>
+
+              {/* Type Note */}
+              <button
+                type="button"
+                data-testid="mobile-type-btn"
+                onClick={handleMobileTypeTap}
+                title="Type note"
+                className="flex h-11 w-11 items-center justify-center rounded-xl border border-hairline bg-elevated text-text-2 transition-colors hover:text-text active:scale-95"
+              >
+                <Keyboard size={20} strokeWidth={2} />
+              </button>
+            </div>
+          )}
         </div>
-      </div>
+      )}
     </div>
   );
 }

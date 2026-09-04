@@ -1,7 +1,7 @@
 import browser from './browser-polyfill';
 import { getElementXPath, getElementByXPath, setElementHTML } from './dom-utils';
 import { trimRange } from './trim-range';
-import { createAnchor, createImageAnchor, resolveImageElement, locateRange, type AnnotationAnchor } from '../../shared/anchor';
+import { createAnchor, createImageAnchor, resolveImageElement, imageSrcMatches, locateRange, type AnnotationAnchor } from '../../shared/anchor';
 import { capturePageSourceIfNeeded } from './page-source-capture';
 import { getPage, setPage, removePage } from './page-store';
 import {
@@ -12,6 +12,7 @@ import {
 	handleTouchMove,
 	syncHoverListener,
 	markHighlightJustCreated,
+	cancelHighlightRecovery,
 } from './highlighter-overlays';
 import { addBrowserClassToHtml } from './browser-detection';
 import dayjs from 'dayjs';
@@ -26,7 +27,7 @@ export type AnyHighlightData = TextHighlightData | ElementHighlightData;
 // use it without importing this (DOM-heavy) module. Re-exported here so existing
 // `import { normalizeUrl } from './highlighter'` consumers keep working.
 import { normalizeUrl } from './url-utils';
-export { normalizeUrl };
+export { normalizeUrl, cancelHighlightRecovery };
 
 export let highlights: AnyHighlightData[] = [];
 export let isApplyingHighlights = false;
@@ -56,6 +57,7 @@ export interface HighlighterAPI {
 	saveHighlights: typeof saveHighlights;
 	removeExistingHighlights: () => void;
 	ensureHighlighterCSS: () => void;
+	cancelHighlightRecovery: () => void;
 }
 
 // URL override for extension pages (e.g. reader page) where
@@ -899,8 +901,23 @@ export function applyHighlights() {
 		// xpath points into the note's DOM) — guard, since document.evaluate('') throws.
 		const container = highlight.xpath ? getElementByXPath(highlight.xpath) : null;
 		if (container) {
-			planHighlightOverlayRects(container, highlight);
-			return;
+			if (highlight.anchor?.image) {
+				const img = imageInfoForElement(container);
+				if (img && imageSrcMatches(img.src, highlight.anchor.image.src)) {
+					planHighlightOverlayRects(container, highlight);
+					return;
+				}
+			} else if (highlight.content) {
+				const elText = container.textContent?.replace(/\s+/g, ' ').trim() || '';
+				const expText = highlight.content.replace(/<[^>]*>/g, ' ').replace(/\s+/g, ' ').trim();
+				if (!expText || elText === expText) {
+					planHighlightOverlayRects(container, highlight);
+					return;
+				}
+			} else {
+				planHighlightOverlayRects(container, highlight);
+				return;
+			}
 		}
 		// XPath failed/absent — fall back to matching the image by source, mirroring
 		// the text-quote fallback for text highlights.
@@ -1055,6 +1072,8 @@ export async function loadHighlights() {
 	} else {
 		highlights = [];
 		bumpHighlightsVersion();
+		applyHighlights();
+		document.body.classList.remove('obsidian-highlighter-always-show');
 	}
 	lastAppliedVersion = highlightsVersion;
 	// A drawing saved while this page wasn't listening (the tab was reloaded while

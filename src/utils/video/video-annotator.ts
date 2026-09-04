@@ -429,14 +429,30 @@ function renderCommitted() {
 	committedHolder.replaceChildren(renderMarkupSvg(markup, Math.max(1, w), Math.max(1, h), null));
 }
 
-// --- Comment panel -----------------------------------------------------------
+function onPointerDown(e: PointerEvent) {
+	if (e.button !== 0 || mode !== 'draw') return;
 
-function buildPanel(): HTMLElement {
-	const p = document.createElement('div');
-	p.className = 'ob-vid-panel';
+	// Select tool: click a markup element to select it (then drag to move); click
+	// empty space to deselect. Hit-testing is geometric against the markup coords.
+	if (currentTool === 'select') {
+		const p = toLocal(e);
+		const mid = hitTest(p.x, p.y);
+		selectedId = mid;
+		if (root) {
+			root.querySelectorAll('.ob-vid-swatch').forEach(el =>
+				el.classList.toggle('is-active', (el as HTMLElement).dataset.color === selectedColor()));
+		}
+		renderCommitted();
+		if (mid) {
+			selDragging = true;
+			selLast = p;
+			selSnapshot = JSON.parse(JSON.stringify(markup));
+			frameInner?.setPointerCapture?.(e.pointerId);
+			e.preventDefault();
+		}
+		return;
+	}
 
-	const head = document.createElement('div');
-	head.className = 'ob-vid-panel-head';
 	// Don't treat clicks on an in-progress text label as a new placement.
 	if ((e.target as HTMLElement)?.classList?.contains('ob-vid-textinput')) return;
 	const p = toLocal(e);
@@ -667,6 +683,14 @@ function placeTextInput(x: number, y: number, initial = '', boxOverride?: number
 		clearActive();
 		if (!toolLocked && currentTool === 'text') setTool('select');
 	};
+}
+
+// --- Comment panel -----------------------------------------------------------
+
+function buildPanel(): HTMLElement {
+	const p = document.createElement('div');
+	p.className = 'ob-vid-panel';
+
 	const head = document.createElement('div');
 	head.className = 'ob-vid-panel-head';
 	const ts = document.createElement('span');

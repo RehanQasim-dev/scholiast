@@ -7,9 +7,12 @@ import { toast } from "../components/Toast";
 import PanelTabs from "../components/PanelTabs";
 import SplitterPane from "../components/SplitterPane";
 import useIsNarrow from "../hooks/useIsNarrow";
+import useIsTablet from "../hooks/useIsTablet";
 import { invokeCommand, upsertVideo } from "../lib/ipc";
 import Chrome from "../player/Chrome";
 import PlayerHost from "../player/PlayerHost";
+import TabletVideoDock from "../components/player/TabletVideoDock";
+import type { ActiveComposerState } from "../components/NotesTab";
 import {
   getPlayerSnapshot,
   playerBridge,
@@ -31,9 +34,7 @@ export function extractVideoId(input: string): string | null {
 async function persistResume(url: string, seconds: number) {
   try {
     await invoke("set_resume_at", { url, resumeAt: seconds });
-  } catch {
-    /* command arrives with task-02; failures are silently ignored */
-  }
+  } catch {}
 }
 
 export interface CaptureOut {
@@ -54,17 +55,26 @@ export default function Player() {
   const stageRef = useRef<HTMLDivElement | null>(null);
   const containerRef = useRef<HTMLDivElement | null>(null);
   const workspaceRef = useRef<HTMLDivElement | null>(null);
+
   const isNarrow = useIsNarrow();
+  const isTablet = useIsTablet();
+  const isMobile = isNarrow && !isTablet;
+
   const [sheet, setSheet] = useState<SheetState>("balanced");
   const [videoTitle, setVideoTitle] = useState("");
   const [playerState, setPlayerState] = useState<number>(YT_STATE.UNSTARTED);
 
-  useQuery({
+  const [studyTab, setStudyTab] = useState<"notes" | "transcript">("notes");
+  const [tabletPanel, setTabletPanel] = useState<"notes" | "transcript" | null>("notes");
+  const [activeComposer, setActiveComposer] = useState<ActiveComposerState | null>(null);
+
+  const videoQuery = useQuery({
     queryKey: ["video", url],
     queryFn: () => upsertVideo({ url }),
     enabled: Boolean(url && videoId),
     staleTime: Infinity,
   });
+  const urlHash = videoQuery.data?.urlHash;
 
   useEffect(() => {
     if (!url) return;
@@ -124,18 +134,103 @@ export default function Player() {
     }
   }, [url]);
 
+  const handleAddNote = useCallback(() => {
+    setStudyTab("notes");
+    if (isTablet) setTabletPanel("notes");
+
+    const snap = getPlayerSnapshot();
+    const wasPlaying = snap.playing || playerState === YT_STATE.PLAYING;
+    if (wasPlaying) playerBridge.commands.pause();
+
+    setActiveComposer({
+      timestamp: snap.time,
+      draft: "",
+      wasPlaying,
+      autoFocus: true,
+    });
+  }, [isTablet, playerState]);
+
+  const handleCaptureFrameClick = useCallback(async () => {
+    const frame = await captureFrame();
+    if (frame) {
+      setStudyTab("notes");
+      if (isTablet) setTabletPanel("notes");
+      const snap = getPlayerSnapshot();
+      setActiveComposer((prev) =>
+        prev
+          ? { ...prev, capturedFrame: frame }
+          : {
+              timestamp: snap.time,
+              draft: "",
+              wasPlaying: false,
+              capturedFrame: frame,
+              autoFocus: true,
+            },
+      );
+    }
+  }, [captureFrame, isTablet]);
+
+  // Global keyboard shortcuts for desktop & tablet with physical keyboard
+  useEffect(() => {
+    const onKeyDown = (e: KeyboardEvent) => {
+      const target = e.target as HTMLElement | null;
+      const isInput =
+        target &&
+        (target.tagName === "INPUT" ||
+          target.tagName === "TEXTAREA" ||
+          target.tagName === "SELECT" ||
+          target.isContentEditable);
+      if (isInput) return;
+
+      if (e.key === "n" || e.key === "N") {
+        e.preventDefault();
+        handleAddNote();
+        return;
+      }
+
+      if (e.key === " ") {
+        e.preventDefault();
+        const snap = getPlayerSnapshot();
+        if (snap.playing || playerState === YT_STATE.PLAYING) {
+          playerBridge.commands.pause();
+        } else {
+          playerBridge.commands.play();
+        }
+        return;
+      }
+
+      if (e.key === "s" || e.key === "S") {
+        e.preventDefault();
+        void handleCaptureFrameClick();
+        return;
+      }
+
+      if (e.key === "t" || e.key === "T") {
+        e.preventDefault();
+        setStudyTab((prev) => (prev === "notes" ? "transcript" : "notes"));
+        if (isTablet) {
+          setTabletPanel((prev) => (prev === "notes" ? "transcript" : "notes"));
+        }
+        return;
+      }
+    };
+
+    window.addEventListener("keydown", onKeyDown);
+    return () => window.removeEventListener("keydown", onKeyDown);
+  }, [handleAddNote, handleCaptureFrameClick, isTablet, playerState]);
+
   const handleWorkspaceScroll = useCallback(() => {
     const el = workspaceRef.current;
-    if (!el || !isNarrow) return;
+    if (!el || !isMobile) return;
     const top = el.scrollTop;
     if (top > 140 && sheet !== "focus") {
       setSheet("focus");
     } else if (top < 24 && sheet === "focus") {
       setSheet("balanced");
     }
-  }, [isNarrow, sheet]);
+  }, [isMobile, sheet]);
 
-  const isFocus = sheet === "focus" && isNarrow;
+  const isFocus = sheet === "focus" && isMobile;
   const isShieldVisible = playerState === YT_STATE.PAUSED || playerState === YT_STATE.ENDED;
 
   const videoStageNode = (
@@ -148,7 +243,7 @@ export default function Player() {
     >
       {videoId ? (
         <>
-          <PlayerHost />
+          <PlayerHost videoId={videoId} />
           {/* Pause / Ended recommendation shield: prevents YouTube related tiles from bleeding through */}
           {isShieldVisible && (
             <div
@@ -193,7 +288,21 @@ export default function Player() {
       onScroll={handleWorkspaceScroll}
       className="flex h-full min-h-0 flex-1 flex-col overflow-hidden bg-surface"
     >
-      <PanelTabs url={url} videoId={videoId} onCaptureFrame={captureFrame} />
+      <PanelTabs
+        url={url}
+        videoId={videoId}
+        onCaptureFrame={captureFrame}
+        tab={isTablet ? (tabletPanel ?? "notes") : studyTab}
+        onTabChange={(t) => {
+          setStudyTab(t);
+          if (isTablet) setTabletPanel(t);
+        }}
+        onAddNote={handleAddNote}
+        composer={activeComposer}
+        onComposerChange={setActiveComposer}
+        isMobile={isMobile}
+        isTablet={isTablet}
+      />
     </aside>
   );
 
@@ -201,10 +310,10 @@ export default function Player() {
     <section
       ref={containerRef}
       className="flex h-full min-h-0 w-full flex-col bg-base"
-      style={isNarrow ? { paddingTop: "var(--sc-safe-top)" } : undefined}
+      style={isMobile ? { paddingTop: "var(--sc-safe-top)" } : undefined}
     >
-      {isNarrow ? (
-        /* Mobile / Narrow Portrait: Stacked Layout */
+      {isMobile ? (
+        /* Mobile / Narrow Portrait: Stacked Layout (Top 40% Video, Bottom 60% Notes) */
         <div className="flex min-h-0 flex-1 flex-col overflow-hidden">
           <div
             className="relative shrink-0 overflow-hidden bg-black"
@@ -220,8 +329,31 @@ export default function Player() {
             {studyPanelNode}
           </div>
         </div>
+      ) : isTablet ? (
+        /* Tablet: Video Left + Notes Right with Right-Side Edge Dock (~48px) */
+        <div className="relative flex h-full min-h-0 w-full overflow-hidden">
+          <div
+            className={`relative h-full transition-all duration-200 overflow-hidden ${
+              tabletPanel !== null ? "w-[60%] mr-12" : "w-[calc(100%-3rem)]"
+            }`}
+          >
+            {videoStageNode}
+          </div>
+          {tabletPanel !== null && (
+            <div className="h-full w-[calc(40%-3rem)] border-l border-hairline overflow-hidden">
+              {studyPanelNode}
+            </div>
+          )}
+          <TabletVideoDock
+            activePanel={tabletPanel}
+            onTogglePanel={(p) => setTabletPanel((prev) => (prev === p ? null : p))}
+            onAddNote={handleAddNote}
+            onCaptureFrame={() => void handleCaptureFrameClick()}
+            urlHash={urlHash}
+          />
+        </div>
       ) : (
-        /* Tablet & Desktop Landscape: Resizable 2-Panel Splitter (60/40 Default, Persistent) */
+        /* Desktop: Resizable 2-Panel Splitter with full keyboard ergonomics */
         <SplitterPane
           left={videoStageNode}
           right={studyPanelNode}

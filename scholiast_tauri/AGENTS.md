@@ -97,4 +97,13 @@ Do NOT build any other ABIs (such as 32-bit x86 Android or unused targets) to pr
   - Reader top bar formatting popover (`ReaderTopBar.tsx`) provides 4 instant themes: OLED Pitch Black (`#000000`), Warm Sepia Paper (`#1c1815`), Soft Slate Navy (`#0f172a`), and Clean Light Paper (`#fbfbfa`), saved in `reader.theme` preferences.
 - **Dedicated Excalidraw & Stylus Settings**:
   - Embedded inside `Settings.tsx` (`ExcalidrawSettingsSection.tsx`) exposing stroke roughness (Architect/Artist/Cartoonist), S-Pen & stylus pressure sensitivity curves (Linear/Soft/Firm), background grid styles (Blank/Dots/Crosshatch), and high-DPI export resolution (1x/2x Retina/3x).
-
+- **Desktop Video Playback (Loopback Server)**:
+  - Rust loopback HTTP server (`player_server.rs`) bound to `127.0.0.1:<random-port>` serves `/player` with `Referrer-Policy: strict-origin-when-cross-origin`. Overcomes WebKit2GTK / custom protocol missing referrer restrictions (YouTube Error 153) and relays postMessage events to `PlayerHost.tsx`.
+- **Neutral Dark Canvas & Refined Accents**:
+  - `tokens.css` utilizes neutral obsidian/zinc foundation (`#090b0d`, `#111417`, `#f4f4f5`) with emerald green reserved strictly for active accents, state indicators, and focus rings, eliminating low-contrast green text/backgrounds across desktop and tablet surfaces.
+- **Simplified Local STT Model Management**:
+  - Model Manager provides two options: "Explore Models" (opens external Hugging Face / ggml repository in default browser) and "Import Model" (native file picker importing existing `.bin`/`.gguf` files into local whisper model store).
+- **Surface-Adaptive Video Annotation Ergonomics**:
+  - **Desktop**: Eliminates legacy bottom chat bar and helper strips. Full-width in-situ card inserted chronologically (`N` pauses and captures `wasPlaying`, `Space` toggles play/pause, `S` captures frame, `T` toggles transcript). Textarea auto-expands up to 5 lines; `Enter` creates a newline; `Shift+Enter`/`Ctrl+Enter` saves note and resumes playback; `Esc` cancels and resumes. Dynamic Save button sits inline for single-line notes and shifts below for multi-line notes. Discrete `+` header button serves mouse users.
+  - **Mobile Phone (`isNarrow && !isTablet`)**: Stacked portrait layout (top 40% video, bottom 60% notes). Clean 3-button bottom bar (`[Voice Note]`, `[Frame Capture]`, `[Type Note]`). Tapping Voice Note morphs bar into live wave visualizer with timer and Stop; tapping Stop shows transcribed text preview with Save/Cancel, unfocused to prevent virtual keyboard pop-up.
+  - **Tablet (`isTablet`)**: Vertical right edge dock (~48px) with Notes/Transcript toggles, `+` type note, frame snapshot, and voice note with in-dock wave animation. Tapping stop opens right-anchored floating popover with editable text (unfocused) and Save.

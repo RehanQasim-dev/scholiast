@@ -68,10 +68,10 @@ export default function PlaybackSheet({ open, onClose }: PlaybackSheetProps) {
                   commands.setRate(r);
                   onClose();
                 }}
-                className={`flex h-9 items-center justify-center rounded-md border text-xs font-medium tabular-nums transition-colors ${
+                className={`flex h-9 items-center justify-center rounded-md border text-xs font-medium tabular-nums transition-all ${
                   r === snap.rate
-                    ? "border-[rgba(16,226,113,0.22)] bg-[rgba(16,226,113,0.12)] text-[color:var(--sc-note-text)]"
-                    : "border-hairline bg-surface text-text-2 hover:text-text hover:border-hairline/80"
+                    ? "border-accent/60 bg-accent/15 text-accent font-semibold shadow-xs"
+                    : "border-hairline bg-surface text-text-2 hover:bg-elevated hover:text-text hover:border-hairline-strong active:scale-95"
                 }`}
               >
                 {r}×
@@ -87,10 +87,10 @@ export default function PlaybackSheet({ open, onClose }: PlaybackSheetProps) {
               type="button"
               aria-pressed={snap.captionsEnabled}
               onClick={() => commands.setCaptions(!snap.captionsEnabled)}
-              className={`flex h-9 flex-1 items-center justify-center gap-1.5 rounded-md border text-xs font-medium transition-colors ${
+              className={`flex h-9 flex-1 items-center justify-center gap-1.5 rounded-md border text-xs font-medium transition-all ${
                 snap.captionsEnabled
-                  ? "border-[rgba(16,226,113,0.22)] bg-[rgba(16,226,113,0.12)] text-[color:var(--sc-note-text)]"
-                  : "border-hairline bg-surface text-text-2"
+                  ? "border-accent/60 bg-accent/15 text-accent font-semibold shadow-xs"
+                  : "border-hairline bg-surface text-text-2 hover:bg-elevated hover:text-text active:scale-95"
               }`}
             >
               <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7" className="h-4 w-4">
@@ -99,7 +99,7 @@ export default function PlaybackSheet({ open, onClose }: PlaybackSheetProps) {
               </svg>
               CC {snap.captionsEnabled ? "On" : "Off"}
             </button>
-            <div className="flex h-9 flex-1 items-center justify-center gap-1.5 rounded-md border border-hairline bg-surface text-xs text-text-3">
+            <div className="flex h-9 flex-1 items-center justify-center gap-1.5 rounded-md border border-hairline bg-surface text-xs text-text-3 select-none">
               <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7" className="h-4 w-4">
                 <rect x="3" y="3" width="18" height="18" rx="2" />
                 <path d="M9 9h6v6H9z" />
@@ -107,7 +107,7 @@ export default function PlaybackSheet({ open, onClose }: PlaybackSheetProps) {
               Auto
             </div>
           </div>
-          <p className="text-[11px] leading-snug text-text-3">Quality follows YouTube auto — CC toggle controls captions.</p>
+          <p className="text-[11px] leading-relaxed text-text-3">Quality follows YouTube auto — CC toggle controls captions.</p>
         </div>
       </div>
     </div>

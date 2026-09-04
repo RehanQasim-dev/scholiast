@@ -1273,11 +1273,21 @@ async function setupTabListeners() {
 	if (['chrome', 'brave', 'edge'].includes(browserType)) {
 		browser.tabs.onActivated.addListener(handleTabChange);
 		browser.tabs.onUpdated.addListener((tabId, changeInfo, tab) => {
-			if (changeInfo.status === 'complete') {
+			if (changeInfo.status === 'complete' || changeInfo.url) {
 				handleTabChange({ tabId, windowId: tab.windowId });
 			}
 		});
 	}
+
+	// Forward URL changes (including client-side SPA navigations via pushState) to tabs
+	browser.tabs.onUpdated.addListener((tabId, changeInfo) => {
+		if (changeInfo.url && isValidUrl(changeInfo.url) && !isBlankPage(changeInfo.url)) {
+			browser.tabs.sendMessage(tabId, {
+				action: "pageNavigated",
+				url: changeInfo.url,
+			}).catch(() => {});
+		}
+	});
 	
 	if (browser.windows) {
 		browser.windows.onFocusChanged.addListener((windowId) => {

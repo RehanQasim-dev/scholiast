@@ -9,9 +9,10 @@ import {
   observeIframeReferrerPolicy,
   patchIframeReferrerPolicy,
   resetPlayerHostForTests,
+  setPlayerServerUrlForTests,
 } from "./PlayerHost";
 import PlayerHost from "./PlayerHost";
-import { playerBridge, type YTPlayerLike } from "./playerBridge";
+import { getPlayerSnapshot, playerBridge, type YTPlayerLike } from "./playerBridge";
 
 const STRICT = "strict-origin-when-cross-origin";
 
@@ -217,7 +218,19 @@ describe("YT.Player construction — origin + widget_referrer (Error 153 #2)", (
     expect(vars.enablejsapi).toBe(1);
     expect(vars.playsinline).toBe(1);
     expect(vars.controls).toBe(0);
-    expect(vars.autoplay).toBe(1);
+    expect(vars.autoplay).toBe(0);
+  });
+
+  it("passes videoId prop directly to server URL on initial mount", async () => {
+    setPlayerServerUrlForTests("http://127.0.0.1:4567/player");
+    const { container } = render(<PlayerHost videoId="test_vid_abc" />);
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(0);
+      await Promise.resolve();
+    });
+    const iframe = container.querySelector("iframe");
+    expect(iframe).not.toBeNull();
+    expect(iframe!.src).toBe("http://127.0.0.1:4567/player?v=test_vid_abc");
   });
 });
 
@@ -238,5 +251,179 @@ describe("index.html referrer meta — document-level policy (Error 153 root cau
     }
     expect(distHtml).toContain(`content="${STRICT}"`);
     expect(distHtml).not.toContain('content="no-referrer"');
+  });
+});
+
+describe("Tauri desktop loopback player server mode (Fixes Error 153 on Desktop + across platforms)", () => {
+  const TEST_SERVER_URL = "http://127.0.0.1:45678/player";
+
+  it("mounts an iframe pointing to local loopback server with strict-origin-when-cross-origin", async () => {
+    setPlayerServerUrlForTests(TEST_SERVER_URL);
+    playerBridge.commands.loadVideo("test_vid_123");
+
+    const { container } = render(<PlayerHost />);
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(0);
+      await Promise.resolve();
+    });
+
+    const iframe = container.querySelector("iframe");
+    expect(iframe).not.toBeNull();
+    expect(iframe!.src).toContain(TEST_SERVER_URL);
+    expect(iframe!.src).toContain("v=test_vid_123");
+    expect(iframe!.getAttribute("referrerpolicy")).toBe(STRICT);
+    expect(iframe!.getAttribute("allow")).toContain("autoplay");
+  });
+
+  it("relays playback commands (play, pause, seekTo, loadVideo, rate, volume) to iframe via postMessage", async () => {
+    setPlayerServerUrlForTests(TEST_SERVER_URL);
+    const { container } = render(<PlayerHost />);
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(0);
+      await Promise.resolve();
+    });
+
+    const iframe = container.querySelector("iframe")!;
+    expect(iframe).not.toBeNull();
+
+    const postMessages: unknown[] = [];
+    const postMessageSpy = vi.fn((msg: unknown) => {
+      postMessages.push(msg);
+    });
+    Object.defineProperty(iframe, "contentWindow", {
+      value: { postMessage: postMessageSpy },
+      configurable: true,
+    });
+
+    // Test Play
+    playerBridge.commands.play();
+    expect(postMessageSpy).toHaveBeenCalledWith(
+      expect.objectContaining({ target: "scholiast-player", command: "play" }),
+      "*",
+    );
+
+    // Test Pause
+    playerBridge.commands.pause();
+    expect(postMessageSpy).toHaveBeenCalledWith(
+      expect.objectContaining({ target: "scholiast-player", command: "pause" }),
+      "*",
+    );
+
+    // Test Seek
+    playerBridge.commands.seekTo(35.5);
+    expect(postMessageSpy).toHaveBeenCalledWith(
+      expect.objectContaining({ target: "scholiast-player", command: "seekTo", seconds: 35.5 }),
+      "*",
+    );
+
+    // Test Load Video
+    playerBridge.commands.loadVideo("new_lecture_456");
+    expect(postMessageSpy).toHaveBeenCalledWith(
+      expect.objectContaining({ target: "scholiast-player", command: "loadVideo", videoId: "new_lecture_456" }),
+      "*",
+    );
+
+    // Test Playback Rate
+    playerBridge.commands.setRate(1.5);
+    expect(postMessageSpy).toHaveBeenCalledWith(
+      expect.objectContaining({ target: "scholiast-player", command: "setRate", rate: 1.5 }),
+      "*",
+    );
+
+    // Test Volume
+    playerBridge.commands.setVolume(85);
+    expect(postMessageSpy).toHaveBeenCalledWith(
+      expect.objectContaining({ target: "scholiast-player", command: "setVolume", volume: 85 }),
+      "*",
+    );
+
+    // Test Captions
+    playerBridge.commands.setCaptions(true);
+    expect(postMessageSpy).toHaveBeenCalledWith(
+      expect.objectContaining({ target: "scholiast-player", command: "setCaptions", enabled: true }),
+      "*",
+    );
+  });
+
+  it("handles inbound events from loopback player iframe (ready, stateChange, time, title, captions, error)", async () => {
+    setPlayerServerUrlForTests(TEST_SERVER_URL);
+
+    const readyListener = vi.fn();
+    const stateListener = vi.fn();
+    const errorListener = vi.fn();
+    const titleListener = vi.fn();
+    const captionsListener = vi.fn();
+
+    playerBridge.events.on("onPlayerReady", readyListener);
+    playerBridge.events.on("onStateChange", stateListener);
+    playerBridge.events.on("onError", errorListener);
+    playerBridge.events.on("onTitle", titleListener);
+    playerBridge.events.on("onCaptionsAvailable", captionsListener);
+
+    render(<PlayerHost />);
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(0);
+      await Promise.resolve();
+    });
+
+    // Simulate onPlayerReady from iframe
+    act(() => {
+      window.dispatchEvent(
+        new MessageEvent("message", {
+          data: { source: "scholiast-player", type: "onPlayerReady" },
+        }),
+      );
+    });
+    expect(readyListener).toHaveBeenCalled();
+
+    // Simulate onStateChange (PLAYING = 1)
+    act(() => {
+      window.dispatchEvent(
+        new MessageEvent("message", {
+          data: { source: "scholiast-player", type: "onStateChange", data: 1 },
+        }),
+      );
+    });
+    expect(stateListener).toHaveBeenCalledWith(1);
+    expect(getPlayerSnapshot().playing).toBe(true);
+
+    // Simulate onTimeUpdate
+    act(() => {
+      window.dispatchEvent(
+        new MessageEvent("message", {
+          data: { source: "scholiast-player", type: "onTimeUpdate", time: 42.5, duration: 600 },
+        }),
+      );
+    });
+
+    // Simulate onTitle
+    act(() => {
+      window.dispatchEvent(
+        new MessageEvent("message", {
+          data: { source: "scholiast-player", type: "onTitle", title: "Introduction to Calculus" },
+        }),
+      );
+    });
+    expect(titleListener).toHaveBeenCalledWith("Introduction to Calculus");
+
+    // Simulate onCaptionsAvailable
+    act(() => {
+      window.dispatchEvent(
+        new MessageEvent("message", {
+          data: { source: "scholiast-player", type: "onCaptionsAvailable", available: true },
+        }),
+      );
+    });
+    expect(captionsListener).toHaveBeenCalledWith(true);
+
+    // Simulate onError (e.g. 153 or 101)
+    act(() => {
+      window.dispatchEvent(
+        new MessageEvent("message", {
+          data: { source: "scholiast-player", type: "onError", data: 153 },
+        }),
+      );
+    });
+    expect(errorListener).toHaveBeenCalledWith(153);
   });
 });

@@ -299,7 +299,14 @@ export async function loadDrawings(): Promise<void> {
 	const url = normalizeUrl(getPageUrl());
 	const data = await getPage<StoredDrawings>('dr', url);
 	strokes = data && Array.isArray(data.strokes) ? data.strokes : [];
-	if (strokes.length > 0) renderStrokes();
+	renderStrokes();
+	syncListeners();
+}
+
+export function clearDrawings(): void {
+	strokes = [];
+	selectedIds.clear();
+	if (svg) svg.textContent = '';
 	syncListeners();
 }
 

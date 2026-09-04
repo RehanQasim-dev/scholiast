@@ -392,6 +392,12 @@ fn resolve_model(models_dir: &Path, explicit_path: Option<&str>) -> Result<PathB
         if in_dir.is_file() {
             return Ok(in_dir);
         }
+        if let Some(spec) = models::find_model(explicit) {
+            let p = models_dir.join(spec.file_name);
+            if p.is_file() {
+                return Ok(p);
+            }
+        }
         return Err(format!("model not found: {explicit}"));
     }
     models::first_installed_model_path(models_dir)
@@ -582,7 +588,7 @@ async fn download_and_install(
     installer.finish(spec)
 }
 
-#[cfg(test)]
+#[cfg(all(test, feature = "local-stt"))]
 mod tests {
     use super::*;
     use std::io::Write;

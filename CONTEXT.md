@@ -63,3 +63,12 @@ The 3-way merge engine reconciling local storage, base snapshot (`snap:<url>`), 
 ## Normalized URL
 A canonical web URL stripped of URL fragments (`#`) and ephemeral tracking query parameters (`utm_*`, `fbclid`, `_ga`).
 
+## In-Situ Note Composer
+An inline, full-width note card materialized inside the chronological notes feed at the active video timestamp, featuring autofocus, 5-line auto-expansion, and instant commit (`Enter`) / discard (`Esc`).
+
+## Surface-Adaptive Ergonomics
+The interaction model calibrating annotation triggers to device form factor: Desktop is keyboard-first (`N`, `S`, `V`), Tablet provides a split-view FAB speed-dial, and Mobile employs an STT-first bottom action bar.
+
+## Smart Playback Memory (`wasPlaying`)
+The playback state tracking mechanism recording whether media was actively playing prior to note initiation, ensuring playback only resumes if it was not previously paused.
+

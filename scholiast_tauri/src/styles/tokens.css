@@ -6,49 +6,66 @@
 
 :root {
   color-scheme: dark;
-  /* --- DARK OBSIDIAN & CRISP MINT THEME — darker, less harsh --- */
-  --sc-bg: #040a08;
-  --sc-surface: #070d0b;
-  --sc-elevated: #0e1a14;
-  --sc-overlay: #13211a;
-  --sc-hairline: rgba(74, 222, 128, 0.08);
-  --sc-text: #d8fae5;
-  --sc-text-2: #86d1a1;
-  --sc-text-3: #8ec0a6;
-  --sc-accent: #3aa67d;
-  --sc-accent-press: #2e8663;
-  --sc-accent-subtle: rgba(58, 166, 125, 0.14);
-  --sc-accent-timestamp: #5ebf9a;
-  --sc-accent-text: #041208;
-  --sc-accent-contrast: #041208;
+
+  /* --- REFINED OBSIDIAN & EMERALD ACCENT THEME ---
+     Clean, deep neutral dark canvas with high-contrast, comfortable-to-read
+     neutral typography and restrained emerald accents. Eliminates muddy green tints
+     and eye fatigue while preserving the green brand identity. */
+  --sc-bg: #090b0d;
+  --sc-surface: #111417;
+  --sc-elevated: #181c20;
+  --sc-overlay: #21252b;
+  --sc-hairline: rgba(255, 255, 255, 0.08);
+  --sc-hairline-strong: rgba(255, 255, 255, 0.14);
+
+  /* Primary, secondary, and tertiary text in high-contrast neutral zinc/slate */
+  --sc-text: #f4f4f5;
+  --sc-text-2: #a1a1aa;
+  --sc-text-3: #71717a;
+
+  /* Restrained, high-craft Emerald accent system */
+  --sc-accent: #10b981;
+  --sc-accent-press: #059669;
+  --sc-accent-subtle: rgba(16, 185, 129, 0.12);
+  --sc-accent-timestamp: #34d399;
+  --sc-accent-text: #ffffff;
+  --sc-accent-contrast: #ffffff;
+
+  /* Status and highlight tokens */
   --sc-amber: #f59e0b;
-  --sc-emerald: #2f9e62;
+  --sc-emerald: #10b981;
   --sc-rose: #f43f5e;
   --sc-hl-yellow: #d29600;
   --sc-hl-red: #dc3c5a;
-  --sc-hl-green: #2da05f;
-  --sc-hl-yellow-fill: rgba(210, 150, 0, 0.5);
-  --sc-hl-red-fill: rgba(220, 60, 90, 0.5);
-  --sc-hl-green-fill: rgba(45, 160, 95, 0.5);
+  --sc-hl-green: #10b981;
+  --sc-hl-yellow-fill: rgba(210, 150, 0, 0.45);
+  --sc-hl-red-fill: rgba(220, 60, 90, 0.45);
+  --sc-hl-green-fill: rgba(16, 185, 129, 0.45);
   --sc-hl-yellow-tint: rgba(210, 150, 0, 0.09);
   --sc-hl-red-tint: rgba(220, 60, 90, 0.07);
-  --sc-hl-green-tint: rgba(45, 160, 95, 0.09);
+  --sc-hl-green-tint: rgba(16, 185, 129, 0.09);
   --sc-danger: #f0526f;
-  --sc-success: #2da05f;
+  --sc-success: #10b981;
+
+  /* Geometry & rhythm */
   --sc-radius-sm: 8px;
   --sc-radius-md: 12px;
   --sc-radius-lg: 16px;
-  --sc-dur-fast: 150ms;
-  --sc-dur-slow: 250ms;
-  --sc-ease-out: cubic-bezier(0, 0, 0.2, 1);
+
+  /* Physics & motion curves (Emil Kowalski / Apple design principles) */
+  --sc-dur-fast: 140ms;
+  --sc-dur-slow: 240ms;
+  --sc-ease-out: cubic-bezier(0.23, 1, 0.32, 1);
   --sc-ease-spring: cubic-bezier(0.23, 1, 0.32, 1);
   --sc-hit: 48px;
   --sc-safe-top: env(safe-area-inset-top, 0px);
   --sc-safe-bottom: env(safe-area-inset-bottom, 0px);
+
+  /* Note text typography — neutral, crisp, readable, never green */
   --sc-font-mono: 'JetBrains Mono', ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, 'Liberation Mono', monospace;
-  --sc-note-text: #a8d5b5;
-  --sc-note-muted: #6e9a7e;
-  --sc-note-bg: #070d0a;
+  --sc-note-text: #f4f4f5;
+  --sc-note-muted: #a1a1aa;
+  --sc-note-bg: #111417;
   --sc-note-font: 15px;
 }
 
@@ -88,39 +105,40 @@
     text-rendering: optimizeLegibility;
   }
 
-  /* Terminal / comment surfaces — JetBrains Mono, same as extension's
-     obsidian-comment-box (highlighter.scss:557). Fixes broken strokes on
-     Linux WebKitGTK with WEBKIT_DISABLE_COMPOSITING_MODE=1 + antialiased
-     at small sizes: use normal weight 500, geometric precision, no ligature
-     breakage. */
+  /* Note surfaces — JetBrains Mono, clear rendering on Linux WebKitGTK and all platforms */
   .sc-note-terminal,
   .sc-note-terminal textarea,
   .sc-note-terminal p,
   .sc-note-terminal div {
     font-family: var(--sc-font-mono);
     font-size: var(--sc-note-font);
-    font-weight: 500;
-    line-height: 1.45;
+    font-weight: 450;
+    line-height: 1.5;
     letter-spacing: -0.01em;
     -webkit-font-smoothing: auto;
     -moz-osx-font-smoothing: auto;
     text-rendering: geometricPrecision;
     font-variant-ligatures: normal;
     font-feature-settings: "liga" 1, "calt" 1;
+    color: var(--sc-note-text);
   }
 
-  /* Visible keyboard focus everywhere, without restyling pointer clicks. */
+  /* Accessible, visible keyboard focus */
   :focus-visible {
     outline: 2px solid var(--sc-accent);
     outline-offset: 2px;
   }
 
+  /* Snappy, tactile buttons with physical press feedback */
   button,
   a,
   [role="button"] {
     transition:
-      transform 100ms ease-out,
-      opacity 100ms ease-out;
+      transform var(--sc-dur-fast) var(--sc-ease-out),
+      opacity var(--sc-dur-fast) ease-out,
+      background-color var(--sc-dur-fast) ease-out,
+      border-color var(--sc-dur-fast) ease-out,
+      color var(--sc-dur-fast) ease-out;
   }
 
   button:active,
@@ -128,13 +146,6 @@
   [role="button"]:active {
     transform: scale(0.97);
     opacity: 0.92;
-  }
-
-  @media (hover: hover) {
-    button:hover,
-    a:hover {
-      /* hover styles are gated to pointer devices; touch keeps tap-only */
-    }
   }
 
   .sc-speed-sheet {
@@ -163,7 +174,7 @@
   }
 
   .sc-bottom-sheet {
-    transition: transform var(--sc-spring-response) var(--sc-ease-spring);
+    transition: transform var(--sc-dur-slow) var(--sc-ease-out);
   }
 
   @starting-style {
