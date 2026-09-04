@@ -4,6 +4,7 @@
  */
 
 .sc-article {
+  position: relative;
   width: min(var(--sc-article-width, 736px), 100%);
   max-width: 65ch;
   margin-inline: auto;
@@ -13,10 +14,12 @@
 }
 
 .sc-article-header {
+  position: relative;
   margin-bottom: 2.25rem;
 }
 
 .sc-article-title {
+  position: relative;
   margin: 0;
   font-family:
     "Geist",
@@ -34,6 +37,7 @@
 }
 
 .sc-article-byline {
+  position: relative;
   margin: 0.5rem 0 0;
   font-family:
     "Geist",
@@ -50,12 +54,27 @@
 /* Body text carries the font-step scale; headings below use em so they stay
    proportional to it. The serif pref swaps only the reading typeface. */
 .sc-article-body {
+  position: relative;
   line-height: 1.75;
   overflow-wrap: break-word;
 }
 
 .sc-article--serif .sc-article-body {
   font-family: "Libre Caslon Text", Georgia, serif;
+}
+
+.sc-article-body p,
+.sc-article-body blockquote,
+.sc-article-body ul,
+.sc-article-body ol,
+.sc-article-body li,
+.sc-article-body dl,
+.sc-article-body dt,
+.sc-article-body dd,
+.sc-article-body pre,
+.sc-article-body table,
+.sc-article-body figure {
+  position: relative;
 }
 
 .sc-article-body p {
@@ -68,6 +87,7 @@
 .sc-article-body h4,
 .sc-article-body h5,
 .sc-article-body h6 {
+  position: relative;
   margin: 1.7em 0 0.55em;
   font-weight: 600;
   letter-spacing: -0.005em;

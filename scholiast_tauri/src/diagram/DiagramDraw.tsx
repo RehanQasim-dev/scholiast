@@ -20,6 +20,7 @@ import {
   exportToBlob,
   serializeAsJSON,
 } from "@excalidraw/excalidraw";
+import "@excalidraw/excalidraw/index.css";
 import type { BinaryFiles } from "@excalidraw/excalidraw/types";
 import { toast } from "../components/Toast";
 import { getDiagramItem, saveDiagramItem } from "../lib/readerIpc";
@@ -106,6 +107,9 @@ export default function DiagramDraw() {
     elementsRef.current = elements;
     appStateRef.current = appState;
     filesRef.current = files;
+    if (appState.activeTool?.type && appState.activeTool.type !== activeTool) {
+      setActiveTool(appState.activeTool.type);
+    }
   };
 
   const handleSave = useCallback(async () => {
@@ -225,19 +229,28 @@ export default function DiagramDraw() {
       </header>
 
       {/* Main Excalidraw Canvas */}
-      <div className="relative flex-1 overflow-hidden">
+      <div className="relative h-full w-full flex-1 overflow-hidden">
         <Excalidraw
           excalidrawAPI={(api) => {
             excalidrawApiRef.current = api;
+            // Activate freedraw (pen) tool by default so user can immediately sketch
+            api.setActiveTool({ type: "freedraw" });
           }}
           initialData={initialData ?? {
             appState: {
-              viewBackgroundColor: "#070d0a",
+              viewBackgroundColor: "#090b0d",
               theme: "dark",
+              currentItemStrokeColor: "#10b981",
             },
           }}
           onChange={handleChange}
           theme="dark"
+          UIOptions={{
+            dockedSidebarBreakpoint: 0,
+            canvasActions: {
+              loadScene: false,
+            },
+          }}
         />
 
         {/* Mobile Zen Mode Floating Bottom Thumb Dock */}

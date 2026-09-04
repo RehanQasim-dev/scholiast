@@ -117,12 +117,7 @@ export default function SwatchPopup({
   }, [onClose]);
 
   const handleStartComment = () => {
-    if (!onSaveComment) {
-      onComment();
-      return;
-    }
-    setMode("comment");
-    setTimeout(() => inputRef.current?.focus(), 50);
+    onComment();
   };
 
   const handleStartVoice = () => {

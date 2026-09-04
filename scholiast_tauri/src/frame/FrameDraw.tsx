@@ -8,6 +8,7 @@ import {
   exportToBlob,
   serializeAsJSON,
 } from "@excalidraw/excalidraw";
+import "@excalidraw/excalidraw/index.css";
 import type { BinaryFileData, BinaryFiles } from "@excalidraw/excalidraw/types";
 import type { FileId } from "@excalidraw/excalidraw/element/types";
 import CommentEditorSheet, {
@@ -325,7 +326,7 @@ export default function FrameDraw() {
         </div>
       </div>
 
-      <div className="min-h-0 flex-1">
+      <div className="min-h-0 h-full w-full flex-1">
         <Excalidraw
           theme="dark"
           initialData={initialData}

@@ -6,7 +6,7 @@ import { fileURLToPath } from "node:url";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 
-export default defineConfig({
+export default defineConfig(({ mode }) => ({
   plugins: [react(), tailwindcss()],
   clearScreen: false,
   css: {
@@ -31,13 +31,23 @@ export default defineConfig({
     },
   },
   resolve: {
-    alias: {
-      "@excalidraw/excalidraw": resolve(__dirname, "src/test/excalidraw-stub.tsx"),
-    },
+    alias:
+      mode === "test" || Boolean(process.env.VITEST)
+        ? [
+            {
+              find: /^@excalidraw\/excalidraw$/,
+              replacement: resolve(__dirname, "src/test/excalidraw-stub.tsx"),
+            },
+            {
+              find: "@excalidraw/excalidraw/index.css",
+              replacement: resolve(__dirname, "src/test/empty.css"),
+            },
+          ]
+        : [],
   },
   test: {
     globals: true,
     environment: "jsdom",
     setupFiles: ["./src/test/setup.ts"],
   },
-});
+}));

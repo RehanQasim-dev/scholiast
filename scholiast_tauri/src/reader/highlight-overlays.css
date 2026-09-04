@@ -45,10 +45,12 @@
 }
 
 /* Live native selection while dragging — keep it tight to glyphs, not full block */
+.sc-article ::selection,
 .sc-article-body ::selection {
   background-color: var(--sc-hl-yellow-fill, rgba(210, 150, 0, 0.38));
   color: inherit;
 }
+.sc-article ::-moz-selection,
 .sc-article-body ::-moz-selection {
   background-color: var(--sc-hl-yellow-fill, rgba(210, 150, 0, 0.38));
   color: inherit;

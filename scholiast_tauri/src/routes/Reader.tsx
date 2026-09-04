@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import type { ReactNode } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { useSearchParams } from "react-router-dom";
+import { useNavigate, useSearchParams } from "react-router-dom";
 import ArticleView from "../reader/ArticleView";
 import AuthenticView from "../reader/AuthenticView";
 import ThreadPanel, {
@@ -49,6 +49,7 @@ function clampFontStep(value: number): number {
 }
 
 export default function Reader() {
+  const navigate = useNavigate();
   const [params, setSearchParams] = useSearchParams();
   const queryClient = useQueryClient();
 
@@ -328,6 +329,9 @@ export default function Reader() {
           urlHash={urlHash}
           onHighlightClick={handleHighlightClick}
           onHighlightCreated={handleHighlightClick}
+          onOpenDiagram={(highlightId) => {
+            navigate("/diagram", { state: { urlHash, highlightId } });
+          }}
         />
       )}
     </div>

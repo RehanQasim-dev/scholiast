@@ -1,6 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import type { CSSProperties, ReactNode, RefObject } from "react";
-import { useNavigate } from "react-router-dom";
 import SwatchPopup from "../components/SwatchPopup";
 import type { HighlightColor } from "../components/SwatchPopup";
 import {
@@ -46,6 +45,8 @@ export interface ArticleViewProps {
   onHighlightClick?: (highlightId: string) => void;
   /** 💬 on a fresh selection: highlight created, panel should open it. */
   onHighlightCreated?: (highlightId: string) => void;
+  /** Opens diagram editor for a highlight. */
+  onOpenDiagram?: (highlightId: string) => void;
 }
 
 /**
@@ -65,10 +66,11 @@ export default function ArticleView({
   fontStep = 0,
   serif = false,
   columnWidth = 736,
-   footerAction,
+  footerAction,
   urlHash,
   onHighlightClick,
   onHighlightCreated,
+  onOpenDiagram,
 }: ArticleViewProps) {
   const bodyRef = useRef<HTMLDivElement>(null);
 
@@ -169,6 +171,7 @@ export default function ArticleView({
           containerRef={bodyRef}
           onHighlightClick={onHighlightClick}
           onHighlightCreated={onHighlightCreated}
+          onOpenDiagram={onOpenDiagram}
         />
       ) : null}
     </article>
@@ -182,6 +185,7 @@ interface HighlightsLayerProps {
   containerRef: RefObject<HTMLDivElement>;
   onHighlightClick?: (highlightId: string) => void;
   onHighlightCreated?: (highlightId: string) => void;
+  onOpenDiagram?: (highlightId: string) => void;
 }
 
 /**
@@ -196,8 +200,8 @@ function HighlightsLayer({
   containerRef,
   onHighlightClick,
   onHighlightCreated,
+  onOpenDiagram,
 }: HighlightsLayerProps) {
-  const navigate = useNavigate();
   const { highlights, paintRootRef, createFromSelection } = useHighlights(urlHash);
   const [popupAnchor, setPopupAnchor] = useState<{
     top: number;
@@ -409,10 +413,10 @@ function HighlightsLayer({
       void createFromSelection(range, color).then((id) => {
         if (!id) return;
         window.getSelection()?.removeAllRanges();
-        navigate("/diagram", { state: { urlHash, highlightId: id } });
+        onOpenDiagram?.(id);
       });
     },
-    [createFromSelection, navigate, urlHash],
+    [createFromSelection, onOpenDiagram],
   );
 
   // Click on a painted range → onHighlightClick. Fallback marks answer
