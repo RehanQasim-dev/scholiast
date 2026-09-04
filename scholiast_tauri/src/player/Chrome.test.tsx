@@ -163,4 +163,23 @@ describe("Chrome", () => {
     fire("onError", 999);
     expect(screen.getByRole("alert")).toHaveTextContent(/Player error \(999\)/i);
   });
+
+  it("shows the top title bar with back only when onBack is set", () => {
+    const { player } = makeFakePlayer();
+    playerBridge.attach(player);
+    renderChrome();
+    expect(screen.queryByTestId("chrome-topbar")).not.toBeInTheDocument();
+
+    cleanup();
+    const stageRef = createRef<HTMLDivElement>();
+    let backed = false;
+    render(
+      <div ref={stageRef}>
+        <Chrome stageRef={stageRef} title="Lecture" onBack={() => { backed = true; }} />
+      </div>,
+    );
+    expect(screen.getByTestId("chrome-topbar")).toHaveTextContent("Lecture");
+    fireEvent.click(screen.getByRole("button", { name: "Back to library" }));
+    expect(backed).toBe(true);
+  });
 });

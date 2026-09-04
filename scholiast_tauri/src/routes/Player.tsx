@@ -34,7 +34,9 @@ export function extractVideoId(input: string): string | null {
 async function persistResume(url: string, seconds: number) {
   try {
     await invoke("set_resume_at", { url, resumeAt: seconds });
-  } catch {}
+  } catch {
+    /* resume persistence is best-effort */
+  }
 }
 
 export interface CaptureOut {
@@ -251,20 +253,12 @@ export default function Player() {
               className="pointer-events-none absolute inset-0 z-[1] bg-black/70 backdrop-blur-[1px] transition-opacity duration-200"
             />
           )}
-          {/* Floating Back to Home button */}
-          <button
-            type="button"
-            aria-label="Back to library"
-            onClick={() => navigate("/home")}
-            className="absolute top-3 left-3 z-30 flex h-9 w-9 items-center justify-center rounded-full bg-black/60 text-white/90 backdrop-blur hover:bg-black/80 hover:text-white transition-all shadow-md active:scale-95 cursor-pointer"
-          >
-            <ArrowLeft size={18} strokeWidth={2} />
-          </button>
           <Chrome
             stageRef={stageRef}
             onCaptureClick={() => void captureFrame()}
             collapsed={isFocus}
             title={videoTitle}
+            onBack={() => navigate("/home")}
           />
         </>
       ) : (
@@ -307,10 +301,11 @@ export default function Player() {
   );
 
   return (
+    // No top padding here: MainActivity already offsets android.R.id.content
+    // below the status bar, so an extra safe-area pad would double it.
     <section
       ref={containerRef}
       className="flex h-full min-h-0 w-full flex-col bg-base"
-      style={isMobile ? { paddingTop: "var(--sc-safe-top)" } : undefined}
     >
       {isMobile ? (
         /* Mobile / Narrow Portrait: Stacked Layout (Top 40% Video, Bottom 60% Notes) */

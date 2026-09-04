@@ -44,9 +44,11 @@ interface ChromeProps {
   onCaptureClick?: () => void;
   collapsed?: boolean;
   title?: string;
+  /** Back navigation (Player home). Renders the top title bar when set. */
+  onBack?: () => void;
 }
 
-export default function Chrome({ stageRef, slots, onCaptureClick, collapsed = false, title }: ChromeProps) {
+export default function Chrome({ stageRef, slots, onCaptureClick, collapsed = false, title, onBack }: ChromeProps) {
   const snap = usePlayerSnapshot();
   const [visible, setVisible] = useState(true);
   const [ready, setReady] = useState(false);
@@ -204,11 +206,35 @@ export default function Chrome({ stageRef, slots, onCaptureClick, collapsed = fa
         </div>
       )}
 
-      <div
-        aria-hidden
-        className="pointer-events-none absolute inset-0 flex items-center justify-between px-2"
-        style={{ opacity: hidden ? 0 : 0 }}
-      />
+      {/* Top title bar (YouTube-style): back + title, tap stage to show/hide
+          together with the rest of the chrome. No safe-area padding — the
+          host activity already offsets content below the status bar. */}
+      {onBack && (
+        <div
+          data-testid="chrome-topbar"
+          className={`absolute top-0 right-0 left-0 flex items-center gap-1 bg-gradient-to-b from-black/70 to-transparent px-2 pt-2 pb-6 transition-opacity duration-[var(--sc-dur-fast)] ease-out ${
+            hidden ? "pointer-events-none opacity-0" : "opacity-100"
+          }`}
+        >
+          <button
+            type="button"
+            aria-label="Back to library"
+            onClick={(e) => {
+              e.stopPropagation();
+              onBack();
+            }}
+            className="sc-hit flex h-10 w-10 shrink-0 items-center justify-center rounded-full text-white/90 hover:bg-white/10"
+          >
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden className="h-6 w-6">
+              <path d="M19 12H5" />
+              <path d="m12 19-7-7 7-7" />
+            </svg>
+          </button>
+          <span className="min-w-0 flex-1 truncate px-1 text-sm font-medium text-white">
+            {title || ytTitleRef.current || ""}
+          </span>
+        </div>
+      )}
 
       <button
         type="button"
