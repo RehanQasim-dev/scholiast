@@ -1,5 +1,6 @@
 import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
+import { createPortal } from "react-dom";
 import { Check, ChevronDown, Cloud, Cpu, Edit3, Search, Sparkles, X } from "lucide-react";
 import { IpcCommandError, invokeCommand } from "../../lib/ipc";
 import { PREF_DEFAULTS, PREF_KEYS } from "../../lib/store";
@@ -246,6 +247,58 @@ export default function SpeechSection() {
   const [dropdownOpen, setDropdownOpen] = useState(false);
   const [search, setSearch] = useState("");
   const dropdownRef = useRef<HTMLDivElement>(null);
+  const buttonRef = useRef<HTMLButtonElement>(null);
+  const panelRef = useRef<HTMLDivElement>(null);
+  const [panelGeom, setPanelGeom] = useState<{
+    top?: number;
+    bottom?: number;
+    left: number;
+    width: number;
+    maxListH: number;
+  } | null>(null);
+
+  // The panel is portaled to document.body (it would otherwise be clipped by
+  // the settings card's overflow-hidden), so anchor it to the trigger button
+  // with fixed positioning and flip upward when room below runs out.
+  const updatePanelGeom = useCallback(() => {
+    const el = buttonRef.current;
+    if (!el || typeof window === "undefined") return;
+    const rect = el.getBoundingClientRect();
+    const MARGIN = 8;
+    const CHROME_H = 72; // search bar + borders + breathing room
+    const MIN_LIST_H = 120;
+    const viewH = window.innerHeight;
+    const viewW = window.innerWidth;
+    const spaceBelow = viewH - rect.bottom;
+    const spaceAbove = rect.top;
+    const openUp = spaceBelow < 240 && spaceAbove > spaceBelow;
+    const width = Math.max(rect.width || 0, 200);
+    const left = Math.max(MARGIN, Math.min(rect.left, viewW - width - MARGIN));
+    const avail = openUp ? spaceAbove : spaceBelow;
+    const maxListH = Math.max(
+      MIN_LIST_H,
+      Math.min(avail - CHROME_H - MARGIN, viewH * 0.5),
+    );
+    setPanelGeom(
+      openUp
+        ? { bottom: viewH - rect.top + 6, left, width, maxListH }
+        : { top: rect.bottom + 6, left, width, maxListH },
+    );
+  }, []);
+
+  useLayoutEffect(() => {
+    if (!dropdownOpen) {
+      setPanelGeom(null);
+      return;
+    }
+    updatePanelGeom();
+    window.addEventListener("resize", updatePanelGeom);
+    window.addEventListener("scroll", updatePanelGeom, true);
+    return () => {
+      window.removeEventListener("resize", updatePanelGeom);
+      window.removeEventListener("scroll", updatePanelGeom, true);
+    };
+  }, [dropdownOpen, updatePanelGeom]);
 
   const localModelsQuery = useQuery({
     queryKey: ["stt", "models"],
@@ -261,9 +314,10 @@ export default function SpeechSection() {
   useEffect(() => {
     if (!dropdownOpen) return;
     const onMouseDown = (e: MouseEvent) => {
-      if (dropdownRef.current && !dropdownRef.current.contains(e.target as Node)) {
-        setDropdownOpen(false);
-      }
+      const target = e.target as Node;
+      if (dropdownRef.current?.contains(target)) return;
+      if (panelRef.current?.contains(target)) return;
+      setDropdownOpen(false);
     };
     const onKeyDown = (e: KeyboardEvent) => {
       if (e.key === "Escape") {
@@ -454,6 +508,7 @@ export default function SpeechSection() {
 
           <button
             type="button"
+            ref={buttonRef}
             data-testid="pref-stt.active_model"
             onClick={() => setDropdownOpen((open) => !open)}
             className="flex h-12 min-h-[48px] w-full items-center justify-between rounded-lg border border-hairline bg-elevated px-3 text-sm text-text outline-none transition-colors hover:border-accent/40 focus:border-accent focus:ring-1 focus:ring-accent/20"
@@ -489,11 +544,19 @@ export default function SpeechSection() {
             />
           </button>
 
-          {dropdownOpen && (
-            <div
-              className="absolute left-0 top-full z-50 mt-1.5 w-full rounded-xl border border-hairline bg-surface shadow-2xl overflow-hidden"
-              data-testid="stt-model-dropdown"
-            >
+          {dropdownOpen &&
+            createPortal(
+              <div
+                ref={panelRef}
+                className="fixed z-[100] rounded-xl border border-hairline bg-surface shadow-2xl overflow-hidden"
+                style={{
+                  top: panelGeom?.top,
+                  bottom: panelGeom?.bottom,
+                  left: panelGeom?.left ?? 8,
+                  width: panelGeom?.width ?? 200,
+                }}
+                data-testid="stt-model-dropdown"
+              >
               {/* Search Bar */}
               <div className="p-2 border-b border-hairline bg-elevated/50">
                 <div className="flex items-center gap-2 px-3 py-2 rounded-lg border border-hairline bg-base focus-within:border-accent">
@@ -520,7 +583,10 @@ export default function SpeechSection() {
               </div>
 
               {/* Grouped Model List */}
-              <div className="max-h-72 overflow-y-auto divide-y divide-hairline/30">
+              <div
+                className="overflow-y-auto divide-y divide-hairline/30"
+                style={{ maxHeight: panelGeom?.maxListH ?? 320 }}
+              >
                 {/* 1. LOCAL MODELS (ON TOP) */}
                 {(filteredLocal.length > 0 || installedLocalModels.length === 0) && (
                   <div className="py-1">
@@ -636,8 +702,9 @@ export default function SpeechSection() {
                   </div>
                 )}
               </div>
-            </div>
-          )}
+              </div>,
+              document.body,
+            )}
         </div>
 
         {/* Speech Language Selector */}

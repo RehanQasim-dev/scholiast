@@ -32,7 +32,7 @@ function Shell() {
       {!isNarrow && !isStudySession && <Sidebar />}
       <main
         className={`min-w-0 flex-1 overflow-y-auto ${
-          isNarrow && !isStudySession ? "pb-[calc(4rem+var(--sc-safe-bottom))]" : ""
+          isNarrow && !isStudySession ? "pb-[calc(var(--sc-tabbar-h)+var(--sc-tabbar-pb))]" : ""
         }`}
       >
         <OfflineBanner />

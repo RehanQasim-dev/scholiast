@@ -70,6 +70,10 @@
   --sc-safe-top: env(safe-area-inset-top, 0px);
   --sc-safe-bottom: env(safe-area-inset-bottom, 0px);
 
+  /* Bottom tab bar geometry (single source of truth: BottomTabs + App spacer) */
+  --sc-tabbar-h: 3.5rem;
+  --sc-tabbar-pb: min(var(--sc-safe-bottom), 8px);
+
   /* Note text typography — neutral, crisp, readable, never green */
   --sc-font-mono: 'JetBrains Mono', ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, 'Liberation Mono', monospace;
   --sc-note-text: #f4f4f5;

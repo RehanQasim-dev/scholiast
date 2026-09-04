@@ -55,7 +55,7 @@ export default function BottomTabs() {
     <nav
       aria-label="Primary"
       data-testid="bottom-tabs"
-      className="fixed inset-x-0 bottom-0 z-30 flex border-t border-hairline bg-surface pb-[var(--sc-safe-bottom)] h-[calc(4rem+var(--sc-safe-bottom))]"
+      className="fixed inset-x-0 bottom-0 z-30 flex border-t border-hairline bg-surface pb-[var(--sc-tabbar-pb)] h-[calc(var(--sc-tabbar-h)+var(--sc-tabbar-pb))]"
     >
       {TABS.map((tab) => (
         <NavLink
