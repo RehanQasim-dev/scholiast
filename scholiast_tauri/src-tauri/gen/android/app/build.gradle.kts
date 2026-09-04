@@ -24,7 +24,9 @@ android {
     defaultConfig {
         manifestPlaceholders["usesCleartextTraffic"] = "true"
         applicationId = "app.scholiast.app"
-        minSdk = 24
+        // Floor is 28 (Android 9+): tauri-plugin-mobile-sharetarget declares
+        // minSdk 28 and the manifest merger rejects anything lower.
+        minSdk = 28
         targetSdk = 36
         versionCode = tauriProperties.getProperty("tauri.android.versionCode", "1").toInt()
         versionName = tauriProperties.getProperty("tauri.android.versionName", "1.0")
