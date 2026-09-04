@@ -87,7 +87,9 @@ Do NOT build any other ABIs (such as 32-bit x86 Android or unused targets) to pr
     - **AVX / AVX2 / FMA / F16C**: Enabled for high-throughput SIMD vector processing across Intel Core and AMD Ryzen laptop CPUs.
 
 ## 11.5 Shipped Touch, Voice, Cloud & Drawing Features
-- **Cloud Backup Centered Modal & Background Scheduler**:
+- **Reader Margin-Anchored Comment Cards (replaces side panel, wide screens)**:
+  - Extracted Reader mode at >900px shows extension-style collapsed cards (3-line quote clamp) anchored beside their source line in the article's own scroll container — no nested panel scroll. Click expands thread + inline reply; page/another-card click collapses.
+  - Near-invisible full-height splitter resizes the card column page-wide (`reader.margin_width` pref, default 340 / min 220 / max 45% viewport); double-click resets. Existing annotations toggle hides the column. Phones keep the bottom sheet; web mode keeps ThreadPanel (batch 2).- **Cloud Backup Centered Modal & Background Scheduler**:
   - Tapping the `[ ☁️ ]` cloud icon when Google Drive is unconfigured triggers a centered glassmorphic setup modal (`CloudSyncModal.tsx`) with 1-tap OAuth and automated backup preference switches.
   - Background scheduler (`useAutoSyncScheduler.ts`) checks for dirty highlights and drawings on a 5-minute periodic interval, upon exiting any study session (`/player` or `/reader`), and when the app is minimized (`document.visibilityState === 'hidden'`).
 - **Dynamic Aura Voice Pill & Highlight Selection Swatch**:

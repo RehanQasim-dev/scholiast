@@ -1,10 +1,17 @@
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { ReactNode } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useNavigate, useSearchParams } from "react-router-dom";
 import { ChevronUp, FileText } from "lucide-react";
 import ArticleView from "../reader/ArticleView";
 import AuthenticView from "../reader/AuthenticView";
+import MarginColumn from "../reader/MarginColumn";
+import { useMarginAnchors } from "../reader/useMarginAnchors";
+import { useThreadModel } from "../reader/useThreadModel";
+import {
+  MARGIN_WIDTH_DEFAULT,
+  clampMarginWidth,
+} from "../reader/marginLayout";
 import ThreadPanel, {
   type ThreadSelectRequest,
 } from "../reader/ThreadPanel";
@@ -37,6 +44,8 @@ import useIsNarrow from "../hooks/useIsNarrow";
 const MIN_FONT_STEP = -2;
 const MAX_FONT_STEP = 4;
 const ARTICLES_KEY = ["articles"] as const;
+/** Gap between the article column and the margin cards. */
+const MARGIN_GUTTER = 24;
 
 const THEME_CLASSES: Record<ReaderTheme, string> = {
   oled: "bg-black text-[#e4e4e7]",
@@ -59,6 +68,7 @@ export default function Reader() {
   const [fontStep, setFontStep] = useState(0);
   const [serif, setSerif] = useState(false);
   const [columnWidth, setColumnWidth] = useState<number>(736);
+  const [marginWidth, setMarginWidth] = useState<number>(MARGIN_WIDTH_DEFAULT);
   const [theme, setTheme] = useState<ReaderTheme>("oled");
   const [viewMode, setViewMode] = useState<ReaderViewMode>("web");
   const [focusMode, setFocusMode] = useState(false);
@@ -200,6 +210,13 @@ export default function Reader() {
     void getPref<number>(PREF_KEYS.readerColumnWidth, 736)
       .then((v) => setColumnWidth(Number(v) || 736))
       .catch(() => {});
+    void getPref<number>(PREF_KEYS.readerMarginWidth, MARGIN_WIDTH_DEFAULT)
+      .then((v) =>
+        setMarginWidth(
+          clampMarginWidth(Number(v) || MARGIN_WIDTH_DEFAULT, window.innerWidth),
+        ),
+      )
+      .catch(() => {});
     void getPref<ReaderTheme>(PREF_KEYS.readerTheme, "oled")
       .then((v) => setTheme((v as ReaderTheme) || "oled"))
       .catch(() => {});
@@ -233,6 +250,7 @@ export default function Reader() {
   const annotationsCount = (highlightsQuery.data ?? []).length;
 
   const scrollRef = useRef<HTMLDivElement>(null);
+  const stackRef = useRef<HTMLDivElement | null>(null);
   const [headerHidden, setHeaderHidden] = useState(false);
   const lastScrollTop = useRef(0);
 
@@ -330,21 +348,35 @@ export default function Reader() {
   // Render article reading canvas
   const isAuthentic = viewMode === "web" && Boolean(page?.url);
 
-  const articleContentNode = (
-    <div
-      ref={scrollRef}
-      data-testid="article-scroller"
-      onDoubleClick={handleArticleDoubleClick}
-      onTouchEnd={handleArticleTouchEnd}
-      className={
-        isAuthentic
-          ? "h-full min-h-0 flex-1 overflow-hidden bg-base"
-          : `h-full min-h-0 flex-1 overflow-y-auto px-6 py-8 md:px-12 transition-colors duration-200 ${THEME_CLASSES[theme]}`
-      }
-      style={{
-        paddingBottom: isNarrow ? "calc(1.5rem + var(--sc-safe-bottom))" : undefined,
-      }}
-    >
+  // Margin-column model (task 01): shares the thread state/select effects
+  // with ThreadPanel; only the margin branch below mounts its surface.
+  const marginModel = useThreadModel(urlHash, selectRequest);
+  const marginSources = useMemo(
+    () =>
+      marginModel.entries.map((entry) => ({
+        key: entry.key,
+        highlightIds: entry.members.map((m) => m.id),
+      })),
+    [marginModel.entries],
+  );
+  const marginAnchors = useMarginAnchors(
+    stackRef,
+    marginSources,
+    `${urlHash}|${fontStep}|${serif}|${columnWidth}|${theme}|${page?.body?.length ?? 0}`,
+  );
+  const persistMarginWidth = useCallback((next: number) => {
+    setMarginWidth(next);
+    void setPref(PREF_KEYS.readerMarginWidth, next).catch(() => {});
+  }, []);
+  const marginMode =
+    !isNarrow && !isAuthentic && Boolean(urlHash) && annotationsOpen;
+
+  const scrollerClassName = isAuthentic
+    ? "h-full min-h-0 flex-1 overflow-hidden bg-base"
+    : `h-full min-h-0 flex-1 overflow-y-auto px-6 py-8 md:px-12 transition-colors duration-200 ${THEME_CLASSES[theme]}`;
+
+  const articleBodyNode = (
+    <>
       {libraryEmpty && !urlHash ? (
         addErrorMessage ? (
           <EmptyState
@@ -424,6 +456,76 @@ export default function Reader() {
           }}
         />
       )}
+    </>
+  );
+
+  const articleContentNode = (
+    <div
+      ref={scrollRef}
+      data-testid="article-scroller"
+      onDoubleClick={handleArticleDoubleClick}
+      onTouchEnd={handleArticleTouchEnd}
+      className={scrollerClassName}
+      style={{
+        paddingBottom: isNarrow ? "calc(1.5rem + var(--sc-safe-bottom))" : undefined,
+      }}
+    >
+      {articleBodyNode}
+    </div>
+  );
+
+  const marginNode = (
+    <div
+      ref={scrollRef}
+      data-testid="article-scroller"
+      onDoubleClick={handleArticleDoubleClick}
+      onTouchEnd={handleArticleTouchEnd}
+      className={`relative ${scrollerClassName}`}
+    >
+      <div
+        ref={stackRef}
+        data-testid="margin-stack"
+        className="mx-auto flex min-h-full items-stretch justify-center gap-6"
+        style={{ maxWidth: columnWidth + MARGIN_GUTTER + marginWidth }}
+      >
+        <div
+          className="min-w-0 shrink"
+          style={{ width: columnWidth, maxWidth: "100%" }}
+        >
+          {articleBodyNode}
+        </div>
+        <div className="relative flex-none" style={{ width: marginWidth }}>
+          <MarginColumn
+            model={marginModel}
+            anchors={marginAnchors}
+            width={marginWidth}
+            defaultWidth={MARGIN_WIDTH_DEFAULT}
+            onWidthChange={setMarginWidth}
+            onWidthCommit={persistMarginWidth}
+          />
+        </div>
+      </div>
+      {marginModel.undoState ? (
+        <div className="pointer-events-none absolute inset-x-0 bottom-4 z-30 flex justify-center">
+          <div
+            data-testid="margin-undo-bar"
+            role="status"
+            className="pointer-events-auto flex items-center justify-between gap-2 rounded-md border border-hairline bg-elevated px-3 py-2 shadow-xl"
+          >
+            <span className="truncate text-xs text-text-2">
+              {marginModel.undoState.message}
+            </span>
+            <button
+              type="button"
+              data-testid="margin-undo-button"
+              onClick={marginModel.confirmUndo}
+              className="cursor-pointer rounded px-2 py-0.5 text-xs font-medium text-accent hover:bg-surface"
+            >
+              Undo
+            </button>
+          </div>
+        </div>
+      ) : null}
     </div>
   );
 
@@ -644,6 +746,8 @@ export default function Reader() {
                 </div>
               </aside>
             </div>
+          ) : marginMode ? (
+            marginNode
           ) : annotationsOpen && threadPanelNode ? (
             <SplitterPane left={articleContentNode} right={threadPanelNode} storageKey="layout.reader_split_ratio" defaultRatio={0.65} minRatio={0.4} maxRatio={0.8} />
           ) : (
