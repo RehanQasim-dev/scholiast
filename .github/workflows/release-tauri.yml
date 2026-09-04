@@ -124,6 +124,18 @@ jobs:
       - name: Install cargo-ndk (fallback, rust gradle plugin also works)
         run: cargo install cargo-ndk --locked || true
 
+      - name: Generate release keystore
+        run: |
+          keytool -genkeypair -v \
+            -keystore ${{ github.workspace }}/release.jks \
+            -alias scholiast \
+            -keyalg RSA \
+            -keysize 2048 \
+            -validity 10000 \
+            -storepass scholiast123 \
+            -keypass scholiast123 \
+            -dname "CN=Scholiast, OU=Engineering, O=Scholiast, L=Global, S=Global, C=US"
+
       - name: Build Android APKs (release per ABI + universal)
         working-directory: scholiast_tauri
         env:
@@ -132,6 +144,10 @@ jobs:
           ANDROID_SDK_ROOT: ${{ env.ANDROID_HOME }}
           NDK_HOME: ${{ env.ANDROID_HOME }}/ndk/28.2.13676358
           GRADLE_OPTS: "-Xmx4g -Dorg.gradle.daemon=false -Dorg.gradle.workers.max=2"
+          ANDROID_KEYSTORE_PATH: ${{ github.workspace }}/release.jks
+          ANDROID_KEYSTORE_PASSWORD: scholiast123
+          ANDROID_KEY_ALIAS: scholiast
+          ANDROID_KEY_PASSWORD: scholiast123
         run: |
           ./node_modules/.bin/tauri android build --apk --split-per-abi --target aarch64 armv7 x86_64
           ./node_modules/.bin/tauri android build --apk --target aarch64 armv7 x86_64
@@ -139,13 +155,50 @@ jobs:
       - name: List APKs
         run: find scholiast_tauri/src-tauri/gen/android/app/build/outputs/apk -name "*.apk" -exec ls -lh {} \;
 
-      - name: Flatten APKs for upload
+      - name: Sign, Align and Package APKs
         run: |
           mkdir -p apk-dist
-          cp scholiast_tauri/src-tauri/gen/android/app/build/outputs/apk/arm64/release/app-arm64-release-unsigned.apk apk-dist/Scholiast-arm64-v8a.apk
-          cp scholiast_tauri/src-tauri/gen/android/app/build/outputs/apk/arm/release/app-arm-release-unsigned.apk apk-dist/Scholiast-armeabi-v7a.apk
-          cp scholiast_tauri/src-tauri/gen/android/app/build/outputs/apk/x86_64/release/app-x86_64-release-unsigned.apk apk-dist/Scholiast-x86_64.apk
-          cp scholiast_tauri/src-tauri/gen/android/app/build/outputs/apk/universal/release/app-universal-release-unsigned.apk apk-dist/Scholiast-universal.apk
+          BUILD_TOOLS="${ANDROID_HOME}/build-tools/36.0.0"
+          APKSIGNER="${BUILD_TOOLS}/apksigner"
+          KEYSTORE="${{ github.workspace }}/release.jks"
+          APK_DIR="scholiast_tauri/src-tauri/gen/android/app/build/outputs/apk"
+
+          find_apk() {
+            local flavor=$1
+            find "$APK_DIR/$flavor/release" -name "*.apk" | head -n 1
+          }
+
+          sign_and_copy() {
+            local flavor=$1
+            local out_name=$2
+            local src_apk
+            src_apk=$(find_apk "$flavor")
+            if [ -z "$src_apk" ] || [ ! -f "$src_apk" ]; then
+              echo "Error: No APK found for $flavor in $APK_DIR/$flavor/release"
+              exit 1
+            fi
+            echo "Processing $flavor APK: $src_apk -> apk-dist/$out_name"
+            
+            # Sign with apksigner enforcing v1, v2, and v3 schemes
+            "$APKSIGNER" sign --ks "$KEYSTORE" \
+              --ks-pass pass:scholiast123 \
+              --key-pass pass:scholiast123 \
+              --ks-key-alias scholiast \
+              --v1-signing-enabled true \
+              --v2-signing-enabled true \
+              --v3-signing-enabled true \
+              --out "apk-dist/$out_name" \
+              "$src_apk"
+
+            # Strictly verify the signature
+            echo "Verifying apk-dist/$out_name:"
+            "$APKSIGNER" verify --verbose "apk-dist/$out_name"
+          }
+
+          sign_and_copy "arm64" "Scholiast-arm64-v8a.apk"
+          sign_and_copy "arm" "Scholiast-armeabi-v7a.apk"
+          sign_and_copy "x86_64" "Scholiast-x86_64.apk"
+          sign_and_copy "universal" "Scholiast-universal.apk"
 
       - name: Upload APK artifacts
         uses: actions/upload-artifact@v6
