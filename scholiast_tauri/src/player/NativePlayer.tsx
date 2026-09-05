@@ -1,7 +1,7 @@
 /*
  * Native `<video>` player (specs/tauri-native-playback, task 02).
  *
- * Plays yt_resolve manifests with zero YouTube chrome: progressive muxed
+ * Plays engine manifests with zero YouTube chrome: progressive muxed
  * streams directly, HD via the MSE adaptive engine, captions as a native
  * <track>. Drives the shared playerBridge backend (attachNative) so Chrome,
  * shortcuts, notes, and transcript consumers work unchanged. Any failure
@@ -12,7 +12,7 @@ import { useEffect, useRef, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { attachNative, detachNative, emitPlayerEvent } from "./playerBridge";
 import { AdaptiveSession, choosePlayback } from "./adaptiveEngine";
-import { fetchVideoCaptions, resolveStream } from "../lib/readerIpc";
+import { fetchCaptionVtt, resolveManifest } from "./youtubeEngine";
 import { PREF_KEYS, getPref } from "../lib/store";
 import { usePlayerSnapshot } from "./playerBridge";
 
@@ -31,35 +31,43 @@ export default function NativePlayer({ videoId, onFallback }: NativePlayerProps)
 
   const manifestQuery = useQuery({
     queryKey: ["native-stream", videoId],
-    queryFn: () => resolveStream({ videoId }),
+    queryFn: () => resolveManifest(videoId),
     // URLs expire: resolved per mount (per session), never cached across.
     staleTime: Infinity,
     gcTime: 0,
     retry: false,
   });
 
-  // Captions: preferred speech language, VTT blob for the <track>.
+  // Captions: preferred speech language from the manifest's own track list,
+  // VTT blob for the <track>. Optional — video plays without it.
   useEffect(() => {
+    const manifest = manifestQuery.data;
+    if (!manifest) return;
     let cancelled = false;
     let blobUrl: string | null = null;
-    void getPref<string>(PREF_KEYS.speechLanguage, "en")
-      .then((lang) => fetchVideoCaptions({ videoId, languageCode: lang ?? "en" }))
-      .catch(() => fetchVideoCaptions({ videoId, languageCode: "en" }))
-      .then((caps) => {
+    void (async () => {
+      const lang = (await getPref<string>(PREF_KEYS.speechLanguage, "en").catch(
+        () => "en",
+      )) ?? "en";
+      const track =
+        manifest.captions.find((c) => c.languageCode === lang) ??
+        manifest.captions.find((c) => c.languageCode.startsWith("en")) ??
+        manifest.captions[0];
+      if (!track || cancelled) return;
+      try {
+        const vtt = await fetchCaptionVtt(track.baseUrl);
         if (cancelled) return;
-        blobUrl = URL.createObjectURL(
-          new Blob([caps.vtt], { type: "text/vtt" }),
-        );
+        blobUrl = URL.createObjectURL(new Blob([vtt], { type: "text/vtt" }));
         setCaptionUrl(blobUrl);
-      })
-      .catch(() => {
+      } catch {
         /* captions are optional — video plays without them */
-      });
+      }
+    })();
     return () => {
       cancelled = true;
       if (blobUrl) URL.revokeObjectURL(blobUrl);
     };
-  }, [videoId]);
+  }, [videoId, manifestQuery.data]);
 
   // Attach the shared bridge backend to this element.
   useEffect(() => {

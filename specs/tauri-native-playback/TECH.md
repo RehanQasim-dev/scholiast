@@ -22,9 +22,12 @@ Key files @ 5bdd65c:
 
 ## Decisions (binding)
 
-- **D1 — Own the extraction core in Rust** (not `innertube-rs` v0.6.0: 2 weeks
-  old, 0 dependents). Mirror `transcript/client.rs` HTTP patterns; port the
-  NewPipe/youtubei.js recipe (VISIONOS → decipher → classify → errors).
+- **D1 — youtubei.js v18 for extraction (PIVOT).** The TS engine runs in
+  the frontend (`src/player/youtubeEngine.ts`): VISIONOS resolve, webview
+  function-evaluation shim, caption tracks — externally maintained, bump on
+  rotation. The Rust `yt/` core from batch 1 stays in-tree, tested but
+  uncalled: fallback candidate for batch 3 (notably if webview CORS ever
+  blocks MSE range fetches, Rust becomes the byte-fetcher).
 - **D2 — boa_engine 0.22 for sig+n evaluation** (pure Rust: builds for all 4
   release targets. rquickjs 0.12 was tried first and dropped — its prebuilt
   bindings miss `aarch64-linux-android`, and the `bindgen` fallback needs

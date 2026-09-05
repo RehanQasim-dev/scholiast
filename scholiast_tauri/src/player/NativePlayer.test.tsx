@@ -5,12 +5,12 @@ import NativePlayer from "./NativePlayer";
 import { getNativeElement, playerBridge } from "./playerBridge";
 import type { StreamManifestView } from "../lib/readerIpc";
 
-const resolveStream = vi.fn();
-const fetchVideoCaptions = vi.fn();
+const resolveManifest = vi.fn();
+const fetchCaptionVtt = vi.fn();
 
-vi.mock("../lib/readerIpc", () => ({
-  resolveStream: (args: unknown) => resolveStream(args),
-  fetchVideoCaptions: (args: unknown) => fetchVideoCaptions(args),
+vi.mock("./youtubeEngine", () => ({
+  resolveManifest: (args: unknown) => resolveManifest(args),
+  fetchCaptionVtt: (args: unknown) => fetchCaptionVtt(args),
 }));
 
 vi.mock("../lib/store", async (importOriginal) => {
@@ -50,8 +50,8 @@ describe("NativePlayer", () => {
   beforeEach(() => {
     vi.clearAllMocks();
     playerBridge.resetForTests();
-    resolveStream.mockResolvedValue(manifest());
-    fetchVideoCaptions.mockRejectedValue(new Error("no captions"));
+    resolveManifest.mockResolvedValue(manifest());
+    fetchCaptionVtt.mockRejectedValue(new Error("no captions"));
   });
 
   test("feeds the video element and registers the bridge backend", async () => {
@@ -62,7 +62,7 @@ describe("NativePlayer", () => {
   });
 
   test("resolve failure reports through onFallback", async () => {
-    resolveStream.mockRejectedValue(new Error("private video"));
+    resolveManifest.mockRejectedValue(new Error("private video"));
     const onFallback = vi.fn();
     renderPlayer(onFallback);
     await waitFor(() => expect(onFallback).toHaveBeenCalledWith("private video"));
