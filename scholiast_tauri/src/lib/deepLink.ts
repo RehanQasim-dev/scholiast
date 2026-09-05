@@ -4,6 +4,7 @@ import { listen } from "@tauri-apps/api/event";
 import { getCurrent, onOpenUrl } from "@tauri-apps/plugin-deep-link";
 import { popIntentQueueAndExtractText } from "tauri-plugin-mobile-sharetarget-api";
 import { extractVideoId } from "../routes/Player";
+import { deliverGithubOAuth, parseGithubOAuthCallback } from "./githubOAuth";
 
 const HTTP_URL_RE = /https?:\/\/[^\s"'<>]+/gi;
 
@@ -61,6 +62,14 @@ export function useDeepLinks(): void {
     const handle = (urls: readonly string[] | string | null) => {
       if (disposed || !urls) return;
       for (const raw of typeof urls === "string" ? [urls] : urls) {
+        // GitHub OAuth round-trip from the bridge page — completes in the
+        // Settings card; route there so the result is visible.
+        const oauth = parseGithubOAuthCallback(raw);
+        if (oauth) {
+          deliverGithubOAuth(oauth);
+          navigateOnce("/settings");
+          break;
+        }
         const path = routeForSharedText(raw);
         if (path) {
           navigateOnce(path);

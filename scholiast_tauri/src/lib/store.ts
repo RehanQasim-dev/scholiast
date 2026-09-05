@@ -38,6 +38,8 @@ export const PREF_KEYS = {
   excalidrawPenCurve: "excalidraw.pen_curve",
   excalidrawExportScale: "excalidraw.export_scale",
   excalidrawMathFont: "excalidraw.math_font",
+  githubRepo: "github.repo",
+  githubLogin: "github.login",
 } as const;
 
 export const PREF_DEFAULTS = {
@@ -62,6 +64,8 @@ export const PREF_DEFAULTS = {
   [PREF_KEYS.excalidrawPenCurve]: "soft",
   [PREF_KEYS.excalidrawExportScale]: 2,
   [PREF_KEYS.excalidrawMathFont]: "latinmodern",
+  [PREF_KEYS.githubRepo]: "",
+  [PREF_KEYS.githubLogin]: "",
 } as Record<string, string | number | boolean>;
 
 type StoreLoader = () => Promise<Store>;

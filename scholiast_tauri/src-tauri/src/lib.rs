@@ -5,6 +5,7 @@ use tauri::Manager;
 mod capture;
 mod commands;
 mod drive;
+mod github;
 pub mod player_server;
 mod reader;
 mod secrets;
@@ -88,6 +89,11 @@ pub fn run() {
             commands::drive::drive_connect,
             commands::drive::drive_disconnect,
             commands::drive::drive_status,
+            commands::github::github_connect,
+            commands::github::github_complete,
+            commands::github::github_disconnect,
+            commands::github::github_status,
+            commands::github::github_repos,
             commands::drive::set_secret,
             commands::drive::get_secret_status,
             commands::drive::delete_secret,

@@ -22,6 +22,9 @@ pub enum SecretName {
     GroqApiKey,
     GeminiApiKey,
     GoogleRefreshToken,
+    GithubClientId,
+    GithubClientSecret,
+    GithubRefreshToken,
 }
 
 impl SecretName {
@@ -30,6 +33,9 @@ impl SecretName {
             SecretName::GroqApiKey => "groq.api_key",
             SecretName::GeminiApiKey => "gemini.api_key",
             SecretName::GoogleRefreshToken => "google.refresh_token",
+            SecretName::GithubClientId => "github.client_id",
+            SecretName::GithubClientSecret => "github.client_secret",
+            SecretName::GithubRefreshToken => "github.refresh_token",
         }
     }
 
@@ -39,6 +45,13 @@ impl SecretName {
             "gemini" | "gemini.api_key" => Some(SecretName::GeminiApiKey),
             "google" | "google.refresh_token" | "google_refresh_token" => {
                 Some(SecretName::GoogleRefreshToken)
+            }
+            "github.client_id" | "github_client_id" => Some(SecretName::GithubClientId),
+            "github.client_secret" | "github_client_secret" => {
+                Some(SecretName::GithubClientSecret)
+            }
+            "github.refresh_token" | "github_refresh_token" | "github" => {
+                Some(SecretName::GithubRefreshToken)
             }
             _ => None,
         }
@@ -189,6 +202,9 @@ mod tests {
         assert_eq!(SecretName::GroqApiKey.entry_id(), "groq.api_key");
         assert_eq!(SecretName::GeminiApiKey.entry_id(), "gemini.api_key");
         assert_eq!(SecretName::GoogleRefreshToken.entry_id(), "google.refresh_token");
+        assert_eq!(SecretName::GithubClientId.entry_id(), "github.client_id");
+        assert_eq!(SecretName::GithubClientSecret.entry_id(), "github.client_secret");
+        assert_eq!(SecretName::GithubRefreshToken.entry_id(), "github.refresh_token");
     }
 
     #[test]
@@ -198,6 +214,18 @@ mod tests {
         assert_eq!(
             SecretName::parse("google"),
             Some(SecretName::GoogleRefreshToken)
+        );
+        assert_eq!(
+            SecretName::parse("github.client_id"),
+            Some(SecretName::GithubClientId)
+        );
+        assert_eq!(
+            SecretName::parse("github.client_secret"),
+            Some(SecretName::GithubClientSecret)
+        );
+        assert_eq!(
+            SecretName::parse("github.refresh_token"),
+            Some(SecretName::GithubRefreshToken)
         );
         assert!(SecretName::parse("nope").is_none());
     }

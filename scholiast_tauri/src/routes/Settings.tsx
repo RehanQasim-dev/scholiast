@@ -1,4 +1,5 @@
 import DriveSyncCard from "../components/DriveSyncCard";
+import GithubSyncCard from "../components/GithubSyncCard";
 import AboutSection from "../components/settings/AboutSection";
 import AppearanceSection from "../components/settings/AppearanceSection";
 import ExcalidrawSettingsSection from "../components/settings/ExcalidrawSettingsSection";
@@ -47,7 +48,10 @@ export default function Settings() {
           <ExcalidrawSettingsSection />
         </Group>
         <Group title="Sync">
-          <DriveSyncCard />
+          <div className="space-y-7">
+            <DriveSyncCard />
+            <GithubSyncCard />
+          </div>
         </Group>
         <Group title="Playback">
           <PlaybackSection />

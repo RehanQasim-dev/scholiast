@@ -1,5 +1,6 @@
 import { describe, expect, test } from "vitest";
 import { routeForSharedText } from "./deepLink";
+import { parseGithubOAuthCallback } from "./githubOAuth";
 
 describe("routeForSharedText", () => {
   test("routes shared YouTube video to Player", () => {
@@ -25,5 +26,27 @@ describe("routeForSharedText", () => {
   test("returns null for text with no URL", () => {
     const res = routeForSharedText("just some text without any url");
     expect(res).toBeNull();
+  });
+});
+
+describe("parseGithubOAuthCallback", () => {
+  test("parses the bridge handoff", () => {
+    expect(parseGithubOAuthCallback("scholiast://oauth?code=abc&state=xyz")).toEqual({
+      code: "abc",
+      state: "xyz",
+    });
+  });
+
+  test("accepts missing state", () => {
+    expect(parseGithubOAuthCallback("scholiast://oauth?code=abc")).toEqual({
+      code: "abc",
+      state: "",
+    });
+  });
+
+  test("rejects share links and plain text", () => {
+    expect(parseGithubOAuthCallback("scholiast://share?url=https%3A%2F%2Fx.com")).toBeNull();
+    expect(parseGithubOAuthCallback("scholiast://oauth")).toBeNull();
+    expect(parseGithubOAuthCallback("not a url")).toBeNull();
   });
 });
