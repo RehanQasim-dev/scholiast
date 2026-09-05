@@ -132,7 +132,10 @@ jobs:
 
       - name: Build deb (release)
         working-directory: scholiast_tauri
-        run: ./node_modules/.bin/tauri build
+        # --features local-stt is mandatory for release, same as Android below:
+        # without the compiled whisper engine, installed model files report
+        # "ready" but every local transcription fails.
+        run: ./node_modules/.bin/tauri build --features local-stt
         env:
           JAVA_HOME: ${{ env.JAVA_HOME }}
 

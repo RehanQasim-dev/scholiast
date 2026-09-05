@@ -1,8 +1,13 @@
 //! Local speech-to-text on whisper.cpp (feature `local-stt`), mirroring FUTO `WhisperGGML`:
 //! one inference context owned by a dedicated worker thread, a cooperative cancel flag checked
 //! inside whisper's abort callback (mid-inference) plus between segments, partial-segment
-//! emission through a channel hook, language selection, a 2..=16 thread clamp and
-//! `no_timestamps` for clips under 25 s.
+//! emission through a channel hook, language selection, FUTO's thread policy (core count
+//! when sane, else 6) and `no_timestamps` for clips under 25 s.
+//!
+//! Inference params are a verbatim port of FUTO keyboard
+//! `native/jni/org_futo_voiceinput_WhisperGGML.cpp:WhisperGGML_infer`: BeamSearch5,
+//! dynamic `audio_ctx`, `temperature_inc = 0`, `max_tokens = 256`,
+//! `suppress_blank = false`, all print flags off, trailing `" you"` trim.
 //!
 //! The commands below are not yet registered in `lib.rs` (integration deferred, same as
 //! `recording.rs`); partial segments and download progress are logged where the real
@@ -30,14 +35,29 @@ const SAMPLE_RATE_HZ: u32 = 16_000;
 #[cfg(feature = "local-stt")]
 const NO_TIMESTAMPS_MAX_SECS: f32 = 25.0;
 #[cfg(feature = "local-stt")]
-const MIN_THREADS: i32 = 2;
+const BEAM_SIZE: i32 = 5;
 #[cfg(feature = "local-stt")]
-const MAX_THREADS: i32 = 16;
+const MAX_TOKENS: i32 = 256;
+#[cfg(feature = "local-stt")]
+const MIN_AUDIO_CTX: i32 = 160;
+#[cfg(feature = "local-stt")]
+const MAX_AUDIO_CTX: i32 = 1500;
+
+// Thread count mirrors FUTO `WhisperGGML_infer`: core count as-is when sane,
+// 6 otherwise (their phones land in 2..=16; absurd values mean broken sysconf).
+#[cfg(feature = "local-stt")]
+fn detect_threads() -> i32 {
+    let procs = std::thread::available_parallelism().map_or(6, |n| n.get() as i32);
+    if procs < 2 || procs > 16 {
+        6
+    } else {
+        procs
+    }
+}
 
 #[cfg(feature = "local-stt")]
 fn clamp_threads(requested: Option<i32>) -> i32 {
-    let detected = std::thread::available_parallelism().map_or(MIN_THREADS, |n| n.get() as i32);
-    requested.unwrap_or(detected).clamp(MIN_THREADS, MAX_THREADS)
+    requested.unwrap_or_else(detect_threads)
 }
 
 // ---------------------------------------------------------------------------
@@ -136,6 +156,8 @@ pub struct TranscribeRequest<'a> {
     #[allow(dead_code)]
     pub sample_rate: u32,
     pub language: Option<&'a str>,
+    /// FUTO glossary prompt (`"(Glossary: a, b)"`); None/empty means whisper default.
+    pub initial_prompt: Option<&'a str>,
     pub no_timestamps: bool,
 }
 
@@ -157,6 +179,7 @@ pub fn transcribe_with_backend(
     backend: &dyn InferenceBackend,
     wav_path: &Path,
     language: Option<&str>,
+    initial_prompt: Option<&str>,
     cancel: &Arc<AtomicBool>,
     partial: impl FnMut(String) + 'static,
 ) -> Result<String, String> {
@@ -166,6 +189,7 @@ pub fn transcribe_with_backend(
         pcm: &pcm.samples,
         sample_rate: pcm.sample_rate,
         language,
+        initial_prompt,
         no_timestamps: duration_secs < NO_TIMESTAMPS_MAX_SECS,
     };
     backend.transcribe(&req, cancel, Box::new(partial))
@@ -227,10 +251,35 @@ impl InferenceBackend for WhisperBackend {
         let ctx = context_for(&self.model_path)?;
         let mut state = ctx.create_state().map_err(|err| err.to_string())?;
 
-        let mut params = FullParams::new(SamplingStrategy::Greedy { best_of: 1 });
+        // FullParams mirror FUTO `WhisperGGML_infer` (BeamSearch5 default):
+        // dynamic audio_ctx, no temperature fallback, capped tokens.
+        let mut params = FullParams::new(SamplingStrategy::BeamSearch {
+            beam_size: BEAM_SIZE,
+            patience: -1.0,
+        });
         params.set_n_threads(self.threads);
         params.set_language(req.language);
         params.set_no_timestamps(req.no_timestamps);
+        // FUTO `initial_prompt` (personal dictionary / glossary bias). Skipped
+        // when empty: whisper's default is already "" and whisper-rs leaks the
+        // CString (`into_raw` without free), so only pay it when set. NULs are
+        // stripped: `set_initial_prompt` panics on them, which would kill the
+        // worker thread for the rest of the session.
+        if let Some(prompt) = req.initial_prompt {
+            if !prompt.is_empty() {
+                params.set_initial_prompt(&prompt.replace('\0', ""));
+            }
+        }
+        params.set_max_tokens(MAX_TOKENS);
+        params.set_audio_ctx(
+            ((req.pcm.len() as f32 / 320.0).ceil() as i32 + 32).clamp(MIN_AUDIO_CTX, MAX_AUDIO_CTX),
+        );
+        params.set_temperature_inc(0.0);
+        params.set_suppress_blank(false);
+        params.set_print_progress(false);
+        params.set_print_realtime(false);
+        params.set_print_special(false);
+        params.set_print_timestamps(false);
 
         let segment_cancel = Arc::clone(cancel);
         params.set_segment_callback_safe(move |data: SegmentCallbackData| {
@@ -249,7 +298,11 @@ impl InferenceBackend for WhisperBackend {
         let n = state.full_n_segments().map_err(|err| err.to_string())?;
         let mut text = String::new();
         for i in 0..n {
-            text.push_str(&state.full_get_segment_text(i).map_err(|err| err.to_string())?);
+            let seg = state.full_get_segment_text(i).map_err(|err| err.to_string())?;
+            if seg == " you" && i == n - 1 {
+                continue;
+            }
+            text.push_str(&seg);
         }
         Ok(text.trim().to_string())
     }
@@ -265,6 +318,7 @@ pub struct Job {
     pub model_path: PathBuf,
     pub wav_path: PathBuf,
     pub language: Option<String>,
+    pub initial_prompt: Option<String>,
     pub requested_threads: Option<i32>,
     pub cancel: Arc<AtomicBool>,
     /// Partial-segment hook. When absent, partials are logged only; the real
@@ -275,6 +329,8 @@ pub struct Job {
 
 enum WorkerMsg {
     Run(Job),
+    /// Best-effort cache warm: load the context now so a later transcribe hits cache.
+    Warm(PathBuf),
 }
 
 static WORKER_SENDER: LazyLock<Mutex<Option<mpsc::Sender<WorkerMsg>>>> =
@@ -298,7 +354,14 @@ fn worker_sender() -> mpsc::Sender<WorkerMsg> {
 
 fn worker_loop(receiver: mpsc::Receiver<WorkerMsg>) {
     for msg in receiver {
-        let WorkerMsg::Run(job) = msg;
+        match msg {
+            WorkerMsg::Warm(model_path) => {
+                #[cfg(feature = "local-stt")]
+                let _ = context_for(&model_path);
+                #[cfg(not(feature = "local-stt"))]
+                drop(model_path);
+            }
+            WorkerMsg::Run(job) => {
         if job.cancel.load(Ordering::Relaxed) {
             let _ = job.reply.send(Err("cancelled".into()));
             continue;
@@ -311,6 +374,7 @@ fn worker_loop(receiver: mpsc::Receiver<WorkerMsg>) {
                 &backend,
                 &job.wav_path,
                 job.language.as_deref(),
+                job.initial_prompt.as_deref(),
                 &job.cancel,
                 move |text| match partial_tx.as_ref() {
                     Some(tx) => {
@@ -323,6 +387,8 @@ fn worker_loop(receiver: mpsc::Receiver<WorkerMsg>) {
         #[cfg(not(feature = "local-stt"))]
         let result = Err("local-stt inference engine is not enabled in this build".into());
         let _ = job.reply.send(result);
+            }
+        }
     }
 }
 
@@ -374,6 +440,16 @@ pub fn submit_job(job: Job) -> Result<(), String> {
         .map_err(|err| err.to_string())
 }
 
+/// Best-effort warm of the default installed model cache. Called at recording
+/// start so the load happens while the user speaks (FUTO `preloadModels`
+/// inside `startRecording`); the later transcribe then hits the warm cache.
+/// Silent when no model is installed yet or the engine is not built in.
+pub(crate) fn warm_default_model(models_dir: &Path) {
+    if let Some(path) = models::first_installed_model_path(models_dir) {
+        let _ = worker_sender().send(WorkerMsg::Warm(path));
+    }
+}
+
 fn models_dir(app_handle: &tauri::AppHandle) -> Result<PathBuf, String> {
     app_handle
         .path()
@@ -411,6 +487,7 @@ pub async fn stt_local_transcribe(
     wav_path: String,
     language: Option<String>,
     model_path: Option<String>,
+    initial_prompt: Option<String>,
 ) -> Result<String, String> {
     let dir = models_dir(&app_handle)?;
     let resolved = resolve_model(&dir, model_path.as_deref())?;
@@ -423,6 +500,7 @@ pub async fn stt_local_transcribe(
         model_path: resolved,
         wav_path: PathBuf::from(&wav_path),
         language,
+        initial_prompt,
         requested_threads: None,
         cancel,
         partial_tx: None,
@@ -658,10 +736,11 @@ mod tests {
         ) -> Result<String, String> {
             partial(format!("partial:{}:{}", req.pcm.len(), req.no_timestamps));
             Ok(format!(
-                "echo|len={}|lang={:?}|no_ts={}",
+                "echo|len={}|lang={:?}|no_ts={}|prompt={:?}",
                 req.pcm.len(),
                 req.language,
-                req.no_timestamps
+                req.no_timestamps,
+                req.initial_prompt
             ))
         }
     }
@@ -698,13 +777,22 @@ mod tests {
 
         let cancel = Arc::new(AtomicBool::new(false));
         let (partial_tx, partial_rx) = mpsc::channel::<String>();
-        let text =
-            transcribe_with_backend(&EchoBackend, &temp.0, Some("en"), &cancel, move |p| {
+        let text = transcribe_with_backend(
+            &EchoBackend,
+            &temp.0,
+            Some("en"),
+            Some("(Glossary: Scholiast)"),
+            &cancel,
+            move |p| {
                 let _ = partial_tx.send(p);
-            })
-            .unwrap();
+            },
+        )
+        .unwrap();
 
-        assert_eq!(text, "echo|len=1600|lang=Some(\"en\")|no_ts=true");
+        assert_eq!(
+            text,
+            "echo|len=1600|lang=Some(\"en\")|no_ts=true|prompt=Some(\"(Glossary: Scholiast)\")"
+        );
         assert_eq!(
             partial_rx.try_iter().collect::<Vec<_>>(),
             vec!["partial:1600:true".to_string()]
@@ -719,8 +807,8 @@ mod tests {
 
         let cancel = Arc::new(AtomicBool::new(false));
         let text =
-            transcribe_with_backend(&EchoBackend, &temp.0, None, &cancel, |_| {}).unwrap();
-        assert!(text.ends_with("no_ts=false"));
+            transcribe_with_backend(&EchoBackend, &temp.0, None, None, &cancel, |_| {}).unwrap();
+        assert!(text.ends_with("no_ts=false|prompt=None"));
     }
 
     struct LatchBackend {
@@ -757,6 +845,7 @@ mod tests {
                 &LatchBackend { started_tx },
                 &temp.0,
                 None,
+                None,
                 &job_cancel,
                 |_| {},
             )
@@ -776,12 +865,13 @@ mod tests {
     }
 
     #[test]
-    fn thread_count_is_clamped() {
-        assert_eq!(clamp_threads(Some(0)), MIN_THREADS);
-        assert_eq!(clamp_threads(Some(1)), MIN_THREADS);
-        assert_eq!(clamp_threads(Some(999)), MAX_THREADS);
+    fn thread_count_follows_futo_policy() {
         assert_eq!(clamp_threads(Some(4)), 4);
-        assert!((MIN_THREADS..=MAX_THREADS).contains(&clamp_threads(None)));
+        let detected = clamp_threads(None);
+        assert!(
+            detected == 6 || (2..=16).contains(&detected),
+            "unexpected thread count {detected}"
+        );
     }
 
     #[test]
@@ -795,7 +885,7 @@ mod tests {
     }
 
     // Manual real-inference smoke (never runs in CI):
-    //   SCHOLIAST_STT_SMOKE_MODEL=/path/to/ggml-tiny.en.bin \
+    //   SCHOLIAST_STT_SMOKE_MODEL=/path/to/tiny_en_acft_q8_0.bin \
     //   SCHOLIAST_STT_SMOKE_WAV=/path/to/sample.wav \
     //   cargo test -p <crate> --features local-stt -- --ignored stt_local_smoke
     #[test]
@@ -806,7 +896,7 @@ mod tests {
         let backend = WhisperBackend::new(PathBuf::from(model_path), None);
         let cancel = Arc::new(AtomicBool::new(false));
         let started = std::time::Instant::now();
-        let text = transcribe_with_backend(&backend, Path::new(&wav_path), Some("en"), &cancel, |_| {})
+        let text = transcribe_with_backend(&backend, Path::new(&wav_path), Some("en"), None, &cancel, |_| {})
             .expect("smoke inference failed");
         println!("stt_local_smoke: {} ms -> {:?}", started.elapsed().as_millis(), text);
     }

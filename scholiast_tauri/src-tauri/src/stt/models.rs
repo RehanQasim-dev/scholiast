@@ -1,13 +1,14 @@
 //! Local STT model catalog, checksum verification and download/installation.
 //!
-//! Model artifacts are the official whisper.cpp GGML builds from
-//! `https://huggingface.co/ggerganov/whisper.cpp` (whisper-rs *is* whisper.cpp, so these are the
-//! guaranteed-compatible binaries). The FUTO `*_acft_q8_0.bin` pins from the Android keyboard's
-//! `Models.kt` are recorded below as provenance but their URLs 404 in the wild (verified by the
-//! android port, see `tauri-tasks/task-11-local-stt-whisper/LOG.md`) and FUTO publishes no hashes
-//! for its live replacements; a wrong/dead URL therefore fails safely at checksum time.
+//! Model artifacts are FUTO's ACFT-finetuned `q8_0` Whisper builds — the same binaries the
+//! FUTO keyboard ships (`voiceinput-shared/.../Models.kt`, `futo-org/whisper-acft`):
+//! finetuned for dynamic-`audio_ctx` robustness (short clips encode only their own frames
+//! instead of a full 30 s window) and quantized to `q8_0` (smaller + faster matmuls).
+//! whisper-rs *is* whisper.cpp, which still reads this legacy `.bin` format.
 //!
-//! SHA-256 pins are the HuggingFace LFS OIDs queried from the repo tree API.
+//! URLs verified live at `https://voiceinput.futo.org/VoiceInput/`; SHA-256 pins match
+//! FUTO's `Models.kt` checksums byte-for-byte (base/small) or were hashed from a fresh
+//! full-length download with matching `Content-Length` (tiny_en).
 
 use serde::Serialize;
 use sha2::{Digest, Sha256};
@@ -25,36 +26,34 @@ pub struct ModelSpec {
     pub sha256: &'static str,
 }
 
-/// English-only tiny model, ~78 MB. Default: fastest CPU inference for short voice notes.
+/// English-only ACFT tiny model, ~44 MB. Default: fastest CPU inference for short voice notes.
 pub const DEFAULT_MODEL_ID: &str = "tiny_en";
 
-/// FUTO provenance (`voiceinput-shared/.../Models.kt`, files dead upstream):
-/// base_en_acft_q8_0.bin = e9b4b7b81b8a28769e8aa9962aa39bb9f21b622cf6a63982e93f065ed5caf1c8
-/// small_en_acft_q8_0.bin = 58fbe949992dafed917590d58bc12ca577b08b9957f0b3e0d7ee71b64bed3aa8
+/// FUTO provenance (`voiceinput-shared/.../Models.kt` + live `voiceinput.futo.org` binaries).
 pub const MODEL_CATALOG: [ModelSpec; 3] = [
     ModelSpec {
         id: "tiny_en",
-        label: "Tiny (English) ~78 MB",
-        url: "https://huggingface.co/ggerganov/whisper.cpp/resolve/main/ggml-tiny.en.bin",
-        file_name: "ggml-tiny.en.bin",
-        size_bytes: 77_704_715,
-        sha256: "921e4cf8686fdd993dcd081a5da5b6c365bfde1162e72b08d75ac75289920b1f",
+        label: "Tiny (English) ~44 MB",
+        url: "https://voiceinput.futo.org/VoiceInput/tiny_en_acft_q8_0.bin",
+        file_name: "tiny_en_acft_q8_0.bin",
+        size_bytes: 43_550_795,
+        sha256: "4b5480aa1b14a7efc5b578ef176510970a898049671c3cd237285b3e3f6bfbfc",
     },
     ModelSpec {
         id: "base_en",
-        label: "Base (English) ~148 MB",
-        url: "https://huggingface.co/ggerganov/whisper.cpp/resolve/main/ggml-base.en.bin",
-        file_name: "ggml-base.en.bin",
-        size_bytes: 147_964_211,
-        sha256: "a03779c86df3323075f5e796cb2ce5029f00ec8869eee3fdfb897afe36c6d002",
+        label: "Base (English) ~82 MB",
+        url: "https://voiceinput.futo.org/VoiceInput/base_en_acft_q8_0.bin",
+        file_name: "base_en_acft_q8_0.bin",
+        size_bytes: 81_781_811,
+        sha256: "e9b4b7b81b8a28769e8aa9962aa39bb9f21b622cf6a63982e93f065ed5caf1c8",
     },
     ModelSpec {
         id: "small_en",
-        label: "Small (English) ~488 MB",
-        url: "https://huggingface.co/ggerganov/whisper.cpp/resolve/main/ggml-small.en.bin",
-        file_name: "ggml-small.en.bin",
-        size_bytes: 487_614_201,
-        sha256: "c6138d6d58ecc8322097e0f987c32f1be8bb0a18532a3f88f734d1bbf9c41e5d",
+        label: "Small (English) ~264 MB",
+        url: "https://voiceinput.futo.org/VoiceInput/small_en_acft_q8_0.bin",
+        file_name: "small_en_acft_q8_0.bin",
+        size_bytes: 264_477_561,
+        sha256: "58fbe949992dafed917590d58bc12ca577b08b9957f0b3e0d7ee71b64bed3aa8",
     },
 ];
 
@@ -372,7 +371,7 @@ mod tests {
     fn catalog_reports_installed_and_default() {
         let dir = TempDir::new("catalog");
         fs::create_dir_all(&dir.0).unwrap();
-        fs::write(dir.0.join("ggml-tiny.en.bin"), b"placeholder").unwrap();
+        fs::write(dir.0.join("tiny_en_acft_q8_0.bin"), b"placeholder").unwrap();
 
         let entries = catalog_json(&dir.0);
         assert_eq!(entries.len(), MODEL_CATALOG.len());

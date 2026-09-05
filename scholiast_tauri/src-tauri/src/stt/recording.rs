@@ -134,12 +134,15 @@ fn cancel_session(session_id: &str) -> Result<(), String> {
 #[tauri::command]
 #[allow(dead_code)]
 pub fn voice_begin(app_handle: tauri::AppHandle) -> Result<String, String> {
-    let voice_dir = app_handle
+    let data_dir = app_handle
         .path()
         .app_data_dir()
-        .map_err(|err| err.to_string())?
-        .join("voice");
-    begin_session(&voice_dir)
+        .map_err(|err| err.to_string())?;
+    // Warm the whisper context while the user speaks (FUTO preloads on
+    // recording start); best-effort, never fails recording when no model
+    // is installed yet.
+    super::local::warm_default_model(&data_dir.join("models"));
+    begin_session(&data_dir.join("voice"))
 }
 
 #[tauri::command]

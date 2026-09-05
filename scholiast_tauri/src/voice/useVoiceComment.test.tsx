@@ -2,6 +2,8 @@ import { act, renderHook, waitFor } from "@testing-library/react";
 import { invoke } from "@tauri-apps/api/core";
 import { beforeEach, describe, expect, test, vi } from "vitest";
 import {
+  formatGlossaryPrompt,
+  parseGlossary,
   resetVoiceAvailabilityForTests,
   useVoiceComment,
 } from "./useVoiceComment";
@@ -21,16 +23,21 @@ interface RecorderLike {
   start: ReturnType<typeof vi.fn>;
   stop: ReturnType<typeof vi.fn>;
   cancel: ReturnType<typeof vi.fn>;
+  autoStop: (result: { path: string; reason: string }) => void;
 }
 
 let activeRecorder: RecorderLike | null = null;
 
 vi.mock("./useVoiceRecorder", () => ({
-  useVoiceRecorder: () => makeFakeRecorder(),
+  useVoiceRecorder: (options?: { onAutoStop?: (result: unknown) => void }) =>
+    makeFakeRecorder(options),
 }));
 
-function makeFakeRecorder(): RecorderLike {
-  if (activeRecorder) return activeRecorder;
+function makeFakeRecorder(options?: { onAutoStop?: (result: unknown) => void }): RecorderLike {
+  if (activeRecorder) {
+    activeRecorder.autoStop = (result) => options?.onAutoStop?.(result);
+    return activeRecorder;
+  }
   const recorder: RecorderLike = {
     start: vi.fn(async () => {}),
     stop: vi.fn(async () => {
@@ -39,6 +46,7 @@ function makeFakeRecorder(): RecorderLike {
       return result;
     }),
     cancel: vi.fn(async () => {}),
+    autoStop: (result) => options?.onAutoStop?.(result),
   };
   activeRecorder = recorder;
   return recorder;
@@ -58,6 +66,7 @@ let geminiConfigured = false;
 let localModels: Array<{ id: string; installed: boolean }> = [];
 let localEngineBuiltIn = true;
 let activeModelPref = "auto";
+let glossaryPref = "";
 
 function setOnline(value: boolean) {
   Object.defineProperty(navigator, "onLine", { configurable: true, value });
@@ -72,6 +81,7 @@ beforeEach(() => {
   localModels = [];
   localEngineBuiltIn = true;
   activeModelPref = "auto";
+  glossaryPref = "";
   setOnline(true);
   resetVoiceAvailabilityForTests();
 
@@ -79,6 +89,7 @@ beforeEach(() => {
     if (key === PREF_KEYS.speechLanguage) return "en";
     if (key === PREF_KEYS.localModel) return "";
     if (key === PREF_KEYS.activeModel) return activeModelPref;
+    if (key === PREF_KEYS.sttGlossary) return glossaryPref;
     return fallback;
   });
 
@@ -163,6 +174,7 @@ describe("useVoiceComment", () => {
       wavPath: "/voice/s2.wav",
       language: "en",
       modelPath: null,
+      initialPrompt: null,
     });
     expect(invokeMock).not.toHaveBeenCalledWith("stt_transcribe", expect.anything());
   });
@@ -187,6 +199,7 @@ describe("useVoiceComment", () => {
       wavPath: "/voice/s_local_online.wav",
       language: "en",
       modelPath: null,
+      initialPrompt: null,
     });
     expect(invokeMock).not.toHaveBeenCalledWith("stt_transcribe", expect.anything());
   });
@@ -301,5 +314,60 @@ describe("useVoiceComment", () => {
       text = await result.current.stop();
     });
     expect(text).toBe("local draft");
+  });
+
+  test("personal dictionary words ride along as the FUTO glossary prompt", async () => {
+    setOnline(false);
+    localModels = [{ id: "tiny_en", installed: true }];
+    glossaryPref = "Scholiast\n  Tauri\n\n";
+    const { result } = renderHook(() => useVoiceComment({ kind: "add" }));
+
+    await waitFor(() => expect(result.current.disabledReason).toBeNull());
+    stopQueue.push({ path: "/voice/s6.wav", reason: "user" });
+    await act(async () => {
+      await result.current.stop();
+    });
+
+    expect(invokeMock).toHaveBeenCalledWith("stt_local_transcribe", {
+      wavPath: "/voice/s6.wav",
+      language: "en",
+      modelPath: null,
+      initialPrompt: "(Glossary: Scholiast, Tauri)",
+    });
+  });
+
+  test("silence auto-stop transcribes without a manual stop", async () => {
+    const { result } = renderHook(() => useVoiceComment({ kind: "add" }));
+
+    await waitFor(() => expect(result.current.disabledReason).toBeNull());
+    await act(async () => {
+      await result.current.start();
+    });
+    await act(async () => {
+      activeRecorder?.autoStop({ path: "/voice/auto.wav", reason: "silence" });
+    });
+
+    let text = "";
+    await act(async () => {
+      text = await result.current.stop();
+    });
+
+    expect(text).toBe("spoken draft");
+    expect(invokeMock).toHaveBeenCalledWith("stt_transcribe", {
+      wavPath: "/voice/auto.wav",
+      language: "en",
+    });
+    expect(result.current.state).toBe("idle");
+  });
+
+  test("parseGlossary/formatGlossaryPrompt mirror the FUTO glossary shape", () => {
+    expect(parseGlossary("Scholiast\n  \nTauri\n")).toEqual(["Scholiast", "Tauri"]);
+    expect(parseGlossary("   \n")).toEqual([]);
+    expect(formatGlossaryPrompt([])).toBeNull();
+    expect(formatGlossaryPrompt(["  "])).toBeNull();
+    expect(formatGlossaryPrompt(["Scholiast", "Tauri"])).toBe(
+      "(Glossary: Scholiast, Tauri)",
+    );
+    expect(formatGlossaryPrompt(["a\0b"])).toBe("(Glossary: ab)");
   });
 });

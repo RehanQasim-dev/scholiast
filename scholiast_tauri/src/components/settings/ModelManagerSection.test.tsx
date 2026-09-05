@@ -43,9 +43,9 @@ describe("ModelManagerSection", () => {
       if (command === "list_stt_models") {
         return {
           models: [
-            { id: "tiny_en", label: "Tiny (English) ~78 MB", sizeBytes: 77704715, isDefault: true, installed: false },
-            { id: "base_en", label: "Base (English) ~148 MB", sizeBytes: 147964211, isDefault: false, installed: false },
-            { id: "small_en", label: "Small (English) ~488 MB", sizeBytes: 487614201, isDefault: false, installed: false },
+            { id: "tiny_en", label: "Tiny (English) ~44 MB", sizeBytes: 43550795, isDefault: true, installed: false },
+            { id: "base_en", label: "Base (English) ~82 MB", sizeBytes: 81781811, isDefault: false, installed: false },
+            { id: "small_en", label: "Small (English) ~264 MB", sizeBytes: 264477561, isDefault: false, installed: false },
           ],
         };
       }
@@ -65,9 +65,9 @@ describe("ModelManagerSection", () => {
     // Empty state should be visible since no models are installed
     expect(screen.getByText(/No models imported yet/i)).toBeInTheDocument();
 
-    // Clicking Explore Models should open the Hugging Face website
+    // Clicking Explore Models should open the FUTO voice models website
     fireEvent.click(exploreBtn);
-    expect(openUrlMock).toHaveBeenCalledWith("https://huggingface.co/ggerganov/whisper.cpp/tree/main");
+    expect(openUrlMock).toHaveBeenCalledWith("https://keyboard.futo.org/voice-input-models");
   });
 
   test("displays installed models with active badge, activate button, and delete button", async () => {
@@ -76,7 +76,7 @@ describe("ModelManagerSection", () => {
       if (command === "list_stt_models") {
         return {
           models: [
-            { id: "tiny_en", label: "Tiny (English) ~78 MB", sizeBytes: 77704715, isDefault: true, installed: false },
+            { id: "tiny_en", label: "Tiny (English) ~44 MB", sizeBytes: 43550795, isDefault: true, installed: false },
             { id: "custom-tiny.bin", label: "custom-tiny.bin (~75 MB)", sizeBytes: 78000000, isDefault: false, installed: true },
             { id: "custom-base.bin", label: "custom-base.bin (~142 MB)", sizeBytes: 148000000, isDefault: false, installed: true },
           ],
@@ -93,7 +93,7 @@ describe("ModelManagerSection", () => {
     // Only installed models are rendered
     expect(await screen.findByText("custom-tiny.bin (~75 MB)")).toBeInTheDocument();
     expect(screen.getByText("custom-base.bin (~142 MB)")).toBeInTheDocument();
-    expect(screen.queryByText("Tiny (English) ~78 MB")).not.toBeInTheDocument();
+    expect(screen.queryByText("Tiny (English) ~44 MB")).not.toBeInTheDocument();
 
     // custom-tiny.bin is active
     expect(screen.getByTestId("active-custom-tiny.bin")).toBeInTheDocument();

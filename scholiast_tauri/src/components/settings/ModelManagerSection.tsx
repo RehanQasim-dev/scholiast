@@ -5,8 +5,7 @@ import { openUrl } from "@tauri-apps/plugin-opener";
 import { invokeCommand } from "../../lib/ipc";
 import { PREF_KEYS, getPref, setPref } from "../../lib/store";
 
-const WHISPER_MODELS_URL =
-  "https://huggingface.co/ggerganov/whisper.cpp/tree/main";
+const WHISPER_MODELS_URL = "https://keyboard.futo.org/voice-input-models";
 
 interface CatalogEntry {
   id: string;
@@ -183,7 +182,7 @@ export default function ModelManagerSection() {
               Explore Models
             </span>
             <span className="block text-[11px] text-text-3 truncate">
-              Download .bin models from Hugging Face
+              Download FUTO voice models (.bin)
             </span>
           </div>
         </button>

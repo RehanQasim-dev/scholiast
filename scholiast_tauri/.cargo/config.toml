@@ -1,0 +1,12 @@
+# Whisper C++ must always compile optimized, even for `cargo build` / `tauri dev`.
+# whisper-rs-sys's build script downgrades to RelWithDebInfo (-O2) whenever
+# `debug_assertions` is on, but only forwards an explicit CMAKE_BUILD_TYPE env
+# back over it — so pin Release (-O3 -DNDEBUG) here. This mirrors the workspace
+# `[profile.dev.package.whisper-rs-sys] opt-level = 3` (which only covers the
+# Rust wrapper, not the cmake C++ it compiles) and FUTO's "always optimize
+# GGML" policy. Release builds already resolve to the same value, so CI is
+# unaffected. Opt out per-invocation with e.g.
+# `CMAKE_BUILD_TYPE=RelWithDebInfo cargo build` (config [env] never overrides
+# an explicitly exported variable).
+[env]
+CMAKE_BUILD_TYPE = "Release"

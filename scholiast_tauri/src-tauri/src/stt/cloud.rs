@@ -40,6 +40,11 @@ pub const PREF_EDIT_PROMPT: &str = "prompt.edit_comment";
 
 /// Store pref overriding the active STT model (local, groq, or gemini).
 pub const PREF_ACTIVE_MODEL: &str = "stt.active_model";
+/// Store pref holding the personal dictionary (one word per line), shared with
+/// local STT's `initial_prompt` bias.
+pub const PREF_GLOSSARY: &str = "stt.glossary";
+/// Groq `prompt` field limit is 224 tokens; cap well under it at a word boundary.
+const GROQ_PROMPT_MAX_CHARS: usize = 900;
 /// Store pref overriding the add-comment prompt.
 pub const PREF_ADD_PROMPT: &str = "prompt.add_comment";
 /// Default Groq model (plan §6.5.6).
@@ -234,7 +239,7 @@ impl Transcriber for GroqTranscriber {
         &self,
         wav: &Path,
         language: Option<&str>,
-        _prompt: Option<&str>,
+        prompt: Option<&str>,
     ) -> Result<String, SttError> {
         let key = self.keys.key(KEY_GROQ).ok_or(SttError::NoProvider)?;
         let audio = wav_bytes(wav)?;
@@ -250,6 +255,9 @@ impl Transcriber for GroqTranscriber {
             );
         if let Some(lang) = language.filter(|l| !l.trim().is_empty()) {
             form = form.text("language", lang.trim().to_string());
+        }
+        if let Some(hint) = prompt.filter(|p| !p.trim().is_empty()) {
+            form = form.text("prompt", hint.trim().to_string());
         }
 
         let response = self
@@ -417,6 +425,29 @@ fn pref(app: &tauri::AppHandle, key: &str) -> Option<String> {
     }
 }
 
+/// FUTO glossary prompt from the `stt.glossary` pref (one word per line):
+/// `"(Glossary: a, b)"`, capped for Groq's 224-token `prompt` limit. None when
+/// the dictionary is empty. Same words local STT feeds `initial_prompt`.
+fn glossary_prompt(app: &tauri::AppHandle) -> Option<String> {
+    let words: Vec<String> = pref(app, PREF_GLOSSARY)?
+        .lines()
+        .map(|line| line.trim().replace('\0', ""))
+        .filter(|line| !line.is_empty())
+        .collect();
+    if words.is_empty() {
+        return None;
+    }
+    let mut prompt = format!("(Glossary: {})", words.join(", "));
+    if prompt.len() > GROQ_PROMPT_MAX_CHARS {
+        let mut end = GROQ_PROMPT_MAX_CHARS;
+        while !prompt.is_char_boundary(end) {
+            end -= 1;
+        }
+        prompt.truncate(end);
+    }
+    Some(prompt)
+}
+
 /// Tauri command: transcribe a finished WAV verbatim or prompted via Groq or Gemini.
 /// Routing per plan §6.5.2 — honors `stt.active_model`, falling back to whichever key is configured.
 #[tauri::command]
@@ -461,8 +492,13 @@ pub async fn stt_transcribe(
             .or_else(|| pref(&app_handle, PREF_GROQ_MODEL))
             .unwrap_or_else(|| DEFAULT_GROQ_MODEL.into());
         let groq = GroqTranscriber::new(keys, model);
+        let glossary = glossary_prompt(&app_handle);
         let text = groq
-            .transcribe(Path::new(&wav_path), language.as_deref(), None)
+            .transcribe(
+                Path::new(&wav_path),
+                language.as_deref(),
+                glossary.as_deref(),
+            )
             .await?;
         Ok(Reply::new(text))
     }
@@ -554,6 +590,35 @@ mod tests {
         assert!(body.contains(r#"name="language""#));
         assert!(body.contains("en"));
         assert!(body.contains(r#"name="file""#));
+        assert!(!body.contains(r#"name="prompt""#));
+        std::fs::remove_file(wav).unwrap();
+    }
+
+    #[tokio::test]
+    async fn groq_forwards_glossary_as_prompt_bias() {
+        let server = MockServer::start().await;
+        Mock::given(method("POST"))
+            .and(path("/openai/v1/audio/transcriptions"))
+            .respond_with(ResponseTemplate::new(200)
+                .set_body_json(serde_json::json!({ "text": "biased draft" })))
+            .expect(1)
+            .mount(&server)
+            .await;
+
+        let wav = temp_wav("groq-prompt", 64);
+        let groq = GroqTranscriber::new(keys(&[(KEY_GROQ, "gsk-test")]), DEFAULT_GROQ_MODEL.into())
+            .with_endpoint(format!("{}/openai/v1/audio/transcriptions", server.uri()));
+
+        let text = groq
+            .transcribe(&wav, Some("en"), Some("(Glossary: Scholiast, Tauri)"))
+            .await
+            .expect("text");
+        assert_eq!(text, "biased draft");
+
+        let requests = server.received_requests().await.expect("requests");
+        let body = String::from_utf8_lossy(&requests[0].body);
+        assert!(body.contains(r#"name="prompt""#));
+        assert!(body.contains("(Glossary: Scholiast, Tauri)"));
         std::fs::remove_file(wav).unwrap();
     }
 

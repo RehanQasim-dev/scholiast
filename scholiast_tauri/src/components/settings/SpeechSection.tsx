@@ -244,6 +244,10 @@ export default function SpeechSection() {
     PREF_KEYS.speechLanguage,
     String(PREF_DEFAULTS[PREF_KEYS.speechLanguage]),
   );
+  const [glossary, setGlossary] = usePref(
+    PREF_KEYS.sttGlossary,
+    String(PREF_DEFAULTS[PREF_KEYS.sttGlossary]),
+  );
 
   const [dropdownOpen, setDropdownOpen] = useState(false);
   const [search, setSearch] = useState("");
@@ -717,6 +721,24 @@ export default function SpeechSection() {
             options={LANGUAGES}
             testId="pref-speech.language"
             ariaLabel="Speech language"
+          />
+        </label>
+
+        {/* Personal dictionary: biases on-device transcription toward these words */}
+        <label className="flex flex-col gap-1.5 text-sm font-medium text-text-2">
+          <span>Personal dictionary</span>
+          <span className="text-xs font-normal text-text-3">
+            One word or name per line. Used only by on-device transcription to
+            reduce mistakes on names and terms it rarely hears.
+          </span>
+          <textarea
+            value={glossary}
+            onChange={(event) => void setGlossary(event.target.value)}
+            placeholder={"Scholiast\nTauri"}
+            rows={3}
+            data-testid="pref-stt.glossary"
+            aria-label="Personal dictionary"
+            className="min-h-[72px] w-full rounded-md border border-hairline bg-elevated px-3 py-2 text-sm font-normal text-text outline-none placeholder:text-text-3 focus:border-accent"
           />
         </label>
       </div>

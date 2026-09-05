@@ -1,7 +1,7 @@
 import { act, renderHook } from "@testing-library/react";
 import { invoke } from "@tauri-apps/api/core";
-import { afterEach, beforeEach, describe, expect, vi } from "vitest";
-import { useVoiceRecorder } from "./useVoiceRecorder";
+import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
+import { createSilenceDetector, useVoiceRecorder } from "./useVoiceRecorder";
 
 vi.mock("@tauri-apps/api/core", () => ({ invoke: vi.fn() }));
 
@@ -44,6 +44,50 @@ function base64Of(bytes: Uint8Array): string {
   for (const byte of bytes) binary += String.fromCharCode(byte);
   return btoa(binary);
 }
+
+function pcmChunk(value: number, len = 1600): ArrayBuffer {
+  return new Int16Array(len).fill(value).buffer;
+}
+
+async function feedChunk(value: number) {
+  await act(async () => {
+    lastNode().port.onmessage?.({ data: pcmChunk(value) });
+  });
+}
+
+describe("createSilenceDetector", () => {
+  test("pure silence never fires", () => {
+    const onSilence = vi.fn();
+    const vad = createSilenceDetector(onSilence);
+    for (let i = 0; i < 100; i++) vad.feed(new Int16Array(1600));
+    expect(onSilence).not.toHaveBeenCalled();
+  });
+
+  test("speech without trailing silence never fires", () => {
+    const onSilence = vi.fn();
+    const vad = createSilenceDetector(onSilence);
+    for (let i = 0; i < 30; i++) vad.feed(new Int16Array(1600).fill(10000));
+    expect(onSilence).not.toHaveBeenCalled();
+  });
+
+  test("startup blanking ignores speech inside the first 0.6 s", () => {
+    const onSilence = vi.fn();
+    const vad = createSilenceDetector(onSilence);
+    // Exactly 9600 samples: still blanked, talking never latches.
+    for (let i = 0; i < 6; i++) vad.feed(new Int16Array(1600).fill(10000));
+    for (let i = 0; i < 100; i++) vad.feed(new Int16Array(1600));
+    expect(onSilence).not.toHaveBeenCalled();
+  });
+
+  test("speech then ~2 s of silence fires exactly once", () => {
+    const onSilence = vi.fn();
+    const vad = createSilenceDetector(onSilence);
+    for (let i = 0; i < 6; i++) vad.feed(new Int16Array(1600));
+    for (let i = 0; i < 3; i++) vad.feed(new Int16Array(1600).fill(10000));
+    for (let i = 0; i < 30; i++) vad.feed(new Int16Array(1600));
+    expect(onSilence).toHaveBeenCalledTimes(1);
+  });
+});
 
 describe("useVoiceRecorder", () => {
   beforeEach(() => {
@@ -156,5 +200,43 @@ describe("useVoiceRecorder", () => {
     expect(result.current.phase).toBe("idle");
     expect(result.current.elapsedMs).toBeGreaterThanOrEqual(119_500);
     expect(onStateChange).toHaveBeenCalledWith("idle", { reason: "cap" });
+  });
+
+  test("silence VAD auto-stops with reason 'silence' after speech plus ~2 s quiet", async () => {
+    const onAutoStop = vi.fn();
+    const onStateChange = vi.fn();
+    const { result } = renderHook(() => useVoiceRecorder({ onAutoStop, onStateChange }));
+    await act(async () => {
+      await result.current.start();
+    });
+
+    for (let i = 0; i < 6; i++) await feedChunk(0);
+    for (let i = 0; i < 3; i++) await feedChunk(10000);
+    expect(result.current.phase).toBe("recording");
+    for (let i = 0; i < 25; i++) await feedChunk(0);
+    await act(async () => {});
+
+    expect(invokeMock).toHaveBeenCalledWith("voice_finish", { sessionId: "session-1" });
+    expect(onAutoStop).toHaveBeenCalledWith({
+      path: "/data/voice/session-1.wav",
+      reason: "silence",
+    });
+    expect(result.current.phase).toBe("idle");
+    expect(onStateChange).toHaveBeenCalledWith("idle", { reason: "silence" });
+  });
+
+  test("silence VAD stays recording when nobody has spoken yet", async () => {
+    const onAutoStop = vi.fn();
+    const { result } = renderHook(() => useVoiceRecorder({ onAutoStop }));
+    await act(async () => {
+      await result.current.start();
+    });
+
+    for (let i = 0; i < 60; i++) await feedChunk(0);
+    await act(async () => {});
+
+    expect(result.current.phase).toBe("recording");
+    expect(onAutoStop).not.toHaveBeenCalled();
+    expect(invokeMock).not.toHaveBeenCalledWith("voice_finish", expect.anything());
   });
 });

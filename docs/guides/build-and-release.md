@@ -42,7 +42,10 @@ isUniversalApk = false
 ```bash
 cd scholiast_tauri
 pnpm build              # tsc + vite → dist/
-./node_modules/.bin/tauri build        # → target/release/bundle/deb/*.deb (workspace root, NOT src-tauri/target)
+# --features local-stt is mandatory for release (same as Android below):
+# without the compiled whisper engine, installed model files report "ready"
+# but every local transcription fails.
+./node_modules/.bin/tauri build --features local-stt   # → target/release/bundle/deb/*.deb (workspace root, NOT src-tauri/target)
 ```
 
 ### 2) Android APKs (release per ABI)

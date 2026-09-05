@@ -22,7 +22,11 @@ export CC_x86_64_linux_android=$N/x86_64-linux-android24-clang
 export AR_x86_64_linux_android=$N/llvm-ar
 # whisper-rs (local-stt): cmake-rs finds the NDK via ANDROID_NDK; bindgen wants
 # the NDK sysroot instead of host headers. Every ABI needs its own --target.
+# CMAKE_BUILD_TYPE=Release: whisper-rs-sys downgrades dev builds to
+# RelWithDebInfo (-O2); the explicit env survives its WHISPER_/CMAKE_
+# passthrough and keeps -O3 -DNDEBUG (same as .cargo/config.toml for host).
 export ANDROID_NDK=$NDK_HOME
+export CMAKE_BUILD_TYPE=Release
 export CXX_aarch64_linux_android=$N/aarch64-linux-android24-clang++
 export CXX_armv7_linux_androideabi=$N/armv7a-linux-androideabi24-clang++
 export CXX_i686_linux_android=$N/i686-linux-android24-clang++

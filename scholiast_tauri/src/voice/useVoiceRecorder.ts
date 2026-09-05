@@ -3,7 +3,7 @@ import { invoke } from "@tauri-apps/api/core";
 import workletUrl from "./resample-worklet.js?url";
 
 export type RecorderPhase = "idle" | "recording" | "processing";
-export type StopReason = "user" | "cap";
+export type StopReason = "user" | "cap" | "silence";
 
 export interface StopResult {
   path: string;
@@ -23,6 +23,8 @@ export interface VoiceRecorderOptions {
   onStateChange?: (phase: RecorderPhase, meta: { reason?: StopReason }) => void;
   onError?: (error: unknown) => void;
   maxDurationMs?: number;
+  /** Fires with the finalized WAV after an automatic stop (cap/silence). */
+  onAutoStop?: (result: StopResult) => void;
 }
 
 const CHUNK_MS = 100;
@@ -53,6 +55,94 @@ function teardown(recording: ActiveRecording) {
   void recording.context.close().catch(() => {});
 }
 
+// ---------------------------------------------------------------------------
+// Silence detector — energy-based port of FUTO keyboard's `recordingJob` VAD
+// state machine (`AudioRecognizer.kt`). FUTO drives its counters with a WebRTC
+// GMM VAD on 480-sample (30 ms) frames plus an RMS gate; browsers have no GMM
+// VAD without a wasm module, so each 30 ms frame is classified by RMS here.
+// Time constants are FUTO's verbatim: 0.6 s startup blanking (mic-open thump),
+// 0.01 RMS speech gate, 8 speech frames (~240 ms) to latch talking, 66 silent
+// frames (~2 s) of hangover to auto-stop.
+// ---------------------------------------------------------------------------
+
+export const VAD_FRAME_SAMPLES = 480;
+const VAD_ONSET_RMS = 0.01;
+const VAD_STARTUP_BLANK_SAMPLES = 9600;
+const VAD_ONSET_SPEECH_FRAMES = 8;
+const VAD_HANGOVER_SILENCE_FRAMES = 66;
+
+export interface SilenceDetector {
+  feed(chunk: Int16Array): void;
+  reset(): void;
+}
+
+function frameRms(frame: ArrayLike<number>): number {
+  let sum = 0;
+  for (let i = 0; i < frame.length; i++) {
+    const s = frame[i] / 32768;
+    sum += s * s;
+  }
+  return frame.length > 0 ? Math.sqrt(sum / frame.length) : 0;
+}
+
+export function createSilenceDetector(onSilence: () => void): SilenceDetector {
+  let carry: number[] = [];
+  let totalSamples = 0;
+  let consecSpeech = 0;
+  let consecNonSpeech = 0;
+  let hasTalked = false;
+  let fired = false;
+
+  return {
+    feed(chunk: Int16Array) {
+      if (fired) return;
+      let chunkSum = 0;
+      for (let i = 0; i < chunk.length; i++) {
+        const s = chunk[i] / 32768;
+        chunkSum += s * s;
+        carry.push(chunk[i]);
+      }
+      const chunkRms = chunk.length > 0 ? Math.sqrt(chunkSum / chunk.length) : 0;
+      totalSamples += chunk.length;
+      while (carry.length >= VAD_FRAME_SAMPLES) {
+        const frame = carry.slice(0, VAD_FRAME_SAMPLES);
+        carry = carry.slice(VAD_FRAME_SAMPLES);
+        if (frameRms(frame) > VAD_ONSET_RMS) {
+          consecSpeech += 1;
+          consecNonSpeech = 0;
+        } else {
+          consecNonSpeech += 1;
+          consecSpeech = 0;
+        }
+      }
+      const startPassed = totalSamples > VAD_STARTUP_BLANK_SAMPLES;
+      if (!startPassed) {
+        consecSpeech = 0;
+        consecNonSpeech = 0;
+      }
+      if (
+        startPassed &&
+        !hasTalked &&
+        (chunkRms > VAD_ONSET_RMS || consecSpeech > VAD_ONSET_SPEECH_FRAMES)
+      ) {
+        hasTalked = true;
+      }
+      if (hasTalked && consecNonSpeech > VAD_HANGOVER_SILENCE_FRAMES) {
+        fired = true;
+        onSilence();
+      }
+    },
+    reset() {
+      carry = [];
+      totalSamples = 0;
+      consecSpeech = 0;
+      consecNonSpeech = 0;
+      hasTalked = false;
+      fired = false;
+    },
+  };
+}
+
 export function useVoiceRecorder(options: VoiceRecorderOptions = {}): VoiceRecorder {
   const [phase, setPhase] = useState<RecorderPhase>("idle");
   const [elapsedMs, setElapsedMs] = useState(0);
@@ -66,6 +156,7 @@ export function useVoiceRecorder(options: VoiceRecorderOptions = {}): VoiceRecor
   const elapsedTimerRef = useRef<number | undefined>(undefined);
   const capTimerRef = useRef<number | undefined>(undefined);
   const cancelledRef = useRef(false);
+  const vadRef = useRef<SilenceDetector | null>(null);
 
   const enterPhase = useCallback((next: RecorderPhase, meta: { reason?: StopReason } = {}) => {
     phaseRef.current = next;
@@ -117,6 +208,29 @@ export function useVoiceRecorder(options: VoiceRecorderOptions = {}): VoiceRecor
     [clearTimers, enterPhase],
   );
 
+  // Automatic stops (duration cap, silence VAD) finalize inside the recorder,
+  // so the result is pushed out instead of returned to an awaiting stop().
+  const finishAndReport = useCallback(
+    (reason: StopReason) => {
+      if (phaseRef.current !== "recording") return;
+      void finish(reason).then(
+        (result) => {
+          try {
+            optionsRef.current.onAutoStop?.(result);
+          } catch (error) {
+            optionsRef.current.onError?.(error);
+          }
+        },
+        () => {},
+      );
+    },
+    [finish],
+  );
+
+  const handleSilence = useCallback(() => {
+    finishAndReport("silence");
+  }, [finishAndReport]);
+
   const start = useCallback(async () => {
     if (phaseRef.current !== "idle") throw new Error("already recording or processing");
     let stream: MediaStream | null = null;
@@ -140,12 +254,16 @@ export function useVoiceRecorder(options: VoiceRecorderOptions = {}): VoiceRecor
         sessionId: "",
       };
       node.port.onmessage = (event: MessageEvent<ArrayBuffer>) => {
-        if (session.sessionId) sendChunk(event.data, session.sessionId);
+        if (session.sessionId) {
+          sendChunk(event.data, session.sessionId);
+          vadRef.current?.feed(new Int16Array(event.data));
+        }
       };
       source.connect(node);
       session.sessionId = await invoke<string>("voice_begin");
       activeRef.current = session;
       cancelledRef.current = false;
+      vadRef.current = createSilenceDetector(handleSilence);
 
       startedAtRef.current = Date.now();
       setElapsedMs(0);
@@ -154,9 +272,7 @@ export function useVoiceRecorder(options: VoiceRecorderOptions = {}): VoiceRecor
       }, CHUNK_MS);
       const maxDurationMs = optionsRef.current.maxDurationMs ?? DEFAULT_MAX_DURATION_MS;
       capTimerRef.current = window.setTimeout(() => {
-        if (phaseRef.current === "recording") {
-          void finish("cap").catch(() => {});
-        }
+        finishAndReport("cap");
       }, maxDurationMs);
 
       enterPhase("recording");
@@ -166,7 +282,7 @@ export function useVoiceRecorder(options: VoiceRecorderOptions = {}): VoiceRecor
       optionsRef.current.onError?.(error);
       throw error;
     }
-  }, [enterPhase, finish, sendChunk]);
+  }, [enterPhase, finishAndReport, handleSilence, sendChunk]);
 
   const stop = useCallback((): Promise<StopResult> => {
     if (phaseRef.current !== "recording") return Promise.reject(new Error("not recording"));

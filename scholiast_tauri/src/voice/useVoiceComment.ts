@@ -139,6 +139,27 @@ export function formatElapsedMs(ms: number): string {
   return `${Math.floor(totalSeconds / 60)}:${String(totalSeconds % 60).padStart(2, "0")}`;
 }
 
+/** Split a personal-dictionary pref value (one entry per line) into words. */
+export function parseGlossary(raw: string): string[] {
+  return raw
+    .split("\n")
+    .map((line) => line.trim().replace(/\0/g, ""))
+    .filter((line) => line.length > 0);
+}
+
+/**
+ * FUTO glossary prompt (`MultiModelRunner`: `"(Glossary: a, b)"`, "" when
+ * empty) fed to whisper as `initial_prompt` to bias decoding toward the
+ * user's words. Null when empty so the Rust side keeps whisper's default.
+ */
+export function formatGlossaryPrompt(words: string[]): string | null {
+  const clean = words
+    .map((word) => word.trim().replace(/\0/g, ""))
+    .filter((word) => word.length > 0);
+  if (clean.length === 0) return null;
+  return `(Glossary: ${clean.join(", ")})`;
+}
+
 const NEEDS_INTERNET = "Needs internet";
 const SETUP_SPEECH = "Set up speech in Settings";
 const SETUP_GEMINI = "Set up Gemini in Settings";
@@ -157,6 +178,12 @@ export function useVoiceComment(options: VoiceCommentOptions = {}): VoiceComment
 
   const optionsRef = useRef(options);
   optionsRef.current = options;
+
+  // Transcription of an automatically stopped recording (cap/silence): the
+  // recorder finalizes internally, so there is no awaiting stop() — the text
+  // is produced in onAutoStop below and a late stop() picks it up instead of
+  // failing.
+  const autoTranscribeRef = useRef<Promise<string> | null>(null);
 
   useEffect(() => {
     const sync = () => setOffline(!navigator.onLine);
@@ -184,6 +211,8 @@ export function useVoiceComment(options: VoiceCommentOptions = {}): VoiceComment
 
   const recorder = useVoiceRecorder({
     onError: (error) => optionsRef.current.onError?.(error),
+    // Auto-stop delivery is wired after transcribeWav below (it must exist first).
+    onAutoStop: (result) => void handleAutoStop(result),
   });
 
   const disabledReason = useMemo<string | null>(() => {
@@ -251,10 +280,12 @@ export function useVoiceComment(options: VoiceCommentOptions = {}): VoiceComment
         const customModel = activeModel.startsWith("local:")
           ? activeModel.slice("local:".length)
           : probe.activeLocalModel || null;
+        const glossaryRaw = await getPref(PREF_KEYS.sttGlossary, "");
         return invokeCommand<string>("stt_local_transcribe", {
           wavPath: path,
           language,
           modelPath: customModel,
+          initialPrompt: formatGlossaryPrompt(parseGlossary(glossaryRaw)),
         }).then((text) => text.trim());
       }
 
@@ -267,8 +298,29 @@ export function useVoiceComment(options: VoiceCommentOptions = {}): VoiceComment
     [kind, original, probe],
   );
 
+  const handleAutoStop = useCallback(
+    (result: { path: string }) => {
+      autoTranscribeRef.current = (async () => {
+        setState("transcribing");
+        try {
+          const text = await transcribeWav(result.path);
+          setState("idle");
+          return text;
+        } catch (error) {
+          optionsRef.current.onError?.(error);
+          setState("error");
+          throw error;
+        }
+      })();
+      // A UI that never calls stop() must not cause an unhandled rejection.
+      autoTranscribeRef.current.catch(() => {});
+    },
+    [transcribeWav],
+  );
+
   const start = useCallback(async () => {
     if (disabledReason) throw new Error(disabledReason);
+    autoTranscribeRef.current = null;
     setState("recording");
     try {
       await recorder.start();
@@ -281,7 +333,27 @@ export function useVoiceComment(options: VoiceCommentOptions = {}): VoiceComment
   const stop = useCallback(async (): Promise<string> => {
     setState("transcribing");
     try {
-      const { path } = await recorder.stop();
+      let path: string;
+      try {
+        ({ path } = await recorder.stop());
+        autoTranscribeRef.current = null;
+      } catch {
+        // The recorder already finalized itself (silence/cap auto-stop), so
+        // there is nothing left to stop — pick up that transcription. A
+        // transcription failure below must surface verbatim, never as this.
+        const pending = autoTranscribeRef.current;
+        if (!pending) throw new Error("not recording");
+        return pending.then(
+          (text) => {
+            setState("idle");
+            return text;
+          },
+          (error) => {
+            setState("error");
+            throw new Error(errorMessage(error));
+          },
+        );
+      }
       const text = await transcribeWav(path);
       setState("idle");
       return text;
@@ -293,6 +365,7 @@ export function useVoiceComment(options: VoiceCommentOptions = {}): VoiceComment
   }, [recorder, transcribeWav]);
 
   const cancel = useCallback(async () => {
+    autoTranscribeRef.current = null;
     await recorder.cancel();
     setState("idle");
   }, [recorder]);
