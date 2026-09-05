@@ -136,12 +136,15 @@ export default function CloudSyncModal({
       role="dialog"
       aria-modal="true"
       aria-labelledby="cloud-sync-title"
-      className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm p-4 animate-in fade-in duration-150"
+      className="fixed inset-0 z-50 flex overflow-y-auto bg-black/60 backdrop-blur-sm p-4 animate-in fade-in duration-150"
       onClick={(e) => {
         if (e.target === e.currentTarget) onClose();
       }}
     >
-      <div className="w-full max-w-md rounded-2xl border border-hairline bg-surface p-6 shadow-2xl space-y-6">
+      {/* m-auto centers a short card; a tall card scrolls instead of
+        clipping its top (header + close) off small screens. mt-12 keeps
+        it clear of the top edge on phones; sm+ stays truly centered. */}
+      <div className="mt-12 mb-auto sm:m-auto w-full max-w-md rounded-2xl border border-hairline bg-surface p-5 sm:p-6 shadow-2xl space-y-5">
         {/* Header */}
         <div className="flex items-center justify-between">
           <div className="flex items-center gap-3">
@@ -273,10 +276,15 @@ export default function CloudSyncModal({
           </div>
         </div>
 
-        {/* Footer info */}
-        <p className="text-[11px] text-text-3 text-center">
-          Uses encrypted appData storage compatible with Obsidian Clipper.
-        </p>
+        {/* Save / done — toggles persist instantly, so this just closes */}
+        <button
+          type="button"
+          data-testid="cloud-sync-save"
+          onClick={onClose}
+          className="w-full inline-flex h-10 items-center justify-center rounded-lg bg-accent text-[var(--sc-accent-text)] font-medium text-sm shadow-sm hover:bg-accent-press transition-colors"
+        >
+          Save
+        </button>
       </div>
     </div>
   );

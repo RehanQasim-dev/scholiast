@@ -4,6 +4,7 @@ import { createPortal } from "react-dom";
 import { Check, ChevronDown, Cloud, Cpu, Edit3, Search, Sparkles, X } from "lucide-react";
 import { IpcCommandError, invokeCommand } from "../../lib/ipc";
 import { PREF_DEFAULTS, PREF_KEYS } from "../../lib/store";
+import { refreshVoiceAvailability } from "../../voice/useVoiceComment";
 import { useOffline } from "../OfflineBanner";
 import { usePref } from "./usePref";
 import ThemedSelect from "./ThemedSelect";
@@ -84,6 +85,9 @@ function ProviderRow({ name, label, testCommand }: ProviderRowProps) {
       setValue("");
       setEditing(false);
       await queryClient.invalidateQueries({ queryKey: ["secret", name] });
+      // A new key changes which STT models are usable — drop the cached
+      // voice probe so mic buttons re-gate immediately.
+      refreshVoiceAvailability();
     } catch (err) {
       setSaveError(err instanceof Error ? err.message : String(err));
     } finally {
@@ -311,6 +315,32 @@ export default function SpeechSection() {
     retry: false,
   });
 
+  // Usability gates for the dropdown: only list models that can actually
+  // transcribe right now — installed on-device models (with the engine built
+  // in) and cloud models whose API key is configured. Shares the ["secret",
+  // name] cache with ProviderRow so a key save refreshes both.
+  const groqStatus = useQuery({
+    queryKey: ["secret", "groq"],
+    queryFn: () => invokeCommand<SecretStatus>("get_secret_status", { name: "groq" }),
+    retry: false,
+  });
+  const geminiStatus = useQuery({
+    queryKey: ["secret", "gemini"],
+    queryFn: () => invokeCommand<SecretStatus>("get_secret_status", { name: "gemini" }),
+    retry: false,
+  });
+  const engineQuery = useQuery({
+    queryKey: ["stt", "engine"],
+    queryFn: () => invokeCommand<boolean>("stt_local_engine_available"),
+    retry: false,
+  });
+
+  const groqUsable = groqStatus.data?.configured ?? false;
+  const geminiUsable = geminiStatus.data?.configured ?? false;
+  // While the engine probe is still loading, don't hide local models yet
+  // (avoids a flicker); a known-false hides them with a hint instead.
+  const localEngineMissing = engineQuery.data === false;
+
   const installedLocalModels = useMemo(
     () => (localModelsQuery.data?.models ?? []).filter((m) => m.installed),
     [localModelsQuery.data?.models],
@@ -340,69 +370,79 @@ export default function SpeechSection() {
   const allOptions = useMemo<ModelOption[]>(() => {
     const list: ModelOption[] = [];
 
-    // 1. Local STT Models (On top)
-    for (const m of installedLocalModels) {
-      list.push({
-        key: `local:${m.id}`,
-        provider: "local",
-        label: m.label || m.fileName || m.id,
-        sublabel: m.fileName || m.id,
-        badge: "Local",
-      });
+    // 1. Local STT Models (on top) — only when the engine is built in and
+    // the file is actually on device. Anything else can't transcribe.
+    if (!localEngineMissing) {
+      for (const m of installedLocalModels) {
+        list.push({
+          key: `local:${m.id}`,
+          provider: "local",
+          label: m.label || m.fileName || m.id,
+          sublabel: m.fileName || m.id,
+          badge: "Local",
+        });
+      }
     }
 
-    // 2. Groq Models (After local)
-    for (const [val, label] of GROQ_PRESETS) {
-      list.push({
-        key: `groq:${val}`,
-        provider: "groq",
-        label,
-        sublabel: val,
-        badge: "Groq",
-      });
-    }
-    if (!GROQ_PRESETS.some(([v]) => v === groqModel) && groqModel) {
-      list.push({
-        key: `groq:${groqModel}`,
-        provider: "groq",
-        label: `Custom: ${groqModel}`,
-        sublabel: groqModel,
-        badge: "Groq",
-      });
+    // 2. Groq Models — only when a Groq key is configured.
+    if (groqUsable) {
+      for (const [val, label] of GROQ_PRESETS) {
+        list.push({
+          key: `groq:${val}`,
+          provider: "groq",
+          label,
+          sublabel: val,
+          badge: "Groq",
+        });
+      }
+      if (!GROQ_PRESETS.some(([v]) => v === groqModel) && groqModel) {
+        list.push({
+          key: `groq:${groqModel}`,
+          provider: "groq",
+          label: `Custom: ${groqModel}`,
+          sublabel: groqModel,
+          badge: "Groq",
+        });
+      }
     }
 
-    // 3. Gemini Models (After groq)
-    for (const [val, label] of GEMINI_PRESETS) {
-      list.push({
-        key: `gemini:${val}`,
-        provider: "gemini",
-        label,
-        sublabel: val,
-        badge: "Gemini",
-      });
-    }
-    if (!GEMINI_PRESETS.some(([v]) => v === geminiModel) && geminiModel) {
-      list.push({
-        key: `gemini:${geminiModel}`,
-        provider: "gemini",
-        label: `Custom: ${geminiModel}`,
-        sublabel: geminiModel,
-        badge: "Gemini",
-      });
+    // 3. Gemini Models — only when a Gemini key is configured.
+    if (geminiUsable) {
+      for (const [val, label] of GEMINI_PRESETS) {
+        list.push({
+          key: `gemini:${val}`,
+          provider: "gemini",
+          label,
+          sublabel: val,
+          badge: "Gemini",
+        });
+      }
+      if (!GEMINI_PRESETS.some(([v]) => v === geminiModel) && geminiModel) {
+        list.push({
+          key: `gemini:${geminiModel}`,
+          provider: "gemini",
+          label: `Custom: ${geminiModel}`,
+          sublabel: geminiModel,
+          badge: "Gemini",
+        });
+      }
     }
 
     return list;
-  }, [installedLocalModels, groqModel, geminiModel]);
+  }, [installedLocalModels, groqModel, geminiModel, groqUsable, geminiUsable, localEngineMissing]);
 
   const currentSelection = useMemo<ModelOption>(() => {
     if (activeModel && activeModel !== "auto") {
       const found = allOptions.find((o) => o.key === activeModel);
       if (found) return found;
+      // The saved choice isn't usable right now (key removed, model
+      // deleted). Still show it so the user sees what's selected, marked.
+      const unavailable = "(unavailable)";
       if (activeModel.startsWith("local:")) {
         return {
           key: activeModel,
           provider: "local",
-          label: activeModel.slice(6),
+          label: `${activeModel.slice(6)} ${unavailable}`,
           sublabel: "Local GGML",
           badge: "Local",
         };
@@ -411,7 +451,7 @@ export default function SpeechSection() {
         return {
           key: activeModel,
           provider: "groq",
-          label: activeModel.slice(5),
+          label: `${activeModel.slice(5)} ${unavailable}`,
           sublabel: "Groq Whisper",
           badge: "Groq",
         };
@@ -420,30 +460,32 @@ export default function SpeechSection() {
         return {
           key: activeModel,
           provider: "gemini",
-          label: activeModel.slice(7),
+          label: `${activeModel.slice(7)} ${unavailable}`,
           sublabel: "Gemini",
           badge: "Gemini",
         };
       }
     }
 
-    // Auto resolution: prioritize local if installed, else groq, else first available
-    if (installedLocalModels.length > 0) {
-      return allOptions.find((o) => o.provider === "local") || allOptions[0]!;
+    // Auto resolution: first usable wins — local, then groq, then gemini.
+    if (allOptions.length > 0) {
+      return (
+        allOptions.find((o) => o.provider === "local") ||
+        allOptions.find((o) => o.key === `groq:${groqModel}`) ||
+        allOptions[0]!
+      );
     }
-    return (
-      allOptions.find((o) => o.key === `groq:${groqModel}`) ||
-      allOptions[0] || {
-        key: "groq:whisper-large-v3-turbo",
-        provider: "groq",
-        label: "Whisper Turbo (Fast)",
-        sublabel: "whisper-large-v3-turbo",
-        badge: "Groq",
-      }
-    );
-  }, [activeModel, allOptions, installedLocalModels, groqModel]);
+    return {
+      key: "",
+      provider: "groq",
+      label: "No usable model — set up speech",
+      sublabel: "Connect a key or import a local model",
+      badge: "Groq",
+    };
+  }, [activeModel, allOptions, groqModel]);
 
   const handleSelectOption = (opt: ModelOption) => {
+    if (!opt.key) return;
     setActiveModel(opt.key);
     if (opt.provider === "local") {
       setLocalModel(opt.key.slice("local:".length));
@@ -452,6 +494,9 @@ export default function SpeechSection() {
     } else if (opt.provider === "gemini") {
       setGeminiModel(opt.key.slice("gemini:".length));
     }
+    // The active model gates every mic button — drop the cached probe so
+    // the new choice takes effect without an app restart.
+    refreshVoiceAvailability();
     setDropdownOpen(false);
     setSearch("");
   };
@@ -592,15 +637,20 @@ export default function SpeechSection() {
                 className="overflow-y-auto divide-y divide-hairline/30"
                 style={{ maxHeight: panelGeom?.maxListH ?? 320 }}
               >
-                {/* 1. LOCAL MODELS (ON TOP) */}
-                {(filteredLocal.length > 0 || installedLocalModels.length === 0) && (
+                {/* 1. LOCAL MODELS (ON TOP) — only usable ones are listed */}
+                {(filteredLocal.length > 0 ||
+                  (!query && (installedLocalModels.length === 0 || localEngineMissing))) && (
                   <div className="py-1">
                     <div className="px-3 py-1.5 text-[11px] font-bold uppercase tracking-wider text-text-3 flex items-center gap-1.5">
                       <Cpu size={13} className="text-accent" />
                       <span>Local Models (On-Device)</span>
                     </div>
 
-                    {installedLocalModels.length === 0 ? (
+                    {localEngineMissing && !query ? (
+                      <div className="px-3 py-2 text-xs text-text-3 italic">
+                        On-device engine not in this build — cloud models still work.
+                      </div>
+                    ) : installedLocalModels.length === 0 && !query ? (
                       <div className="px-3 py-2 text-xs text-text-3 italic">
                         No local models installed. Import GGML models below in Local Models.
                       </div>
@@ -633,14 +683,19 @@ export default function SpeechSection() {
                   </div>
                 )}
 
-                {/* 2. GROQ MODELS */}
-                {filteredGroq.length > 0 && (
+                {/* 2. GROQ MODELS — listed only with a Groq key connected */}
+                {(filteredGroq.length > 0 || (!query && !groqUsable)) && (
                   <div className="py-1">
                     <div className="px-3 py-1.5 text-[11px] font-bold uppercase tracking-wider text-text-3 flex items-center gap-1.5">
                       <Cloud size={13} className="text-sky-400" />
                       <span>Groq (Cloud Whisper)</span>
                     </div>
-                    {filteredGroq.map((opt) => {
+                    {!groqUsable && !query ? (
+                      <div className="px-3 py-2 text-xs text-text-3 italic">
+                        Connect a Groq key above to enable cloud Whisper models.
+                      </div>
+                    ) : (
+                    filteredGroq.map((opt) => {
                       const isSelected = currentSelection.key === opt.key;
                       return (
                         <button
@@ -660,21 +715,27 @@ export default function SpeechSection() {
                               {opt.sublabel}
                             </div>
                           </div>
-                          {isSelected && <Check size={14} className="text-accent shrink-0" />}
-                        </button>
-                      );
-                    })}
+                            {isSelected && <Check size={14} className="text-accent shrink-0" />}
+                          </button>
+                        );
+                      })
+                    )}
                   </div>
                 )}
 
-                {/* 3. GEMINI MODELS */}
-                {filteredGemini.length > 0 && (
+                {/* 3. GEMINI MODELS — listed only with a Gemini key connected */}
+                {(filteredGemini.length > 0 || (!query && !geminiUsable)) && (
                   <div className="py-1">
                     <div className="px-3 py-1.5 text-[11px] font-bold uppercase tracking-wider text-text-3 flex items-center gap-1.5">
                       <Sparkles size={13} className="text-amber-400" />
                       <span>Gemini (Cloud Multimodal)</span>
                     </div>
-                    {filteredGemini.map((opt) => {
+                    {!geminiUsable && !query ? (
+                      <div className="px-3 py-2 text-xs text-text-3 italic">
+                        Connect a Gemini key above to enable cloud multimodal models.
+                      </div>
+                    ) : (
+                    filteredGemini.map((opt) => {
                       const isSelected = currentSelection.key === opt.key;
                       return (
                         <button
@@ -694,16 +755,22 @@ export default function SpeechSection() {
                               {opt.sublabel}
                             </div>
                           </div>
-                          {isSelected && <Check size={14} className="text-accent shrink-0" />}
-                        </button>
-                      );
-                    })}
+                            {isSelected && <Check size={14} className="text-accent shrink-0" />}
+                          </button>
+                        );
+                      })
+                    )}
                   </div>
                 )}
 
-                {totalFilteredCount === 0 && (
+                {totalFilteredCount === 0 && query && (
                   <div className="p-4 text-center text-xs text-text-3">
-                    No models found matching &ldquo;{search}&rdquo;
+                    No usable models found matching &ldquo;{search}&rdquo;
+                  </div>
+                )}
+                {totalFilteredCount === 0 && !query && allOptions.length === 0 && (
+                  <div className="p-4 text-center text-xs text-text-3">
+                    No usable speech models — connect a cloud key above or import a local model below.
                   </div>
                 )}
               </div>
@@ -728,14 +795,15 @@ export default function SpeechSection() {
         <label className="flex flex-col gap-1.5 text-sm font-medium text-text-2">
           <span>Personal dictionary</span>
           <span className="text-xs font-normal text-text-3">
-            One word or name per line. Used only by on-device transcription to
+            Comma-separated words or names. Extra spaces are ignored — only
+            clean words reach the model. Used only by on-device transcription to
             reduce mistakes on names and terms it rarely hears.
           </span>
           <textarea
             value={glossary}
             onChange={(event) => void setGlossary(event.target.value)}
-            placeholder={"Scholiast\nTauri"}
-            rows={3}
+            placeholder={"Scholiast, Tauri, Qwen"}
+            rows={2}
             data-testid="pref-stt.glossary"
             aria-label="Personal dictionary"
             className="min-h-[72px] w-full rounded-md border border-hairline bg-elevated px-3 py-2 text-sm font-normal text-text outline-none placeholder:text-text-3 focus:border-accent"

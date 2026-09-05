@@ -249,7 +249,8 @@ describe("NotesTab", () => {
       await screen.findByTestId("in-situ-composer");
       expect(screen.getByTestId("save-note-btn-bottom")).toBeInTheDocument();
       expect(screen.queryByTestId("save-note-btn-inline")).not.toBeInTheDocument();
-      expect(screen.getByText(/Shift\+Enter to save/)).toBeInTheDocument();
+      // Desktop keyboard hint stays out of the mobile composer footer.
+      expect(screen.queryByText(/Shift\+Enter to save/)).not.toBeInTheDocument();
     });
 
     test("Shift+Enter commits note and resumes playback if wasPlaying", async () => {

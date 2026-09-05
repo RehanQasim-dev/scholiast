@@ -42,6 +42,8 @@ interface Probe {
   localReady: boolean;
   /** Model files present even when the engine isn't compiled in. */
   localModelsInstalled: boolean;
+  /** Ids of all installed local model files (for explicit `local:<id>` checks). */
+  installedIds: string[];
   /** Active local model id ("" when none matches installed). */
   activeLocalModel: string;
   /** Explicit `local:<id>` selection in stt.active_model, if any. */
@@ -57,6 +59,23 @@ let probePromise: Promise<Probe> | null = null;
 /** Test seam: drop the session-cached capability probe (mirrors store.ts). */
 export function resetVoiceAvailabilityForTests(): void {
   probePromise = null;
+}
+
+/** Re-probe trigger listened to by mounted `useVoiceComment` hooks. */
+export const VOICE_AVAILABILITY_EVENT = "scholiast:voice-availability-changed";
+
+/**
+ * Drop the cached probe so the next `useVoiceComment` mount (or a fresh
+ * `probeAvailability()` call) re-reads models/keys/engine. Call after model
+ * import/delete, key save, or stt.active_model changes — otherwise a probe
+ * taken before the change keeps gating the mic on stale data (enabled button
+ * that records then fails, or a disabled button despite a fresh model).
+ */
+export function refreshVoiceAvailability(): void {
+  probePromise = null;
+  if (typeof window !== "undefined") {
+    window.dispatchEvent(new Event(VOICE_AVAILABILITY_EVENT));
+  }
 }
 
 /**
@@ -88,6 +107,7 @@ function probeAvailability(): Promise<Probe> {
           ? explicitLocalRaw.slice("local:".length)
           : null;
       const installed = models?.models.filter((m) => m.installed) ?? [];
+      const installedIds = installed.map((m) => m.id);
       const localEngine = engine === true;
       const localReady =
         localEngine &&
@@ -97,6 +117,7 @@ function probeAvailability(): Promise<Probe> {
       return {
         localReady,
         localModelsInstalled: installed.length > 0,
+        installedIds,
         activeLocalModel: installed.some((m) => m.id === activeLocalModel)
           ? activeLocalModel
           : "",
@@ -134,17 +155,51 @@ export function voiceFailureMessage(err: unknown, fallback: string): string {
   return `${fallback}: ${short}`;
 }
 
+/**
+ * Map a getUserMedia failure to an actionable hint. Raw DOMException names
+ * ("NotAllowedError", "NotFoundError") mean nothing to users — the fix is
+ * always in OS/browser mic settings or hardware, so say that directly.
+ */
+export function micErrorMessage(err: unknown, fallback: string): string {
+  const name =
+    err && typeof err === "object" && "name" in err
+      ? String((err as { name: unknown }).name)
+      : "";
+  const msg = err instanceof Error ? err.message : String(err ?? "");
+  if (
+    name === "NotAllowedError" ||
+    name === "SecurityError" ||
+    /permission|not allowed|denied/i.test(msg)
+  ) {
+    return `${fallback}: microphone blocked — allow mic access in system settings, then try again`;
+  }
+  if (
+    name === "NotFoundError" ||
+    name === "OverconstrainedError" ||
+    /no .*microphone|device not found/i.test(msg)
+  ) {
+    return `${fallback}: no microphone found on this device`;
+  }
+  if (name === "NotReadableError" || name === "AbortError" || /busy|in use/i.test(msg)) {
+    return `${fallback}: microphone is busy — close other apps using it, then try again`;
+  }
+  return voiceFailureMessage(err, fallback);
+}
+
 export function formatElapsedMs(ms: number): string {
   const totalSeconds = Math.max(0, Math.floor(ms / 1000));
   return `${Math.floor(totalSeconds / 60)}:${String(totalSeconds % 60).padStart(2, "0")}`;
 }
 
-/** Split a personal-dictionary pref value (one entry per line) into words. */
+/** Split a personal-dictionary pref value (comma-separated) into words.
+ * Newlines also split, so values saved back when it was one-per-line keep
+ * working. Trims whitespace around each word (spaces around commas included)
+ * so only clean words reach the model prompt. */
 export function parseGlossary(raw: string): string[] {
   return raw
-    .split("\n")
-    .map((line) => line.trim().replace(/\0/g, ""))
-    .filter((line) => line.length > 0);
+    .split(/[,\n]/)
+    .map((chunk) => chunk.trim().replace(/\0/g, ""))
+    .filter((chunk) => chunk.length > 0);
 }
 
 /**
@@ -163,6 +218,7 @@ export function formatGlossaryPrompt(words: string[]): string | null {
 const NEEDS_INTERNET = "Needs internet";
 const SETUP_SPEECH = "Set up speech in Settings";
 const SETUP_GEMINI = "Set up Gemini in Settings";
+const SELECTED_MODEL_MISSING = "Selected voice model not installed — pick an installed one in Settings";
 /** Engine missing but the user explicitly chose local: never silently fall
  * back to cloud (privacy) — tell them to rebuild instead. */
 const NEEDS_LOCAL_BUILD = "Local engine missing — rebuild app with local-stt";
@@ -198,14 +254,21 @@ export function useVoiceComment(options: VoiceCommentOptions = {}): VoiceComment
   useEffect(() => {
     if (!enabled) return;
     let cancelled = false;
-    probeAvailability().then(
-      (result) => {
-        if (!cancelled) setProbe(result);
-      },
-      () => {},
-    );
+    const load = () => {
+      probeAvailability().then(
+        (result) => {
+          if (!cancelled) setProbe(result);
+        },
+        () => {},
+      );
+    };
+    load();
+    // Model import/delete, key save, or dropdown select drops the cache and
+    // pings this — re-read so a disabled mic enables without a restart.
+    window.addEventListener(VOICE_AVAILABILITY_EVENT, load);
     return () => {
       cancelled = true;
+      window.removeEventListener(VOICE_AVAILABILITY_EVENT, load);
     };
   }, [enabled]);
 
@@ -220,6 +283,17 @@ export function useVoiceComment(options: VoiceCommentOptions = {}): VoiceComment
     if (kind === "edit") {
       if (offline) return NEEDS_INTERNET;
       if (!probe.geminiConfigured) return SETUP_GEMINI;
+      return null;
+    }
+    // Explicit local choice wins over everything: it works online or offline,
+    // but only when the engine is built in AND that exact model file exists.
+    // Never silently fall back to cloud here (privacy) and never report a
+    // cloud reason for a local selection.
+    if (probe.explicitLocalModel !== null) {
+      if (!probe.localEngine) return NEEDS_LOCAL_BUILD;
+      if (!probe.installedIds.includes(probe.explicitLocalModel)) {
+        return SELECTED_MODEL_MISSING;
+      }
       return null;
     }
     // If a local model is installed & ready, local STT is always available (online or offline)!
@@ -264,22 +338,37 @@ export function useVoiceComment(options: VoiceCommentOptions = {}): VoiceComment
       const activeModel = await getPref<string>(PREF_KEYS.activeModel, "auto");
       const liveOffline = typeof navigator !== "undefined" && !navigator.onLine;
 
-      // Mid-session switch to an explicit local model on an engine-less
-      // build: the cached probe can't see it coming, so refuse loudly here
-      // instead of failing inside the missing command.
-      if (activeModel.startsWith("local:") && probe && !probe.localEngine) {
-        throw new Error(NEEDS_LOCAL_BUILD);
+      // Explicit local selection: never silently fall back to cloud
+      // (privacy). Resolve against a fresh probe when the cached one hasn't
+      // arrived yet so a fast tap after model download still routes local.
+      if (activeModel.startsWith("local:")) {
+        const liveProbe = probe ?? (await probeAvailability().catch(() => null));
+        const id = activeModel.slice("local:".length);
+        if (!liveProbe?.localEngine) {
+          throw new Error(NEEDS_LOCAL_BUILD);
+        }
+        if (id && !liveProbe.installedIds.includes(id)) {
+          throw new Error(SELECTED_MODEL_MISSING);
+        }
+        if (!id && liveProbe.installedIds.length === 0) {
+          throw new Error(SELECTED_MODEL_MISSING);
+        }
+        const customModel = id || liveProbe.activeLocalModel || null;
+        const glossaryRaw = await getPref(PREF_KEYS.sttGlossary, "");
+        return invokeCommand<string>("stt_local_transcribe", {
+          wavPath: path,
+          language,
+          modelPath: customModel,
+          initialPrompt: formatGlossaryPrompt(parseGlossary(glossaryRaw)),
+        }).then((text) => text.trim());
       }
 
-      // Use local STT if explicitly selected OR if offline OR if cloud keys are not configured
+      // Use local STT if offline OR if cloud keys are not configured
       const useLocal =
-        activeModel.startsWith("local:") ||
-        (probe?.localReady && (liveOffline || (!probe.groqConfigured && !probe.geminiConfigured)));
+        probe?.localReady && (liveOffline || (!probe.groqConfigured && !probe.geminiConfigured));
 
       if (useLocal && probe?.localReady) {
-        const customModel = activeModel.startsWith("local:")
-          ? activeModel.slice("local:".length)
-          : probe.activeLocalModel || null;
+        const customModel = probe.activeLocalModel || null;
         const glossaryRaw = await getPref(PREF_KEYS.sttGlossary, "");
         return invokeCommand<string>("stt_local_transcribe", {
           wavPath: path,
@@ -409,11 +498,16 @@ export function useVoiceEdit(): VoiceEditController {
     getPref(PREF_KEYS.editCommentPrompt, "").then((value) => {
       if (!cancelled) setInitialPrompt(value);
     });
-    probeAvailability().then((result) => {
-      if (!cancelled) setProbe(result);
-    });
+    const load = () => {
+      probeAvailability().then((result) => {
+        if (!cancelled) setProbe(result);
+      });
+    };
+    load();
+    window.addEventListener(VOICE_AVAILABILITY_EVENT, load);
     return () => {
       cancelled = true;
+      window.removeEventListener(VOICE_AVAILABILITY_EVENT, load);
     };
   }, []);
 

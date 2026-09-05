@@ -9,6 +9,7 @@
 import { useEffect, useRef, useState } from "react";
 import {
   formatElapsedMs,
+  micErrorMessage,
   useVoiceComment,
   voiceFailureMessage,
 } from "../voice/useVoiceComment";
@@ -76,6 +77,12 @@ export default function SwatchVoiceFlow({ onSave, onBack }: SwatchVoiceFlowProps
     setPhase("error");
   };
 
+  const failMic = (err: unknown) => {
+    stopAnalyser();
+    setError(micErrorMessage(err, "Microphone unavailable"));
+    setPhase("error");
+  };
+
   // Start recording on mount; a refusal (mic denied, missing engine) lands
   // in the inline error state with its reason intact. Visualizer failure
   // never blocks recording — the bars just stay static.
@@ -87,7 +94,7 @@ export default function SwatchVoiceFlow({ onSave, onBack }: SwatchVoiceFlowProps
         if (cancelled) return;
         await startAnalyser().catch(() => {});
       } catch (err) {
-        if (!cancelled) fail(err, "Microphone unavailable");
+        if (!cancelled) failMic(err);
       }
     })();
     return () => {
@@ -125,7 +132,7 @@ export default function SwatchVoiceFlow({ onSave, onBack }: SwatchVoiceFlowProps
       await voice.start();
       await startAnalyser().catch(() => {});
     } catch (err) {
-      fail(err, "Microphone unavailable");
+      failMic(err);
     }
   };
 

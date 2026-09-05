@@ -130,9 +130,9 @@ describe("Mobile Reader Gesture Comments Sheet", () => {
     const slot = await screen.findByTestId("thread-panel-slot");
     expect(slot).toHaveAttribute("data-state", "closed");
 
-    // Touch at bottom edge (clientY = 750 >= 800 - 90 = 710)
+    // Touch at bottom edge (clientY = 775 >= 800 - 45 = 755)
     fireEvent.touchStart(window, {
-      touches: [{ clientY: 750 }],
+      touches: [{ clientY: 775 }],
     });
     // Move upward (deltaY = 650 - 750 = -100 < -30)
     fireEvent.touchEnd(window, {
@@ -147,7 +147,7 @@ describe("Mobile Reader Gesture Comments Sheet", () => {
     renderReaderMobile();
     const slot = await screen.findByTestId("thread-panel-slot");
 
-    fireEvent.touchStart(window, { touches: [{ clientY: 740 }] });
+    fireEvent.touchStart(window, { touches: [{ clientY: 770 }] });
     fireEvent.touchMove(window, { touches: [{ clientY: 600 }] });
     // Live height tracks the thumb before release (800 - 600).
     expect(slot.style.height).toBe("200px");
@@ -162,7 +162,7 @@ describe("Mobile Reader Gesture Comments Sheet", () => {
     const slot = await screen.findByTestId("thread-panel-slot");
 
     // Open to half via bottom swipe
-    fireEvent.touchStart(window, { touches: [{ clientY: 750 }] });
+    fireEvent.touchStart(window, { touches: [{ clientY: 775 }] });
     fireEvent.touchEnd(window, { changedTouches: [{ clientY: 650 }] });
     expect(slot).toHaveAttribute("data-state", "half");
 
@@ -182,7 +182,7 @@ describe("Mobile Reader Gesture Comments Sheet", () => {
     const slot = await screen.findByTestId("thread-panel-slot");
 
     // Open to half
-    fireEvent.touchStart(window, { touches: [{ clientY: 750 }] });
+    fireEvent.touchStart(window, { touches: [{ clientY: 775 }] });
     fireEvent.touchEnd(window, { changedTouches: [{ clientY: 650 }] });
     expect(slot).toHaveAttribute("data-state", "half");
 
@@ -201,7 +201,7 @@ describe("Mobile Reader Gesture Comments Sheet", () => {
     const slot = await screen.findByTestId("thread-panel-slot");
 
     // Open to half
-    fireEvent.touchStart(window, { touches: [{ clientY: 750 }] });
+    fireEvent.touchStart(window, { touches: [{ clientY: 775 }] });
     fireEvent.touchEnd(window, { changedTouches: [{ clientY: 650 }] });
     expect(slot).toHaveAttribute("data-state", "half");
 
@@ -217,7 +217,7 @@ describe("Mobile Reader Gesture Comments Sheet", () => {
     const slot = await screen.findByTestId("thread-panel-slot");
 
     // Open to half
-    fireEvent.touchStart(window, { touches: [{ clientY: 750 }] });
+    fireEvent.touchStart(window, { touches: [{ clientY: 775 }] });
     fireEvent.touchEnd(window, { changedTouches: [{ clientY: 650 }] });
     expect(slot).toHaveAttribute("data-state", "half");
 
@@ -226,7 +226,7 @@ describe("Mobile Reader Gesture Comments Sheet", () => {
     expect(slot).toHaveAttribute("data-state", "closed");
 
     // Open and expand
-    fireEvent.touchStart(window, { touches: [{ clientY: 750 }] });
+    fireEvent.touchStart(window, { touches: [{ clientY: 775 }] });
     fireEvent.touchEnd(window, { changedTouches: [{ clientY: 650 }] });
     const handle = screen.getByTestId("thread-sheet-handle");
     fireEvent.click(handle); // clicking handle expands half to expanded
@@ -268,16 +268,28 @@ describe("Mobile Reader Gesture Comments Sheet", () => {
     expect(slot).toHaveAttribute("data-state", "half");
   });
 
-  test("invariant 18: touches in OS navigation zone (bottom 0-44px) are ignored to prevent conflict", async () => {
+  test("invariant 18: bottom-edge strip opens the sheet; touches above it are article scrolls", async () => {
     renderReaderMobile();
     const slot = await screen.findByTestId("thread-panel-slot");
     expect(slot).toHaveAttribute("data-state", "closed");
 
-    // Touch in dangerous Android home bar zone (clientY = 780 >= 800 - 45 = 755)
+    // Touch flush with the bottom edge (clientY = 780 >= 800 - 45 = 755)
     fireEvent.touchStart(window, { touches: [{ clientY: 780 }] });
     fireEvent.touchEnd(window, { changedTouches: [{ clientY: 650 }] });
 
-    // Should NOT trigger sheet from OS navigation bar zone
+    // Sheet opens from the edge strip
+    expect(slot).toHaveAttribute("data-state", "half");
+  });
+
+  test("invariant 18b: swipe starting above the edge strip never opens the sheet", async () => {
+    renderReaderMobile();
+    const slot = await screen.findByTestId("thread-panel-slot");
+    expect(slot).toHaveAttribute("data-state", "closed");
+
+    // Mid-article swipe (clientY = 700 < 800 - 45 = 755) is a scroll, not a sheet drag
+    fireEvent.touchStart(window, { touches: [{ clientY: 700 }] });
+    fireEvent.touchEnd(window, { changedTouches: [{ clientY: 600 }] });
+
     expect(slot).toHaveAttribute("data-state", "closed");
   });
 });

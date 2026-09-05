@@ -3,7 +3,9 @@ import { invoke } from "@tauri-apps/api/core";
 import { beforeEach, describe, expect, test, vi } from "vitest";
 import {
   formatGlossaryPrompt,
+  micErrorMessage,
   parseGlossary,
+  refreshVoiceAvailability,
   resetVoiceAvailabilityForTests,
   useVoiceComment,
 } from "./useVoiceComment";
@@ -319,7 +321,7 @@ describe("useVoiceComment", () => {
   test("personal dictionary words ride along as the FUTO glossary prompt", async () => {
     setOnline(false);
     localModels = [{ id: "tiny_en", installed: true }];
-    glossaryPref = "Scholiast\n  Tauri\n\n";
+    glossaryPref = "  Scholiast , Tauri ,, ";
     const { result } = renderHook(() => useVoiceComment({ kind: "add" }));
 
     await waitFor(() => expect(result.current.disabledReason).toBeNull());
@@ -360,9 +362,100 @@ describe("useVoiceComment", () => {
     expect(result.current.state).toBe("idle");
   });
 
+  test("explicit local selection routes local even with cloud keys (never cloud-falls-back)", async () => {
+    setOnline(true);
+    groqConfigured = true;
+    geminiConfigured = true;
+    localModels = [{ id: "tiny_en", installed: true }];
+    localEngineBuiltIn = true;
+    activeModelPref = "local:tiny_en";
+    const { result } = renderHook(() => useVoiceComment({ kind: "add" }));
+
+    await waitFor(() => expect(result.current.disabledReason).toBeNull());
+
+    stopQueue.push({ path: "/voice/s_explicit.wav", reason: "user" });
+    let text = "";
+    await act(async () => {
+      text = await result.current.stop();
+    });
+
+    expect(text).toBe("local draft");
+    expect(invokeMock).toHaveBeenCalledWith("stt_local_transcribe", {
+      wavPath: "/voice/s_explicit.wav",
+      language: "en",
+      modelPath: "tiny_en",
+      initialPrompt: null,
+    });
+    expect(invokeMock).not.toHaveBeenCalledWith("stt_transcribe", expect.anything());
+  });
+
+  test("explicit local selection of a missing model disables with a reselect hint (no cloud fallback)", async () => {
+    setOnline(true);
+    groqConfigured = true;
+    localModels = [{ id: "tiny_en", installed: true }];
+    localEngineBuiltIn = true;
+    activeModelPref = "local:deleted-model.bin";
+    const { result } = renderHook(() => useVoiceComment({ kind: "add" }));
+
+    await waitFor(() =>
+      expect(result.current.disabledReason).toBe(
+        "Selected voice model not installed — pick an installed one in Settings",
+      ),
+    );
+
+    stopQueue.push({ path: "/voice/s_missing.wav", reason: "user" });
+    await act(async () => {
+      await expect(result.current.stop()).rejects.toThrow(
+        "Selected voice model not installed",
+      );
+    });
+    expect(invokeMock).not.toHaveBeenCalledWith("stt_transcribe", expect.anything());
+  });
+
+  test("mic import after mount re-enables via refreshVoiceAvailability (stale probe fix)", async () => {
+    setOnline(true);
+    groqConfigured = false;
+    geminiConfigured = false;
+    localModels = [];
+    const { result } = renderHook(() => useVoiceComment({ kind: "add" }));
+
+    await waitFor(() =>
+      expect(result.current.disabledReason).toBe("Set up speech in Settings"),
+    );
+
+    // Model lands after the probe was cached (import flow).
+    localModels = [{ id: "tiny_en", installed: true }];
+    await act(async () => {
+      refreshVoiceAvailability();
+    });
+
+    await waitFor(() => expect(result.current.disabledReason).toBeNull());
+  });
+
+  test("micErrorMessage maps denial to a settings hint, keeps unknown reasons verbatim", () => {
+    const denied = new DOMException("Permission denied", "NotAllowedError");
+    expect(micErrorMessage(denied, "Microphone unavailable")).toContain(
+      "microphone blocked",
+    );
+    const missing = new DOMException("Requested device not found", "NotFoundError");
+    expect(micErrorMessage(missing, "Microphone unavailable")).toContain(
+      "no microphone found",
+    );
+    expect(micErrorMessage(new Error("boom"), "Transcription failed")).toBe(
+      "Transcription failed: boom",
+    );
+  });
+
   test("parseGlossary/formatGlossaryPrompt mirror the FUTO glossary shape", () => {
     expect(parseGlossary("Scholiast\n  \nTauri\n")).toEqual(["Scholiast", "Tauri"]);
     expect(parseGlossary("   \n")).toEqual([]);
+    expect(parseGlossary("Scholiast, Tauri")).toEqual(["Scholiast", "Tauri"]);
+    expect(parseGlossary("  Scholiast  ,  Tauri , , Qwen  ")).toEqual([
+      "Scholiast",
+      "Tauri",
+      "Qwen",
+    ]);
+    expect(parseGlossary("Scholiast,\nTauri")).toEqual(["Scholiast", "Tauri"]);
     expect(formatGlossaryPrompt([])).toBeNull();
     expect(formatGlossaryPrompt(["  "])).toBeNull();
     expect(formatGlossaryPrompt(["Scholiast", "Tauri"])).toBe(

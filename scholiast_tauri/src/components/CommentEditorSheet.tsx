@@ -14,7 +14,7 @@ import { toast } from "./Toast";
 import useIsNarrow from "../hooks/useIsNarrow";
 import { invokeCommand } from "../lib/ipc";
 import { playerBridge } from "../player/playerBridge";
-import { formatElapsedMs, useVoiceComment } from "../voice/useVoiceComment";
+import { formatElapsedMs, micErrorMessage, useVoiceComment } from "../voice/useVoiceComment";
 
 export interface CommentTarget {
   urlHash: string;
@@ -246,7 +246,7 @@ export default function CommentEditorSheet({
     if (voice.state === "recording") {
       finishVoice();
     } else if (voice.state === "idle" || voice.state === "error") {
-      voice.start().catch(() => toast("Microphone unavailable."));
+      voice.start().catch((err: unknown) => toast(micErrorMessage(err, "Microphone unavailable")));
     }
   }, [voice, finishVoice]);
 

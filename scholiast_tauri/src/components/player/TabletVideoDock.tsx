@@ -5,7 +5,7 @@ import AudioWave from "../AudioWave";
 import { invokeCommand } from "../../lib/ipc";
 import { type TimelineItem } from "../NoteCard";
 import { toast } from "../Toast";
-import { useVoiceComment, voiceFailureMessage } from "../../voice/useVoiceComment";
+import { micErrorMessage, useVoiceComment, voiceFailureMessage } from "../../voice/useVoiceComment";
 import {
   getPlayerSnapshot,
   playerBridge,
@@ -86,8 +86,8 @@ export default function TabletVideoDock({
 
       try {
         await voice.start();
-      } catch {
-        toast("Microphone unavailable");
+      } catch (err) {
+        toast(micErrorMessage(err, "Microphone unavailable"));
         if (wasPlaying) playerBridge.commands.play();
       }
     }
@@ -195,8 +195,8 @@ export default function TabletVideoDock({
         {/* Voice Note Button with in-dock wave animation */}
         <button
           type="button"
-          aria-label={voice.recording ? "Stop voice note" : "Record voice note"}
-          title={voice.recording ? "Stop recording" : "Record voice note"}
+          aria-label={voice.disabledReason ?? (voice.recording ? "Stop voice note" : "Record voice note")}
+          title={voice.disabledReason ?? (voice.recording ? "Stop recording" : "Record voice note")}
           onClick={() => void handleMicClick()}
           disabled={voice.state === "transcribing" || Boolean(voice.disabledReason)}
           className={`relative flex h-10 w-10 items-center justify-center rounded-xl transition-all active:scale-95 ${

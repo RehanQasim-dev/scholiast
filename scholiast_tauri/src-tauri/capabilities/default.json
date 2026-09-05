@@ -8,6 +8,16 @@
   "permissions": [
     "core:default",
     "opener:default",
-    "store:default"
+    "store:default",
+    {
+      "identifier": "http:default",
+      "allow": [
+        { "url": "https://youtubei.googleapis.com/**" },
+        { "url": "https://youtube.com/**" },
+        { "url": "https://*.youtube.com/**" },
+        { "url": "https://*.googlevideo.com/**" },
+        { "url": "https://jnn-pa.googleapis.com/**" }
+      ]
+    }
   ]
 }

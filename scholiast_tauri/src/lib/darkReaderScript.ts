@@ -89,6 +89,8 @@ export function getScholiastIframeScript(initialTheme: string): string {
         swipeFocus = null;
         swipeActive = false;
         swipeScrolling = false;
+        swipeIntent = 'undecided';
+        swipeSteepVotes = 0;
       }
     }
   });
@@ -100,9 +102,12 @@ export function getScholiastIframeScript(initialTheme: string): string {
   var swipeStartY = 0;
   var swipeActive = false;
   var swipeScrolling = false;
+  var swipeIntent = 'undecided';
+  var swipeSteepVotes = 0;
   var swipeResume = null;
   var swipeCommit = null;
   var SWIPE_SLOP = 10;
+  var SWIPE_SCROLL_COMMIT = 24;
   var SWIPE_RESUME_MS = 600;
   var SWIPE_RESUME_PX = 28;
   var SWIPE_COMMIT_MS = 350;
@@ -157,6 +162,8 @@ export function getScholiastIframeScript(initialTheme: string): string {
     swipeCommit = null;
     swipeActive = false;
     swipeScrolling = false;
+    swipeIntent = 'undecided';
+    swipeSteepVotes = 0;
     if (!swipeSelectOn || e.touches.length !== 1) {
       swipeAnchor = null;
       swipeFocus = null;
@@ -184,11 +191,25 @@ export function getScholiastIframeScript(initialTheme: string): string {
     var dx = t.clientX - swipeStartX;
     var dy = t.clientY - swipeStartY;
     if (Math.hypot(dx, dy) < SWIPE_SLOP) return;
-    if (Math.abs(dx) < Math.abs(dy)) {
-      swipeScrolling = true;
-      swipeAnchor = null;
-      swipeFocus = null;
-      swipeActive = false;
+    // Sticky intent: select locks for the gesture (steep follow-through
+    // across lines keeps extending); scroll needs a committed steep drag
+    // so one early wobble can't kill the selection.
+    if (swipeIntent === 'undecided') {
+      if (Math.abs(dx) * 2 >= Math.abs(dy)) {
+        swipeIntent = 'select';
+      } else {
+        swipeSteepVotes += 1;
+        if (Math.abs(dy) >= SWIPE_SCROLL_COMMIT || swipeSteepVotes >= 2) {
+          swipeIntent = 'scroll';
+          swipeScrolling = true;
+          swipeAnchor = null;
+          swipeFocus = null;
+          swipeActive = false;
+          return;
+        }
+        return;
+      }
+    } else if (swipeIntent === 'scroll') {
       return;
     }
     var pos = swipeCaret(t.clientX, t.clientY);

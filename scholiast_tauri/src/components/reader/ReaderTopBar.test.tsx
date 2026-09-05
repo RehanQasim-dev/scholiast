@@ -146,4 +146,33 @@ describe("ReaderTopBar", () => {
     ).not.toBeInTheDocument();
     expect(screen.getByText("Reader")).toBeInTheDocument();
   });
+
+  test("tapping away (touch) dismisses the appearance popover", () => {
+    renderBar();
+    openAppearance();
+    expect(screen.getByRole("dialog", { name: "Reading settings" })).toBeInTheDocument();
+
+    fireEvent.touchStart(document.body);
+    expect(screen.queryByRole("dialog", { name: "Reading settings" })).not.toBeInTheDocument();
+  });
+
+  test("pointer-down away and Escape dismiss the appearance popover", () => {
+    renderBar();
+    openAppearance();
+    fireEvent.pointerDown(document.body);
+    expect(screen.queryByRole("dialog", { name: "Reading settings" })).not.toBeInTheDocument();
+
+    openAppearance();
+    fireEvent.keyDown(document, { key: "Escape" });
+    expect(screen.queryByRole("dialog", { name: "Reading settings" })).not.toBeInTheDocument();
+  });
+
+  test("taps inside the popover keep it open", () => {
+    renderBar();
+    openAppearance();
+    const dialog = screen.getByRole("dialog", { name: "Reading settings" });
+    fireEvent.touchStart(dialog);
+    fireEvent.pointerDown(dialog);
+    expect(screen.getByRole("dialog", { name: "Reading settings" })).toBeInTheDocument();
+  });
 });

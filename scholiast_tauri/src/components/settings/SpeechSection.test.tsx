@@ -33,15 +33,30 @@ function renderSpeechSection() {
 
 describe("SpeechSection", () => {
   let store: ReturnType<typeof backend>;
+  let groqConfigured = true;
+  let geminiConfigured = true;
+  let engineAvailable = true;
 
   beforeEach(() => {
     vi.clearAllMocks();
     invokeMock.mockReset();
     store = backend();
     setPrefsStoreForTests(store);
-    invokeMock.mockImplementation(async (command: string) => {
+    groqConfigured = true;
+    geminiConfigured = true;
+    engineAvailable = true;
+    invokeMock.mockImplementation(async (command: string, args?: unknown) => {
       if (command === "get_secret_status") {
-        return { ok: true, data: { configured: true } };
+        const name = (args as { name: string } | undefined)?.name;
+        return {
+          ok: true,
+          data: {
+            configured: name === "gemini" ? geminiConfigured : groqConfigured,
+          },
+        };
+      }
+      if (command === "stt_local_engine_available") {
+        return engineAvailable;
       }
       if (command === "list_stt_models") {
         return {
@@ -110,5 +125,39 @@ describe("SpeechSection", () => {
     await waitFor(() => {
       expect(store.data.get(PREF_KEYS.activeModel)).toBe("groq:whisper-large-v3");
     });
+  });
+
+  test("hides cloud models without keys (only usable models listed)", async () => {
+    groqConfigured = false;
+    geminiConfigured = false;
+    renderSpeechSection();
+    const trigger = await screen.findByTestId("pref-stt.active_model");
+    fireEvent.click(trigger);
+
+    await screen.findByTestId("stt-model-dropdown");
+    expect(
+      screen.getByTestId("stt-model-option-local:ggml-tiny.bin"),
+    ).toBeInTheDocument();
+    expect(
+      screen.queryByTestId("stt-model-option-groq:whisper-large-v3-turbo"),
+    ).not.toBeInTheDocument();
+    expect(
+      screen.queryByTestId("stt-model-option-gemini:gemini-2.0-flash"),
+    ).not.toBeInTheDocument();
+    expect(screen.getByText(/Connect a Groq key above/i)).toBeInTheDocument();
+    expect(screen.getByText(/Connect a Gemini key above/i)).toBeInTheDocument();
+  });
+
+  test("hides local models when the engine is missing", async () => {
+    engineAvailable = false;
+    renderSpeechSection();
+    const trigger = await screen.findByTestId("pref-stt.active_model");
+    fireEvent.click(trigger);
+
+    await screen.findByTestId("stt-model-dropdown");
+    expect(
+      screen.queryByTestId("stt-model-option-local:ggml-tiny.bin"),
+    ).not.toBeInTheDocument();
+    expect(screen.getByText(/On-device engine not in this build/i)).toBeInTheDocument();
   });
 });

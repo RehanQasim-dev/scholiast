@@ -183,7 +183,7 @@ describe("Chrome", () => {
     expect(backed).toBe(true);
   });
 
-  it("covers YouTube's native overlays in every playback state", () => {
+  it("renders no YouTube cover shields (native backend has no YouTube chrome)", () => {
     const { player, fire } = makeFakePlayer();
     playerBridge.attach(player);
     renderChrome();
@@ -191,18 +191,9 @@ describe("Chrome", () => {
     for (const state of [YT_STATE.PAUSED, YT_STATE.PLAYING]) {
       fire("onStateChange", state);
       for (const testid of ["chrome-pause-shield", "chrome-watermark-shield"]) {
-        const shield = screen.getByTestId(testid);
-        expect(shield).toBeInTheDocument();
-        expect(shield.className).not.toContain("opacity-0");
+        expect(screen.queryByTestId(testid)).not.toBeInTheDocument();
       }
     }
-  });
-
-  it("watermark shield is always present", () => {
-    const { player } = makeFakePlayer();
-    playerBridge.attach(player);
-    renderChrome();
-    expect(screen.getByTestId("chrome-watermark-shield")).toBeInTheDocument();
   });
 
   it("hides the top title bar when the stage is tapped (title gone)", () => {

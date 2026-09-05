@@ -11,6 +11,7 @@ const voiceMocks = vi.hoisted(() => ({
 vi.mock("../voice/useVoiceComment", () => ({
   formatElapsedMs: () => "0:00",
   voiceFailureMessage: (_err: unknown, fallback: string) => `${fallback}: boom`,
+  micErrorMessage: (_err: unknown, fallback: string) => `${fallback}: boom`,
   useVoiceComment: () => ({
     state: "idle",
     recording: false,

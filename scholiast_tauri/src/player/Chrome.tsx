@@ -183,23 +183,9 @@ export default function Chrome({ stageRef, slots, onCaptureClick, collapsed = fa
       onClick={handleStageTap}
       data-testid="chrome-root"
     >
-      {/* Title shield: YouTube's native title/channel overlay has no API
-          switch (showinfo is deprecated) and appears on pause AND on mouse
-          activity during playback. This cover stays up in every state — the
-          app's own top bar paints over the same zone when chrome is shown.
-          Clicks pass through to the stage handler below. */}
-      <div
-        data-testid="chrome-pause-shield"
-        aria-hidden="true"
-        className="pointer-events-none absolute top-0 right-0 left-0 h-16 bg-gradient-to-b from-black/90 via-black/60 to-transparent"
-      />
-      {/* Watermark shield: YouTube's bottom-right "Watch on YouTube" badge
-          has no API switch either. Same always-on deal as the title shield. */}
-      <div
-        data-testid="chrome-watermark-shield"
-        aria-hidden="true"
-        className="pointer-events-none absolute right-0 bottom-0 h-12 w-40 bg-gradient-to-t from-black/90 via-black/60 to-transparent"
-      />
+      {/* Native backend renders zero YouTube chrome, so the legacy overlay
+          shields (pause/title/watermark covers) are gone with the iframe —
+          nothing underneath left to cover. */}
       {!ready && !error && (
         <div className="pointer-events-none absolute inset-0 flex items-center justify-center">
           <span className="text-sm text-text-2">Loading player…</span>
@@ -226,12 +212,14 @@ export default function Chrome({ stageRef, slots, onCaptureClick, collapsed = fa
       )}
 
       {/* Top title bar (YouTube-style): back + title, tap stage to show/hide
-          together with the rest of the chrome. No safe-area padding — the
-          host activity already offsets content below the status bar. */}
+          together with the rest of the chrome. Transparent — no scrim shade
+          over the video; text carries a shadow for contrast instead. No
+          safe-area padding — the host activity already offsets content below
+          the status bar. */}
       {onBack && (
         <div
           data-testid="chrome-topbar"
-          className={`absolute top-0 right-0 left-0 flex items-center gap-1 bg-gradient-to-b from-black/70 to-transparent px-2 pt-2 pb-6 transition-opacity duration-[var(--sc-dur-fast)] ease-out ${
+          className={`absolute top-0 right-0 left-0 flex items-center gap-1 px-2 pt-2 pb-6 transition-opacity duration-[var(--sc-dur-fast)] ease-out [text-shadow:0_1px_8px_rgba(0,0,0,0.9)] ${
             hidden ? "pointer-events-none opacity-0" : "opacity-100"
           }`}
         >

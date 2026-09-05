@@ -8,7 +8,7 @@ import { deleteVideoItem, getVideoItems, upsertVideo, invokeCommand } from "../l
 import NoteCard, { type TimelineItem } from "./NoteCard";
 import AudioWave from "./AudioWave";
 import { toast } from "./Toast";
-import { formatElapsedMs, useVoiceComment, voiceFailureMessage } from "../voice/useVoiceComment";
+import { formatElapsedMs, micErrorMessage, useVoiceComment, voiceFailureMessage } from "../voice/useVoiceComment";
 import {
   getPlayerSnapshot,
   playerBridge,
@@ -88,12 +88,14 @@ export function InSituCard({
   useEffect(() => {
     const el = textareaRef.current;
     if (!el) return;
-    const hasNewline = draft.includes("\n");
-    const isLong = draft.length >= 35;
-    const isTaller = el.scrollHeight > 38;
-    setIsMultiLine(hasNewline || isLong || isTaller);
-
+    // Real wrap detection (extension pattern): reset to one row, then the
+    // text wraps iff scrollHeight exceeds the single-row clientHeight.
+    // No char-count guessing — the button stays inline until the text truly
+    // reaches the right edge, on any screen width.
     el.style.height = "auto";
+    setIsMultiLine(
+      draft.includes("\n") || el.scrollHeight - el.clientHeight > 4,
+    );
     el.style.height = `${Math.min(el.scrollHeight, 130)}px`;
   }, [draft]);
 
@@ -175,56 +177,32 @@ export function InSituCard({
         </div>
       )}
 
-      {/* Dynamic Save Button: Inline for line 1, shifts below text on multi-line */}
-      {!isMultiLine ? (
-        <div className="flex items-center gap-2">
-          <textarea
-            ref={textareaRef}
-            value={draft}
-            onChange={(e) => setDraft(e.target.value)}
-            onKeyDown={handleKeyDown}
-            autoFocus={composer.autoFocus !== false}
-            placeholder="Write a note…"
-            rows={1}
-            className="min-h-[36px] flex-1 resize-none bg-transparent py-1 px-1 text-sm text-text outline-none placeholder:text-text-3 font-normal"
-          />
-          <button
-            type="button"
-            onClick={() => void handleCommit()}
-            disabled={saving || (!draft.trim() && !composer.capturedFrame)}
-            data-testid="save-note-btn-inline"
-            className="shrink-0 flex items-center gap-1 rounded-lg bg-accent px-3 py-1.5 text-xs font-semibold text-[var(--sc-accent-text)] shadow-sm hover:opacity-90 active:scale-95 disabled:opacity-30 transition-all"
-          >
-            <Check size={14} strokeWidth={2.5} />
-            <span>Save</span>
-          </button>
-        </div>
-      ) : (
-        <div className="flex flex-col gap-1.5">
-          <textarea
-            ref={textareaRef}
-            value={draft}
-            onChange={(e) => setDraft(e.target.value)}
-            onKeyDown={handleKeyDown}
-            autoFocus={composer.autoFocus !== false}
-            placeholder="Write a note…"
-            className="w-full resize-none bg-transparent py-1 px-1 text-sm text-text outline-none placeholder:text-text-3 font-normal min-h-[50px] max-h-[130px] overflow-y-auto"
-          />
-          <div className="flex items-center justify-between pt-1.5 border-t border-hairline/60">
-            <span className="text-[11px] text-text-3 font-mono">Shift+Enter to save • Esc to cancel</span>
-            <button
-              type="button"
-              onClick={() => void handleCommit()}
-              disabled={saving || (!draft.trim() && !composer.capturedFrame)}
-              data-testid="save-note-btn-bottom"
-              className="shrink-0 flex items-center gap-1 rounded-lg bg-accent px-3 py-1.5 text-xs font-semibold text-[var(--sc-accent-text)] shadow-sm hover:opacity-90 active:scale-95 disabled:opacity-30 transition-all"
-            >
-              <Check size={14} strokeWidth={2.5} />
-              <span>Save</span>
-            </button>
-          </div>
-        </div>
-      )}
+      {/* Dynamic Save Button: one box, like the extension thread box — Save
+        rides inline on the first line and drops below only once the text
+        wraps past the right edge. A single textarea (never remounted) so
+        focus survives the inline↔below switch mid-typing. */}
+      <div className={`flex gap-2 ${isMultiLine ? "flex-col" : "items-center"}`}>
+        <textarea
+          ref={textareaRef}
+          value={draft}
+          onChange={(e) => setDraft(e.target.value)}
+          onKeyDown={handleKeyDown}
+          autoFocus={composer.autoFocus !== false}
+          placeholder="Write a note…"
+          rows={1}
+          className="min-h-[36px] flex-1 resize-none bg-transparent py-1 px-1 text-sm text-text outline-none placeholder:text-text-3 font-normal max-h-[130px] overflow-y-auto"
+        />
+        <button
+          type="button"
+          onClick={() => void handleCommit()}
+          disabled={saving || (!draft.trim() && !composer.capturedFrame)}
+          data-testid={isMultiLine ? "save-note-btn-bottom" : "save-note-btn-inline"}
+          className={`flex items-center gap-1 rounded-lg bg-accent px-3 py-1.5 text-xs font-semibold text-[var(--sc-accent-text)] shadow-sm hover:opacity-90 active:scale-95 disabled:opacity-30 transition-all ${isMultiLine ? "self-end" : "shrink-0"}`}
+        >
+          <Check size={14} strokeWidth={2.5} />
+          <span>Save</span>
+        </button>
+      </div>
     </article>
   );
 }
@@ -465,8 +443,8 @@ export default function NotesTab({
 
       try {
         await voice.start();
-      } catch {
-        toast("Microphone unavailable");
+      } catch (err) {
+        toast(micErrorMessage(err, "Microphone unavailable"));
         if (wasPlaying) playerBridge.commands.play();
       }
     }
@@ -675,6 +653,8 @@ export default function NotesTab({
                 data-testid="mobile-voice-btn"
                 onClick={() => void handleMobileVoiceTap()}
                 disabled={voice.state === "transcribing" || Boolean(voice.disabledReason)}
+                title={voice.disabledReason ?? "Record voice note"}
+                aria-label={voice.disabledReason ?? "Record voice note"}
                 className="flex-1 flex items-center justify-center gap-2 rounded-xl bg-accent px-4 py-2.5 text-sm font-semibold text-[var(--sc-accent-text)] transition-all active:scale-95"
               >
                 {voice.state === "transcribing" ? (

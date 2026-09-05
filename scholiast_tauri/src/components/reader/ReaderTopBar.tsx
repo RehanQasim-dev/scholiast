@@ -79,17 +79,32 @@ export default function ReaderTopBar({
 
   const fontPx = 16 + fontStep;
 
-  // Close formatting popover on click away
+  // Close formatting popover on tap/click away. mousedown alone is not
+  // enough: touch taps in mobile webviews don't reliably synthesize it, and
+  // a tap into the authentic-mode iframe never reaches this document at all
+  // (window blur is the only signal there).
   useEffect(() => {
     if (!popoverOpen) return;
-    const onDown = (e: MouseEvent) => {
+    const onDown = (e: Event) => {
       const target = e.target as Node | null;
       if (target && popoverRef.current && !popoverRef.current.contains(target)) {
         setPopoverOpen(false);
       }
     };
-    document.addEventListener("mousedown", onDown);
-    return () => document.removeEventListener("mousedown", onDown);
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === "Escape") setPopoverOpen(false);
+    };
+    const onBlur = () => setPopoverOpen(false);
+    document.addEventListener("pointerdown", onDown);
+    document.addEventListener("touchstart", onDown, { passive: true });
+    document.addEventListener("keydown", onKey);
+    window.addEventListener("blur", onBlur);
+    return () => {
+      document.removeEventListener("pointerdown", onDown);
+      document.removeEventListener("touchstart", onDown);
+      document.removeEventListener("keydown", onKey);
+      window.removeEventListener("blur", onBlur);
+    };
   }, [popoverOpen]);
 
   useEffect(() => {

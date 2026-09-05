@@ -103,21 +103,37 @@ export default function Reader() {
   const [swipeMode, setSwipeMode] = useState(false);
   type SheetState = "closed" | "peek" | "half" | "expanded";
   const [sheetState, setSheetState] = useState<SheetState>("closed");
-  /** Live sheet height (px) while a thumb drag is in flight; null when settled. */
-  const [dragHeight, setDragHeight] = useState<number | null>(null);
+  /** True while a thumb drag is in flight (drives the no-transition class). */
+  const [sheetDragging, setSheetDragging] = useState(false);
+  const sheetRef = useRef<HTMLElement | null>(null);
   const [dockAppearanceOpen, setDockAppearanceOpen] = useState(false);
   const dockPopoverRef = useRef<HTMLDivElement>(null);
 
+  // Dismiss the dock appearance popover on tap/click away — pointer +
+  // touch, not mousedown alone (touch taps don't reliably synthesize it),
+  // plus window blur for taps into the authentic-mode iframe.
   useEffect(() => {
     if (!dockAppearanceOpen) return;
-    const onDown = (e: MouseEvent) => {
+    const onDown = (e: Event) => {
       const target = e.target as Node | null;
       if (target && dockPopoverRef.current && !dockPopoverRef.current.contains(target)) {
         setDockAppearanceOpen(false);
       }
     };
-    document.addEventListener("mousedown", onDown);
-    return () => document.removeEventListener("mousedown", onDown);
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === "Escape") setDockAppearanceOpen(false);
+    };
+    const onBlur = () => setDockAppearanceOpen(false);
+    document.addEventListener("pointerdown", onDown);
+    document.addEventListener("touchstart", onDown, { passive: true });
+    document.addEventListener("keydown", onKey);
+    window.addEventListener("blur", onBlur);
+    return () => {
+      document.removeEventListener("pointerdown", onDown);
+      document.removeEventListener("touchstart", onDown);
+      document.removeEventListener("keydown", onKey);
+      window.removeEventListener("blur", onBlur);
+    };
   }, [dockAppearanceOpen]);
 
   // When a highlight is clicked or created, open the notes panel/sheet
@@ -135,6 +151,17 @@ export default function Reader() {
     setSelectRequest({ id: highlightId, nonce: Date.now() });
   }, [isNarrow, viewMode]);
 
+  // Live-drag height bypasses React state: writing el.style.height directly
+  // keeps the sheet glued to the thumb. A setState per touchmove re-rendered
+  // the whole article + thread tree every frame — that reconciliation is
+  // what made handle drags feel laggy on phones. Only drag start/end touch
+  // React state (transition toggle + release snap).
+  const setLiveSheetHeight = useCallback((px: number | null) => {
+    const el = sheetRef.current;
+    if (!el) return;
+    el.style.height = px === null ? "" : `${Math.round(px)}px`;
+  }, []);
+
   // Bottom edge swipe: quick swipe opens the sheet at half height; a longer
   // press-drag follows the thumb live and snaps on release.
   const edgeDrag = useRef<SheetDrag | null>(null);
@@ -143,13 +170,13 @@ export default function Reader() {
 
     const onTouchStart = (e: TouchEvent) => {
       const touch = e.touches[0];
-      // Listen in safe zone above Android OS navigation bar (bottom 0-44px).
-      // Kept to a slim ~45px strip at the very bottom edge so casual
-      // article swipes never open the sheet by accident.
+      // Slim ~45px strip flush with the very bottom screen edge (above the
+      // safe-area inset only). Same height as before, moved down to the edge
+      // so the thumb starts where the Annotations pill sits.
       if (
         touch &&
-        touch.clientY >= window.innerHeight - 90 &&
-        touch.clientY <= window.innerHeight - 45
+        touch.clientY >= window.innerHeight - 45 &&
+        touch.clientY <= window.innerHeight
       ) {
         edgeDrag.current = beginSheetDrag(touch.clientY);
       } else {
@@ -164,7 +191,8 @@ export default function Reader() {
       // Engage only once the thumb clearly moves upward; downward moves are
       // article scrolls, not sheet drags.
       if (!track.moved && touch.clientY > track.startY - 12) return;
-      setDragHeight(moveSheetDrag(track, touch.clientY, window.innerHeight));
+      setSheetDragging(true);
+      setLiveSheetHeight(moveSheetDrag(track, touch.clientY, window.innerHeight));
     };
 
     const onTouchEnd = (e: TouchEvent) => {
@@ -180,10 +208,11 @@ export default function Reader() {
       }
       const releaseY = e.changedTouches[0]?.clientY ?? track.prevY;
       const vh = window.innerHeight;
+      setLiveSheetHeight(null);
+      setSheetDragging(false);
       setSheetState(
         snapSheet(releaseSheetHeight(releaseY, vh), vh, track.velocityY),
       );
-      setDragHeight(null);
     };
 
     window.addEventListener("touchstart", onTouchStart, { passive: true });
@@ -210,7 +239,8 @@ export default function Reader() {
     if (!track || !touch) return;
     // The handle is touch-none (no scroll to fight), so follow both
     // directions live — down to shrink/dismiss, up to grow.
-    setDragHeight(moveSheetDrag(track, touch.clientY, window.innerHeight));
+    setSheetDragging(true);
+    setLiveSheetHeight(moveSheetDrag(track, touch.clientY, window.innerHeight));
   };
 
   const handleSheetTouchEnd = (e: React.TouchEvent) => {
@@ -219,10 +249,11 @@ export default function Reader() {
     if (!track || !track.moved) return;
     const releaseY = e.changedTouches[0]?.clientY ?? track.prevY;
     const vh = window.innerHeight;
+    setLiveSheetHeight(null);
+    setSheetDragging(false);
     setSheetState(
       snapSheet(releaseSheetHeight(releaseY, vh), vh, track.velocityY),
     );
-    setDragHeight(null);
   };
 
   const handleSheetHandleClick = () => {
@@ -751,7 +782,7 @@ export default function Reader() {
                   data-testid="reader-comments-pill"
                   onClick={() => setSheetState("half")}
                   aria-label="Open annotations sheet"
-                  className="fixed bottom-[calc(14px+var(--sc-safe-bottom))] left-1/2 -translate-x-1/2 z-30 flex items-center gap-2 rounded-full border border-hairline-strong bg-surface/95 px-3.5 py-1.5 text-xs font-medium text-text-2 shadow-lg shadow-black/40 backdrop-blur-md transition-all duration-150 active:scale-95 hover:text-text hover:border-accent/50"
+                  className="fixed bottom-[var(--sc-safe-bottom)] left-1/2 -translate-x-1/2 z-30 flex items-center gap-2 rounded-full border border-hairline-strong bg-surface/95 px-3.5 py-1.5 text-xs font-medium text-text-2 shadow-lg shadow-black/40 backdrop-blur-md transition-all duration-150 active:scale-95 hover:text-text hover:border-accent/50"
                 >
                   <FileText size={13} strokeWidth={2} className="text-accent" />
                   <span>Annotations {annotationsCount > 0 ? `(${annotationsCount})` : ""}</span>
@@ -766,63 +797,55 @@ export default function Reader() {
                 />
               )}
               <aside
+                ref={sheetRef}
                 data-testid="thread-panel-slot"
                 data-state={sheetState}
-                style={dragHeight !== null ? { height: dragHeight } : undefined}
                 className={`fixed inset-x-0 bottom-0 z-50 flex flex-col rounded-t-2xl border-t border-hairline bg-surface shadow-2xl pb-[var(--sc-safe-bottom)] ease-out ${
-                  // Live drag renders every frame: no transition while the
-                  // thumb is down, otherwise animate between snap points.
-                  dragHeight !== null ? "transition-none" : "transition-all duration-300"
+                  // Live drag writes el.style.height directly every frame: no
+                  // transition while the thumb is down, otherwise animate
+                  // between snap points.
+                  sheetDragging ? "transition-none" : "transition-all duration-300"
                 } ${
-                  sheetState === "closed" && dragHeight === null
+                  sheetState === "closed" && !sheetDragging
                     ? "pointer-events-none translate-y-full opacity-0 h-0"
-                    : sheetState === "peek" && dragHeight === null
+                    : sheetState === "peek" && !sheetDragging
                     ? "h-[20vh] min-h-[140px] max-h-[25vh] translate-y-0 opacity-100"
-                    : sheetState === "half" && dragHeight === null
+                    : sheetState === "half" && !sheetDragging
                     ? "h-[50vh] min-h-[240px] max-h-[55vh] translate-y-0 opacity-100"
-                    : dragHeight === null
+                    : !sheetDragging
                     ? "h-[70vh] max-h-[75vh] translate-y-0 opacity-100"
                     : "translate-y-0 opacity-100"
                 }`}
               >
                 <div
                   data-testid="thread-sheet-handle"
-                  className="flex w-full shrink-0 flex-col items-center pt-2.5 pb-1.5 cursor-pointer touch-none select-none"
+                  className="flex w-full shrink-0 items-center gap-2 px-3 py-1 cursor-pointer touch-none select-none"
                   onTouchStart={handleSheetTouchStart}
                   onTouchMove={handleSheetTouchMove}
                   onTouchEnd={handleSheetTouchEnd}
                   onClick={handleSheetHandleClick}
                 >
-                  <div className="h-1.5 w-12 rounded-full bg-text-3/40" />
-                  <div className="flex w-full items-center justify-between px-4 pt-1">
-                    <span className="text-xs font-semibold text-text-2">
-                      Annotations {annotationsCount > 0 ? `(${annotationsCount})` : ""}
-                    </span>
-                    <div className="flex items-center gap-2">
-                      <span className="text-[10px] text-text-3">
-                        {sheetState === "peek"
-                          ? "Swipe up to expand"
-                          : sheetState === "half"
-                          ? "Drag handle to resize · swipe down to close"
-                          : "Swipe down to close"}
-                      </span>
-                      <button
-                        type="button"
-                        data-testid="close-thread-sheet"
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          setSheetState("closed");
-                        }}
-                        className="rounded p-1 text-text-3 hover:text-text"
-                        aria-label="Close annotations"
-                      >
-                        ✕
-                      </button>
-                    </div>
-                  </div>
+                  <span className="text-xs font-semibold text-text-2">
+                    Annotations {annotationsCount > 0 ? `(${annotationsCount})` : ""}
+                  </span>
+                  <span className="truncate text-[10px] text-text-3">
+                    Swipe down to close
+                  </span>
+                  <button
+                    type="button"
+                    data-testid="close-thread-sheet"
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      setSheetState("closed");
+                    }}
+                    className="ml-auto rounded p-1 text-text-3 hover:text-text"
+                    aria-label="Close annotations"
+                  >
+                    ✕
+                  </button>
                 </div>
                 <div className="min-h-0 flex-1 overflow-hidden">
-                  <ThreadPanel urlHash={urlHash} selectRequest={selectRequest} />
+                  <ThreadPanel urlHash={urlHash} selectRequest={selectRequest} showHeader={false} />
                 </div>
               </aside>
             </div>

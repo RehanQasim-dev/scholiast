@@ -4,8 +4,8 @@
  * A card covers a whole *annotation*: either a single stored highlight or a
  * group of them (a multi-block selection shares `groupId`, extension
  * semantics). The quote header carries the highlight color as a left rail +
- * tinted background and is clamped to two lines; the comment thread renders
- * below only while the card is the panel's active thread.
+ * tinted background and is clamped to a single small line; the comment
+ * thread renders below only while the card is the panel's active thread.
  *
  * Comment bodies are stored marker strings (`body<!--timestamp:N-->`), parsed
  * and rendered by the shared note-markdown module — the same renderer every
@@ -159,7 +159,7 @@ export default function ThreadCard({
             backgroundColor: COLOR_BG_TOKENS[color] || "rgba(255, 255, 255, 0.06)",
           }}
         >
-          <p className="line-clamp-3 break-words text-text" style={{ color: "var(--sc-note-text)" }}>
+          <p className="line-clamp-1 break-words text-[13px] leading-snug" style={{ color: "var(--sc-note-text)" }}>
             {representative.content}
           </p>
           <p className="mt-1 flex items-center gap-2 font-mono text-[11px] tabular-nums text-text-3">

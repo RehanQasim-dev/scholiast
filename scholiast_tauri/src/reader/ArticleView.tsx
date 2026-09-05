@@ -10,7 +10,7 @@ import {
 } from "./highlightPaint";
 import type { HighlightForPaint, PaintStats } from "./highlightPaint";
 import { useHighlights } from "./useHighlights";
-import { classifySwipeIntent } from "./swipeSelect";
+import { beginSwipeTrack, updateSwipeTrack } from "./swipeSelect";
 import { saveComment } from "../lib/readerIpc";
 import "./reader-typography.css";
 import "./highlight-overlays.css";
@@ -420,10 +420,10 @@ function HighlightsLayer({
     let focus: CaretPosition | null = null;
     let startX = 0;
     let startY = 0;
-    let scrolling = false;
+    let track = beginSwipeTrack();
 
     const onTouchStart = (e: TouchEvent) => {
-      scrolling = false;
+      track = beginSwipeTrack();
       swipeLive.current = false;
       swipeCommit.current = null;
       anchor = null;
@@ -449,11 +449,13 @@ function HighlightsLayer({
 
     const onTouchMove = (e: TouchEvent) => {
       const t = e.touches[0];
-      if (!t || !anchor || scrolling) return;
-      const intent = classifySwipeIntent(t.clientX - startX, t.clientY - startY);
+      if (!t || !anchor) return;
+      // Sticky per-gesture intent: once select locks, steep follow-through
+      // (sweeping down across lines) keeps extending instead of flipping to
+      // scroll mid-gesture; scroll only locks on a committed steep drag.
+      const intent = updateSwipeTrack(track, t.clientX - startX, t.clientY - startY);
       if (intent === "undecided") return;
       if (intent === "scroll") {
-        scrolling = true;
         anchor = null;
         focus = null;
         return;
@@ -480,7 +482,7 @@ function HighlightsLayer({
       const doneFocus = focus;
       anchor = null;
       focus = null;
-      scrolling = false;
+      track = beginSwipeTrack();
       if (!doneAnchor || !doneFocus) return;
       try {
         window

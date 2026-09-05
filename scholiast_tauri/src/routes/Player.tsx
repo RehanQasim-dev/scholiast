@@ -10,7 +10,6 @@ import useIsNarrow from "../hooks/useIsNarrow";
 import useIsTablet from "../hooks/useIsTablet";
 import { invokeCommand, upsertVideo } from "../lib/ipc";
 import Chrome from "../player/Chrome";
-import PlayerHost from "../player/PlayerHost";
 import NativePlayer from "../player/NativePlayer";
 import { useSeekStep } from "../player/useSeekStep";
 import TabletVideoDock from "../components/player/TabletVideoDock";
@@ -23,7 +22,6 @@ import {
   usePlayerEvent,
   YT_STATE,
 } from "../player/playerBridge";
-import { PREF_KEYS, getPref } from "../lib/store";
 
 const VIDEO_ID_RE =
   /(?:youtube\.com\/(?:watch\?[^#\s]*v=|shorts\/|live\/|embed\/)|youtu\.be\/)([\w-]{11})/;
@@ -74,14 +72,14 @@ export default function Player() {
   const [studyTab, setStudyTab] = useState<"notes" | "transcript">("notes");
   const [tabletPanel, setTabletPanel] = useState<"notes" | "transcript" | null>("notes");
   const [activeComposer, setActiveComposer] = useState<ActiveComposerState | null>(null);
-  // Native playback behind the `player.native` dev pref (task 02: no cutover;
-  // task 03 flips the default and wires the fallback router).
-  const [nativeOn, setNativeOn] = useState(false);
+  // Native-only playback: the raw stream in <NativePlayer> carries zero
+  // YouTube chrome by construction. No iframe fallback by decision — a
+  // failure surfaces as an honest error instead of silently swapping
+  // players (DRM/paid/geo/login content can never resolve to a stream).
+  const [nativeError, setNativeError] = useState<string | null>(null);
   useEffect(() => {
-    void getPref(PREF_KEYS.playerNative, false)
-      .then((v) => setNativeOn(Boolean(v)))
-      .catch(() => {});
-  }, []);
+    setNativeError(null);
+  }, [videoId]);
 
   const videoQuery = useQuery({
     queryKey: ["video", url],
@@ -286,7 +284,6 @@ async function tryCanvasFrame(url: string): Promise<CaptureOut | null> {
   }, [isMobile, sheet]);
 
   const isFocus = sheet === "focus" && isMobile;
-  const isShieldVisible = playerState === YT_STATE.PAUSED || playerState === YT_STATE.ENDED;
 
   const videoStageNode = (
     <div
@@ -298,24 +295,20 @@ async function tryCanvasFrame(url: string): Promise<CaptureOut | null> {
     >
       {videoId ? (
         <>
-          {nativeOn ? (
+          {nativeError ? (
+            <div className="flex h-full flex-col items-center justify-center gap-2 p-6 text-center">
+              <p className="text-sm font-medium text-text">This video can't play here</p>
+              <p className="max-w-sm text-xs text-text-2">{nativeError}</p>
+            </div>
+          ) : (
             <NativePlayer
               videoId={videoId}
               onFallback={(reason) => {
-                // Dev-pref stage: drop back to the iframe for the session.
-                // Task 03 replaces this with the failure-class router.
-                toast(`Native playback unavailable (${reason}) — using classic player`);
-                setNativeOn(false);
+                toast(`Native playback unavailable (${reason})`);
+                setNativeError(
+                  `The stream couldn't be resolved (${reason}). Paid, members-only, or region-blocked videos can't play outside YouTube.`,
+                );
               }}
-            />
-          ) : (
-            <PlayerHost videoId={videoId} />
-          )}
-          {/* Pause / Ended recommendation shield: prevents YouTube related tiles from bleeding through */}
-          {isShieldVisible && (
-            <div
-              aria-hidden="true"
-              className="pointer-events-none absolute inset-0 z-[1] bg-black/70 backdrop-blur-[1px] transition-opacity duration-200"
             />
           )}
           <Chrome

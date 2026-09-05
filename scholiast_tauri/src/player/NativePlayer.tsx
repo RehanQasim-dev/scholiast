@@ -10,6 +10,7 @@
 
 import { useEffect, useRef, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
+import { fetch as tauriFetch } from "@tauri-apps/plugin-http";
 import { attachNative, detachNative, emitPlayerEvent } from "./playerBridge";
 import { AdaptiveSession, choosePlayback } from "./adaptiveEngine";
 import { fetchCaptionVtt, resolveManifest } from "./youtubeEngine";
@@ -99,10 +100,16 @@ export default function NativePlayer({ videoId, onFallback }: NativePlayerProps)
     if (plan.mode === "progressive" && plan.progressive) {
       el.src = plan.progressive.url;
     } else if (plan.video && plan.audio) {
-      const session = new AdaptiveSession(el, {
-        video: plan.video,
-        audio: plan.audio,
-      });
+      // Segment downloads ride the Rust-side fetch like everything else —
+      // googlevideo range requests must not depend on page CORS.
+      const session = new AdaptiveSession(
+        el,
+        {
+          video: plan.video,
+          audio: plan.audio,
+        },
+        tauriFetch as typeof fetch,
+      );
       sessionRef.current = session;
       session.start(controller.signal).catch((err: unknown) => {
         if (!cancelled) {

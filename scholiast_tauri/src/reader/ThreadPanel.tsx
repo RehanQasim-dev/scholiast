@@ -25,13 +25,16 @@ export interface ThreadSelectRequest {
 interface ThreadPanelProps {
   urlHash: string;
   selectRequest?: ThreadSelectRequest | null;
+  /** Hide the "Annotations N" header — the mobile bottom sheet already
+   * carries title + count + close in its own single-line handle bar. */
+  showHeader?: boolean;
 }
 
 function prefersReducedMotion(): boolean {
   return window.matchMedia?.("(prefers-reduced-motion: reduce)").matches ?? false;
 }
 
-export default function ThreadPanel({ urlHash, selectRequest }: ThreadPanelProps) {
+export default function ThreadPanel({ urlHash, selectRequest, showHeader = true }: ThreadPanelProps) {
   const model = useThreadModel(urlHash, selectRequest);
   const {
     entries,
@@ -82,12 +85,14 @@ export default function ThreadPanel({ urlHash, selectRequest }: ThreadPanelProps
       data-testid="thread-panel"
       className="flex h-full min-h-0 flex-col bg-base"
     >
-      <header className="flex shrink-0 items-center justify-between px-3 py-2.5">
-        <h2 className="text-sm font-medium text-text">Annotations</h2>
-        <span className="font-mono text-[11px] tabular-nums text-text-3">
-          {entries.length}
-        </span>
-      </header>
+      {showHeader ? (
+        <header className="flex shrink-0 items-center justify-between px-3 py-2.5">
+          <h2 className="text-sm font-medium text-text">Annotations</h2>
+          <span className="font-mono text-[11px] tabular-nums text-text-3">
+            {entries.length}
+          </span>
+        </header>
+      ) : null}
 
       {entries.length === 0 ? (
         <div
@@ -159,7 +164,7 @@ export default function ThreadPanel({ urlHash, selectRequest }: ThreadPanelProps
                     ],
                 }}
               >
-                <p className="line-clamp-2 text-xs leading-snug text-text-2">
+                <p className="line-clamp-1 text-[11px] leading-snug text-text-2">
                   {activeEntry.members[0].content}
                 </p>
               </div>

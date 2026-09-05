@@ -145,11 +145,11 @@ export default function GithubSyncCard() {
             <GitBranch size={18} strokeWidth={2.2} />
           </div>
           <div className="min-w-0">
-            <h3 className="flex items-center gap-2 text-sm font-semibold tracking-tight text-text">
-              <span>GitHub</span>
+            <h3 className="flex min-w-0 items-center gap-2 text-sm font-semibold tracking-tight text-text">
+              <span className="whitespace-nowrap">GitHub</span>
               <span
                 data-testid="github-status-badge"
-                className={`inline-flex items-center gap-1 rounded-full border px-2 py-0.5 text-[10px] font-medium ${
+                className={`inline-flex shrink-0 items-center gap-1 whitespace-nowrap rounded-full border px-2 py-0.5 text-[10px] font-medium ${
                   connected
                     ? "border-accent/25 bg-accent/15 text-accent"
                     : "border-hairline bg-elevated text-text-3"

@@ -180,11 +180,11 @@ export default function DriveSyncCard({
             <Cloud size={18} strokeWidth={2.2} />
           </div>
           <div className="min-w-0">
-            <h3 className="text-sm font-semibold text-text tracking-tight flex items-center gap-2">
-              <span>Google Drive</span>
+            <h3 className="text-sm font-semibold text-text tracking-tight flex min-w-0 items-center gap-2">
+              <span className="whitespace-nowrap">Google Drive</span>
               <span
                 data-testid="drive-status-badge"
-                className={`inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[10px] font-medium ${
+                className={`inline-flex shrink-0 items-center gap-1 whitespace-nowrap rounded-full px-2 py-0.5 text-[10px] font-medium ${
                   connected
                     ? "bg-accent/15 text-accent border border-accent/25"
                     : "bg-elevated text-text-3 border border-hairline"

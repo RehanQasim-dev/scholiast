@@ -4,6 +4,7 @@ import { Check, ExternalLink, FolderUp, Trash2 } from "lucide-react";
 import { openUrl } from "@tauri-apps/plugin-opener";
 import { invokeCommand } from "../../lib/ipc";
 import { PREF_KEYS, getPref, setPref } from "../../lib/store";
+import { refreshVoiceAvailability } from "../../voice/useVoiceComment";
 
 const WHISPER_MODELS_URL = "https://keyboard.futo.org/voice-input-models";
 
@@ -74,6 +75,8 @@ export default function ModelManagerSection() {
   async function activate(id: string) {
     setActiveModel(id);
     await setPref(PREF_KEYS.localModel, id);
+    // Model set changed — the cached voice probe still gates on the old set.
+    refreshVoiceAvailability();
   }
 
   async function handleExploreModels() {
@@ -94,6 +97,7 @@ export default function ModelManagerSection() {
         await setPref(PREF_KEYS.localModel, next);
       }
       await queryClient.invalidateQueries({ queryKey: ["stt", "models"] });
+      refreshVoiceAvailability();
     } catch (err) {
       setStatusNote(err instanceof Error ? err.message : "Failed to delete model.");
     }
@@ -138,6 +142,7 @@ export default function ModelManagerSection() {
 
       await queryClient.invalidateQueries({ queryKey: ["stt", "models"] });
       await activate(file.name);
+      refreshVoiceAvailability();
       setStatusNote(`Successfully imported and activated "${file.name}"`);
     } catch (err) {
       setImportError(err instanceof Error ? err.message : "Failed to import model.");

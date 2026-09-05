@@ -144,4 +144,93 @@ describe("iframe selection flow (evaled script, mocked host)", () => {
     );
     postMessage(SWIPE_SELECT_MESSAGE, { enabled: false });
   });
+
+  test("steep diagonal drag still selects (wide cone)", () => {
+    postMessage(SWIPE_SELECT_MESSAGE, { enabled: true });
+    document.getSelection()?.removeAllRanges();
+    postFn.mockClear();
+    document.dispatchEvent(
+      touchEvent("touchstart", [{ clientX: 10, clientY: 100 }]),
+    );
+    // dx=40, dy=60: steeper than 45° but inside the ~63° cone.
+    document.dispatchEvent(
+      touchEvent("touchmove", [{ clientX: 50, clientY: 160 }]),
+    );
+    document.dispatchEvent(
+      touchEvent("touchend", [{ clientX: 50, clientY: 160 }]),
+    );
+    expect(postFn).toHaveBeenCalledWith(
+      expect.objectContaining({ type: "TEXT_SELECTED" }),
+      "*",
+    );
+    postMessage(SWIPE_SELECT_MESSAGE, { enabled: false });
+  });
+
+  test("selection survives steepening mid-gesture (sticky intent)", () => {
+    postMessage(SWIPE_SELECT_MESSAGE, { enabled: true });
+    document.getSelection()?.removeAllRanges();
+    postFn.mockClear();
+    document.dispatchEvent(
+      touchEvent("touchstart", [{ clientX: 10, clientY: 100 }]),
+    );
+    document.dispatchEvent(
+      touchEvent("touchmove", [{ clientX: 60, clientY: 110 }]),
+    );
+    // Finger sweeps down across lines: must keep extending, not die.
+    document.dispatchEvent(
+      touchEvent("touchmove", [{ clientX: 65, clientY: 220 }]),
+    );
+    document.dispatchEvent(
+      touchEvent("touchend", [{ clientX: 65, clientY: 220 }]),
+    );
+    expect(postFn).toHaveBeenCalledWith(
+      expect.objectContaining({ type: "TEXT_SELECTED" }),
+      "*",
+    );
+    postMessage(SWIPE_SELECT_MESSAGE, { enabled: false });
+  });
+
+  test("early wobble doesn't kill; committed steep drag still scrolls", () => {
+    postMessage(SWIPE_SELECT_MESSAGE, { enabled: true });
+    document.getSelection()?.removeAllRanges();
+    postFn.mockClear();
+    document.dispatchEvent(
+      touchEvent("touchstart", [{ clientX: 10, clientY: 100 }]),
+    );
+    // One small steep sample: undecided, gesture survives.
+    document.dispatchEvent(
+      touchEvent("touchmove", [{ clientX: 14, clientY: 116 }]),
+    );
+    document.dispatchEvent(
+      touchEvent("touchmove", [{ clientX: 70, clientY: 120 }]),
+    );
+    document.dispatchEvent(
+      touchEvent("touchend", [{ clientX: 70, clientY: 120 }]),
+    );
+    expect(postFn).toHaveBeenCalledWith(
+      expect.objectContaining({ type: "TEXT_SELECTED" }),
+      "*",
+    );
+
+    // A deep vertical drag commits to scroll: nothing posted on lift.
+    document.getSelection()?.removeAllRanges();
+    postFn.mockClear();
+    document.dispatchEvent(
+      touchEvent("touchstart", [{ clientX: 10, clientY: 100 }]),
+    );
+    document.dispatchEvent(
+      touchEvent("touchmove", [{ clientX: 12, clientY: 200 }]),
+    );
+    document.dispatchEvent(
+      touchEvent("touchmove", [{ clientX: 90, clientY: 200 }]),
+    );
+    document.dispatchEvent(
+      touchEvent("touchend", [{ clientX: 90, clientY: 200 }]),
+    );
+    expect(postFn).not.toHaveBeenCalledWith(
+      expect.objectContaining({ type: "TEXT_SELECTED" }),
+      "*",
+    );
+    postMessage(SWIPE_SELECT_MESSAGE, { enabled: false });
+  });
 });

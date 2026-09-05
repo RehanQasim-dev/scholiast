@@ -6,9 +6,16 @@
  * The spike (/tmp/opencode/yt-spike/spike.mjs) proved every call below
  * against live YouTube; this module is its in-app port. Output shape
  * matches StreamManifestView so NativePlayer stays engine-agnostic.
+ *
+ * CORS architecture: YouTube's Innertube endpoints send no CORS headers,
+ * so the WebView's own fetch is blocked against them. Every YouTube
+ * request (API + captions + segments) goes through the Tauri HTTP plugin
+ * instead — issued from Rust, where browser CORS doesn't apply — keeping
+ * traffic on the user's residential IP rather than a datacenter proxy.
  */
 
 import { Innertube, Platform } from "youtubei.js";
+import { fetch as tauriFetch } from "@tauri-apps/plugin-http";
 import type {
   ManifestCaptionView,
   StreamFormatView,
@@ -42,12 +49,13 @@ let sessionPromise: Promise<Awaited<ReturnType<typeof Innertube.create>>> | null
 function session(): Promise<Awaited<ReturnType<typeof Innertube.create>>> {
   ensureEvaluator();
   if (!sessionPromise) {
-    sessionPromise = Innertube.create({ generate_session_locally: true }).catch(
-      (err: unknown) => {
-        sessionPromise = null;
-        throw err;
-      },
-    );
+    sessionPromise = Innertube.create({
+      generate_session_locally: true,
+      fetch: tauriFetch as typeof fetch,
+    }).catch((err: unknown) => {
+      sessionPromise = null;
+      throw err;
+    });
   }
   return sessionPromise;
 }
@@ -185,10 +193,11 @@ export async function resolveManifest(videoId: string): Promise<StreamManifestVi
   };
 }
 
-/** Timedtext fetch for one caption track — what `<track>` loads. */
+/** Timedtext fetch for one caption track — what `<track>` loads. Same
+ * Rust-side fetch as everything else (timedtext is CORS-gated too). */
 export async function fetchCaptionVtt(trackUrl: string): Promise<string> {
   const url = trackUrl.includes("fmt=") ? trackUrl : `${trackUrl}&fmt=vtt`;
-  const res = await fetch(url);
+  const res = await tauriFetch(url);
   if (!res.ok) throw new Error(`captions HTTP ${res.status}`);
   return res.text();
 }

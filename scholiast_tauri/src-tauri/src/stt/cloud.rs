@@ -425,14 +425,17 @@ fn pref(app: &tauri::AppHandle, key: &str) -> Option<String> {
     }
 }
 
-/// FUTO glossary prompt from the `stt.glossary` pref (one word per line):
+/// FUTO glossary prompt from the `stt.glossary` pref (comma-separated words):
 /// `"(Glossary: a, b)"`, capped for Groq's 224-token `prompt` limit. None when
 /// the dictionary is empty. Same words local STT feeds `initial_prompt`.
+/// Newlines split too, so values saved one-per-line keep working. Whitespace
+/// around each word is stripped before joining.
 fn glossary_prompt(app: &tauri::AppHandle) -> Option<String> {
     let words: Vec<String> = pref(app, PREF_GLOSSARY)?
         .lines()
-        .map(|line| line.trim().replace('\0', ""))
-        .filter(|line| !line.is_empty())
+        .flat_map(|line| line.split(','))
+        .map(|word| word.trim().replace('\0', ""))
+        .filter(|word| !word.is_empty())
         .collect();
     if words.is_empty() {
         return None;

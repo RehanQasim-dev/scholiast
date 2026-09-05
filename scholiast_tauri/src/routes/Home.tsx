@@ -1,8 +1,6 @@
 import { useEffect } from "react";
 import { useQueryClient } from "@tanstack/react-query";
-import { useNavigate } from "react-router-dom";
 import { listen } from "@tauri-apps/api/event";
-import { Settings } from "lucide-react";
 import OpenLinkField from "../components/OpenLinkField";
 import RecentGrid from "../components/RecentGrid";
 import CloudSyncIndicator from "../components/CloudSyncIndicator";
@@ -12,7 +10,6 @@ const RECENT_KEY = ["videos", "recent"] as const;
 
 export default function Home() {
   const queryClient = useQueryClient();
-  const navigate = useNavigate();
 
   useEffect(() => {
     let dispose: (() => void) | undefined;
@@ -44,14 +41,6 @@ export default function Home() {
         <h1 className="text-xl font-semibold tracking-tight text-text">Scholiast</h1>
         <div className="flex items-center gap-1.5">
           <CloudSyncIndicator />
-          <button
-            type="button"
-            aria-label="Open settings"
-            onClick={() => navigate("/settings")}
-            className="flex h-10 w-10 shrink-0 items-center justify-center rounded-md text-text-2 transition-all hover:bg-elevated hover:text-text active:scale-95 focus-visible:outline-none"
-          >
-            <Settings size={20} strokeWidth={2} style={{ strokeLinecap: "round", strokeLinejoin: "round" } as React.CSSProperties} />
-          </button>
         </div>
       </header>
       <OpenLinkField />

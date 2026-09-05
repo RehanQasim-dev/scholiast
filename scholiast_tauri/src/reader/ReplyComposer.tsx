@@ -58,7 +58,7 @@ export default function ReplyComposer({
       {context}
       <textarea
         ref={textareaRef}
-        rows={2}
+        rows={1}
         value={draft}
         disabled={sending}
         aria-label="Reply"
@@ -70,7 +70,7 @@ export default function ReplyComposer({
           onDraftChange(e.currentTarget.value, e.currentTarget.selectionStart)
         }
         onKeyDown={onKeyDown}
-        className="w-full resize-y rounded-md border border-hairline bg-surface px-2 py-1.5 text-sm leading-relaxed text-text outline-none placeholder:text-text-3 focus:border-accent"
+        className="w-full resize-y rounded-md border border-hairline bg-surface px-2 py-1 text-sm leading-snug text-text outline-none placeholder:text-text-3 focus:border-accent"
       />
       <div className="relative mt-1.5 flex items-center justify-between gap-2">
         <div className="flex items-center gap-1">
