@@ -42,7 +42,7 @@ isUniversalApk = false
 ```bash
 cd scholiast_tauri
 pnpm build              # tsc + vite → dist/
-./node_modules/.bin/tauri build        # → src-tauri/target/release/bundle/deb/*.deb
+./node_modules/.bin/tauri build        # → target/release/bundle/deb/*.deb (workspace root, NOT src-tauri/target)
 ```
 
 ### 2) Android APKs (release per ABI)
@@ -119,7 +119,7 @@ gh release create v0.3.0-dark-obsidian-mint \
   --title "Scholiast v0.3.0 — Dark Obsidian & Crisp Mint" \
   --notes "Theme overhaul + 4-target release. See BUILD.md" \
   --target main \
-  scholiast_tauri/src-tauri/target/release/bundle/deb/*.deb \
+  scholiast_tauri/target/release/bundle/deb/*.deb \
   scholiast_tauri/src-tauri/gen/android/app/build/outputs/apk/release/*.apk
 ```
 
@@ -133,7 +133,7 @@ Verify:
 ```bash
 gh release view v0.3.0-dark-obsidian-mint --json assets --jq '.assets[].name'
 npx tsc --noEmit  # typecheck
-sudo apt install ./scholiast_tauri/src-tauri/target/release/bundle/deb/*.deb  # test install
+sudo apt install ./scholiast_tauri/target/release/bundle/deb/*.deb  # test install
 adb install scholiast_tauri/src-tauri/gen/android/app/build/outputs/apk/release/app-arm64-v8a-release.apk
 ```
 

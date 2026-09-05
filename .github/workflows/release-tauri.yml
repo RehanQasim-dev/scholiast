@@ -142,9 +142,10 @@ jobs:
           RELEASE_TAG: ${{ inputs.tag }}
         run: |
           SAFE_TAG="${RELEASE_TAG//\//-}"
-          DEB=$(ls src-tauri/target/release/bundle/deb/*.deb | head -n 1)
-          mv "$DEB" "src-tauri/target/release/bundle/deb/Scholiast-${SAFE_TAG}-amd64.deb"
-          ls -lh src-tauri/target/release/bundle/deb/
+          ls target/release/bundle/deb/
+          DEB=$(ls target/release/bundle/deb/*.deb | head -n 1)
+          mv "$DEB" "target/release/bundle/deb/Scholiast-${SAFE_TAG}-amd64.deb"
+          ls -lh target/release/bundle/deb/
 
       - name: Upload deb artifact
         uses: actions/upload-artifact@v6
