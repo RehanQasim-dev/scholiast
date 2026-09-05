@@ -12,6 +12,7 @@ import android.view.Menu
 import android.view.MenuItem
 import android.webkit.JavascriptInterface
 import android.webkit.WebView
+import androidx.appcompat.view.ActionMode as SupportActionMode
 import androidx.activity.enableEdgeToEdge
 import androidx.core.view.ViewCompat
 import androidx.core.view.WindowInsetsCompat
@@ -71,29 +72,79 @@ class MainActivity : TauriActivity() {
         selectionInEditable = editable
       }
     }, "AndroidSelection")
-    // Race-free suppression point: WebView populates the selection menu
-    // asynchronously *after* the mode starts, so a one-time clear in
-    // onActionModeStarted below can lose to a late repopulation (the
-    // recurring overlap). onPrepareActionMode runs after population on
-    // every show/invalidate, so the strip here always wins. Editable
-    // fields return untouched so copy/paste keeps working there.
-    // (Returning false from onCreateActionMode would kill the selection
-    // itself — never do that here.)
-    webView.setCustomSelectionActionModeCallback(object : ActionMode.Callback {
-      override fun onCreateActionMode(mode: ActionMode, menu: Menu): Boolean = true
+  }
+
+  /**
+   * Race-free suppression point: WebView populates the selection menu
+   * asynchronously *after* the mode starts, so a one-time clear in
+   * onActionModeStarted below can lose to a late repopulation (the
+   * recurring overlap). onPrepareActionMode runs after population on
+   * every show/invalidate, so the strip here always wins. Editable
+   * fields return untouched so copy/paste keeps working there.
+   *
+   * NOTE: android.webkit.WebView has no setCustomSelectionActionModeCallback
+   * (that method exists only on TextView) — the equivalent hook for a
+   * WebView is wrapping the Activity's window-start callback and stripping
+   * the menu in onPrepareActionMode. Both the framework and the AppCompat
+   * (support) variants are wrapped because WryActivity extends
+   * AppCompatActivity and either ActionMode flavor can be started.
+   * (Returning false from onCreateActionMode would kill the selection
+   * itself — never do that here, hence the delegate-through.)
+   */
+  override fun onWindowStartingActionMode(callback: ActionMode.Callback): ActionMode.Callback {
+    return wrapSelectionCallback(callback)
+  }
+
+  override fun onWindowStartingActionMode(callback: ActionMode.Callback, type: Int): ActionMode.Callback {
+    return wrapSelectionCallback(callback)
+  }
+
+  override fun onWindowStartingSupportActionMode(callback: SupportActionMode.Callback): SupportActionMode.Callback {
+    return wrapSupportSelectionCallback(callback)
+  }
+
+  private fun wrapSelectionCallback(delegate: ActionMode.Callback): ActionMode.Callback {
+    return object : ActionMode.Callback {
+      override fun onCreateActionMode(mode: ActionMode, menu: Menu): Boolean =
+        delegate.onCreateActionMode(mode, menu)
 
       override fun onPrepareActionMode(mode: ActionMode, menu: Menu): Boolean {
+        val handled = delegate.onPrepareActionMode(mode, menu)
         if (!selectionInEditable && menu.size() > 0) {
           menu.clear()
           return true
         }
-        return false
+        return handled
       }
 
-      override fun onActionItemClicked(mode: ActionMode, item: MenuItem): Boolean = false
+      override fun onActionItemClicked(mode: ActionMode, item: MenuItem): Boolean =
+        delegate.onActionItemClicked(mode, item)
 
-      override fun onDestroyActionMode(mode: ActionMode) {}
-    })
+      override fun onDestroyActionMode(mode: ActionMode) =
+        delegate.onDestroyActionMode(mode)
+    }
+  }
+
+  private fun wrapSupportSelectionCallback(delegate: SupportActionMode.Callback): SupportActionMode.Callback {
+    return object : SupportActionMode.Callback {
+      override fun onCreateActionMode(mode: SupportActionMode, menu: Menu): Boolean =
+        delegate.onCreateActionMode(mode, menu)
+
+      override fun onPrepareActionMode(mode: SupportActionMode, menu: Menu): Boolean {
+        val handled = delegate.onPrepareActionMode(mode, menu)
+        if (!selectionInEditable && menu.size() > 0) {
+          menu.clear()
+          return true
+        }
+        return handled
+      }
+
+      override fun onActionItemClicked(mode: SupportActionMode, item: MenuItem): Boolean =
+        delegate.onActionItemClicked(mode, item)
+
+      override fun onDestroyActionMode(mode: SupportActionMode) =
+        delegate.onDestroyActionMode(mode)
+    }
   }
 
   override fun onNewIntent(intent: Intent) {
@@ -117,8 +168,21 @@ class MainActivity : TauriActivity() {
   override fun onActionModeStarted(mode: ActionMode) {
     if (!selectionInEditable) {
       mode.menu?.clear()
+      // Belt-and-braces: WebView can (re)populate the menu asynchronously
+      // after start / on every invalidate, so re-strip once that lands.
+      mode.menu?.let { menu ->
+        window?.decorView?.post { if (!selectionInEditable) menu.clear() }
+      }
     }
     super.onActionModeStarted(mode)
+  }
+
+  override fun onSupportActionModeStarted(mode: SupportActionMode) {
+    if (!selectionInEditable) {
+      mode.menu.clear()
+      window?.decorView?.post { if (!selectionInEditable) mode.menu.clear() }
+    }
+    super.onSupportActionModeStarted(mode)
   }
 
   /** ACTION_SEND text/plain → scholiast://share?url= VIEW intent, so the
