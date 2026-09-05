@@ -32,3 +32,8 @@ export BINDGEN_EXTRA_CLANG_ARGS_aarch64_linux_android="--sysroot=$SYSROOT --targ
 export BINDGEN_EXTRA_CLANG_ARGS_armv7_linux_androideabi="--sysroot=$SYSROOT --target=armv7a-linux-androideabi24"
 export BINDGEN_EXTRA_CLANG_ARGS_i686_linux_android="--sysroot=$SYSROOT --target=i686-linux-android24"
 export BINDGEN_EXTRA_CLANG_ARGS_x86_64_linux_android="--sysroot=$SYSROOT --target=x86_64-linux-android24"
+# tauri-plugin-mobile-sharetarget loads its JNI lib via BuildConfig.TAURI_LIBRARY_NAME,
+# filled from gradle project property `tauri_app_lib_name` (default "tauri_app_lib",
+# which does not exist -> UnsatisfiedLinkError -> instant crash on open). The env form
+# covers fresh `tauri android init` regens; must match [lib] name in src-tauri/Cargo.toml.
+export ORG_GRADLE_PROJECT_tauri_app_lib_name=scholiast_lib

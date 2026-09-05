@@ -136,6 +136,16 @@ jobs:
         env:
           JAVA_HOME: ${{ env.JAVA_HOME }}
 
+      - name: Rename deb with release tag
+        working-directory: scholiast_tauri
+        env:
+          RELEASE_TAG: ${{ inputs.tag }}
+        run: |
+          SAFE_TAG="${RELEASE_TAG//\//-}"
+          DEB=$(ls src-tauri/target/release/bundle/deb/*.deb | head -n 1)
+          mv "$DEB" "src-tauri/target/release/bundle/deb/Scholiast-${SAFE_TAG}-amd64.deb"
+          ls -lh src-tauri/target/release/bundle/deb/
+
       - name: Upload deb artifact
         uses: actions/upload-artifact@v6
         with:
@@ -212,6 +222,11 @@ jobs:
           ANDROID_KEYSTORE_PASSWORD: scholiast123
           ANDROID_KEY_ALIAS: scholiast
           ANDROID_KEY_PASSWORD: scholiast123
+          # Must match [lib] name in src-tauri/Cargo.toml: the mobile-sharetarget
+          # plugin's BuildConfig.TAURI_LIBRARY_NAME comes from this property and a
+          # missing/wrong value crashes the app on open (UnsatisfiedLinkError).
+          ORG_GRADLE_PROJECT_tauri_app_lib_name: scholiast_lib
+          RELEASE_TAG: ${{ inputs.tag }}
         run: |
           # whisper-rs-sys runs bindgen without a target sysroot, so it parses
           # the HOST glibc headers (64-bit layouts) and the 32-bit armv7
@@ -229,12 +244,16 @@ jobs:
         run: find scholiast_tauri/src-tauri/gen/android/app/build/outputs/apk -name "*.apk" -exec ls -lh {} \;
 
       - name: Sign, Align and Package APKs
+        env:
+          RELEASE_TAG: ${{ inputs.tag }}
         run: |
           mkdir -p apk-dist
           BUILD_TOOLS="${ANDROID_HOME}/build-tools/36.0.0"
           APKSIGNER="${BUILD_TOOLS}/apksigner"
           KEYSTORE="${{ github.workspace }}/release.jks"
           APK_DIR="scholiast_tauri/src-tauri/gen/android/app/build/outputs/apk"
+          # Asset names inherit the release tag (slashes sanitized); never hardcode.
+          SAFE_TAG="${RELEASE_TAG//\//-}"
 
           find_apk() {
             local flavor=$1
@@ -268,10 +287,10 @@ jobs:
             "$APKSIGNER" verify --verbose "apk-dist/$out_name"
           }
 
-          sign_and_copy "arm64" "Scholiast-arm64-v8a.apk"
-          sign_and_copy "arm" "Scholiast-armeabi-v7a.apk"
-          sign_and_copy "x86_64" "Scholiast-x86_64.apk"
-          sign_and_copy "universal" "Scholiast-universal.apk"
+          sign_and_copy "arm64" "Scholiast-${SAFE_TAG}-arm64-v8a.apk"
+          sign_and_copy "arm" "Scholiast-${SAFE_TAG}-armeabi-v7a.apk"
+          sign_and_copy "x86_64" "Scholiast-${SAFE_TAG}-x86_64.apk"
+          sign_and_copy "universal" "Scholiast-${SAFE_TAG}-universal.apk"
 
       - name: Upload APK artifacts
         uses: actions/upload-artifact@v6

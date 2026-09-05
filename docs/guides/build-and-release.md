@@ -68,6 +68,32 @@ Debug only (if needed): add `--debug` / `android build --debug`.
 
 Free disk if needed: `cargo sweep --maxsize 4GB scholiast_tauri`
 
+## Release Asset Naming (tag-inherited, never hardcoded)
+
+Release asset filenames always inherit the release tag (`${{ inputs.tag }}`, `/`
+sanitized to `-`); no version or ABI label is hardcoded in the workflow:
+
+- deb: `Scholiast-<tag>-amd64.deb` (renamed after `tauri build` in `build-deb`)
+- APKs: `Scholiast-<tag>-arm64-v8a.apk`, `Scholiast-<tag>-armeabi-v7a.apk`,
+  `Scholiast-<tag>-x86_64.apk`, `Scholiast-<tag>-universal.apk` (named in the
+  sign step of `build-android`)
+
+## Android JNI Lib Name (crash guard)
+
+`tauri-plugin-mobile-sharetarget` (2.0.0) loads its native lib via
+`BuildConfig.TAURI_LIBRARY_NAME`, filled from the Gradle project property
+`tauri_app_lib_name` (default `"tauri_app_lib"` — a library that does not
+exist). If the built value does not match `[lib] name` in
+`src-tauri/Cargo.toml` (`scholiast_lib`), every release APK crashes on open
+with `UnsatisfiedLinkError: libtauri_app_lib.so not found` followed by a
+`panic=abort` SIGABRT. The value is pinned in two regen-proof places:
+
+- `scholiast_tauri/src-tauri/gen/android/gradle.properties` (tracked in git)
+- `ORG_GRADLE_PROJECT_tauri_app_lib_name` env (CI `build-android` job +
+  `scholiast_tauri/scripts/env-android.sh` for local builds)
+
+If `[lib]` is ever renamed, update all three.
+
 ## Version Bump
 
 Update in 4 places, then commit:
