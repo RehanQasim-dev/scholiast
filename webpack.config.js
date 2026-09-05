@@ -25,13 +25,10 @@ function loadOAuthConfig() {
 		webClientId: process.env.GOOGLE_OAUTH_WEB_CLIENT_ID || file.webClientId || '',
 		nativeClientId: process.env.GOOGLE_OAUTH_NATIVE_CLIENT_ID || file.nativeClientId || '',
 		nativeClientSecret: process.env.GOOGLE_OAUTH_NATIVE_CLIENT_SECRET || file.nativeClientSecret || '',
-		githubClientId: process.env.GITHUB_OAUTH_CLIENT_ID || file.githubClientId || file.githubClientId || '',
+		// GitHub App credentials are user-supplied in Settings (never baked in).
 	};
 	if (!config.webClientId || !config.nativeClientId || !config.nativeClientSecret) {
 		console.warn('[build] No Google OAuth config found — Drive sync will be disabled in this build. See oauth.local.example.json.');
-	}
-	if (!config.githubClientId) {
-		console.warn('[build] No GitHub OAuth config found — GitHub sync will be disabled in this build. Add githubClientId to oauth.local.json.');
 	}
 	return config;
 }
@@ -239,8 +236,7 @@ module.exports = (env, argv) => {
 				'DEBUG_MODE': JSON.stringify(!isProduction),
 				'OAUTH_WEB_CLIENT_ID': JSON.stringify(oauth.webClientId),
 				'OAUTH_NATIVE_CLIENT_ID': JSON.stringify(oauth.nativeClientId),
-				'OAUTH_NATIVE_CLIENT_SECRET': JSON.stringify(oauth.nativeClientSecret),
-				'GITHUB_CLIENT_ID': JSON.stringify(oauth.githubClientId)
+				'OAUTH_NATIVE_CLIENT_SECRET': JSON.stringify(oauth.nativeClientSecret)
 			}),
 			...(isProduction ? [
 				new ZipPlugin({

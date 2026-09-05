@@ -1,33 +1,42 @@
 import browser from './browser-polyfill';
+import {
+	buildGitHubAuthUrl,
+	GITHUB_API_BASE,
+	GITHUB_API_VERSION,
+	GITHUB_BRIDGE_URL,
+	GITHUB_TOKEN_URL,
+	parseGitHubTokenBody,
+	splitPastedCode,
+	tokenLifetimeLeftSec,
+	type GitHubTokenSet,
+} from './github-app-auth';
 
-// GitHub sync backend — private repo `scholiast-annotations` (or user-chosen).
-// Mirrors the Drive layout inside that repo so both backends can be merged:
+// GitHub sync backend — user-chosen private repo (Option A: GitHub App with
+// Contents read/write on selected repos). Mirrors the Drive layout inside
+// that repo so both backends can be merged:
 //
 //   pages/page-<hash>.json   one record per normalized URL
 //   frames/frame-<id>.jpg
 //   diagrams/diagram-<id>.png + diagram-<id>.scene.json
 //
-// Auth: OAuth App with PKCE (RFC7636) via browser.identity.launchWebAuthFlow.
-// Same two redirect URIs as Drive: chromiumapp.org for Chromium, loopback
-// http://127.0.0.1/mozoauth2/<sha1> for Firefox (the add-on id is pinned).
-// Token is long-lived for OAuth Apps (no refresh dance). Repo is created on
-// first connect if missing.
-//
-// Build injection: GITHUB_CLIENT_ID from oauth.local.json / GITHUB_OAUTH_CLIENT_ID
-// env (see webpack.config.js). Missing → github sync disabled.
+// Auth: GitHub App user-token flow. The App's callback URL is the static
+// bridge page; it forwards ?code=&state= into scholiast://oauth (Tauri app)
+// and shows the code for copy-paste here (browser extension has no deep-link
+// inbox). User tokens live 8h; the stored refresh token rotates on every
+// refresh, so background refresh keeps the session effectively permanent.
+// Client ID + secret are user-supplied in Settings (never baked into the
+// build); the repo is discovered from the installation, never hardcoded.
 
-declare const GITHUB_CLIENT_ID: string;
+export const GITHUB_CLIENT_ID_INJECTED: string = '';
 
-export const GITHUB_CLIENT_ID_INJECTED: string = typeof GITHUB_CLIENT_ID !== 'undefined' ? GITHUB_CLIENT_ID : '';
-
-const GITHUB_AUTH = 'https://github.com/login/oauth/authorize';
-const GITHUB_TOKEN = 'https://github.com/login/oauth/access_token';
-const GITHUB_API = 'https://api.github.com';
 const TOKEN_KEY = 'github_token';
 const REPO_KEY = 'github_repo';
-const REPO_NAME = 'scholiast-annotations';
+const CLIENT_KEY = 'github_client';
+const PENDING_STATE_KEY = 'github_pending_state';
 const REPO_BRANCH = 'main';
-const SCOPE = 'repo';
+
+// Refresh this far ahead of expiry so sync never observes a dead token.
+const REFRESH_SKEW_SEC = 300;
 
 export type DriveFolder = 'pages' | 'frames' | 'diagrams';
 
@@ -40,65 +49,115 @@ export interface DriveFileMeta {
 	path?: string;
 }
 
-interface CachedToken {
-	accessToken: string;
-	expiresAt?: number;
-}
-
 interface RepoInfo {
 	owner: string;
 	repo: string;
 	branch: string;
 }
 
-export function isConfigured(): boolean {
-	return (GITHUB_CLIENT_ID_INJECTED || '').trim().length > 0;
+export interface DiscoveredRepo {
+	owner: string;
+	repo: string;
+	fullName: string;
+	private: boolean;
 }
 
-export function getRedirectUrl(): string {
-	return browser.identity.getRedirectURL();
-}
-
-function isChromiumFlow(): boolean {
-	return getRedirectUrl().includes('.chromiumapp.org');
-}
-
-function loopbackRedirectUri(): string {
-	const host = new URL(getRedirectUrl()).hostname;
-	return `http://127.0.0.1/mozoauth2/${host.split('.')[0]}`;
+export interface GitHubClientConfig {
+	clientId: string;
+	/** Presence only is ever read back; the value stays in storage. */
+	hasSecret: boolean;
 }
 
 export function getRegisteredRedirectUri(): string {
-	return isChromiumFlow() ? getRedirectUrl() : loopbackRedirectUri();
+	return GITHUB_BRIDGE_URL;
 }
 
-function activeClientId(): string {
-	return GITHUB_CLIENT_ID_INJECTED;
+async function getClient(): Promise<{ clientId: string; clientSecret: string } | null> {
+	const r = await browser.storage.local.get(CLIENT_KEY);
+	const c = r[CLIENT_KEY] as { clientId?: string; clientSecret?: string } | undefined;
+	if (!c || !c.clientId?.trim() || !c.clientSecret?.trim()) return null;
+	return { clientId: c.clientId.trim(), clientSecret: c.clientSecret };
+}
+
+export async function saveClientConfig(clientId: string, clientSecret: string): Promise<void> {
+	if (!clientId.trim() || !clientSecret.trim()) throw new Error('Client ID and secret are both required');
+	await browser.storage.local.set({ [CLIENT_KEY]: { clientId: clientId.trim(), clientSecret: clientSecret.trim() } });
+	configuredCache = true;
+}
+
+export async function getClientConfig(): Promise<GitHubClientConfig> {
+	const c = await getClient();
+	return { clientId: c?.clientId ?? '', hasSecret: !!c };
+}
+
+// Synchronous for existing callers (sync-engine polls, background guards):
+// hydrated from storage at import, refreshed on every mutation and on
+// storage events. Background awaits configLoaded() first where exactness
+// matters (message responses).
+let configuredCache: boolean | null = null;
+let configLoad: Promise<void> | null = null;
+
+export function configLoaded(): Promise<void> {
+	if (!configLoad) {
+		configLoad = browser.storage.local
+			.get(CLIENT_KEY)
+			.then((r) => {
+				const c = r[CLIENT_KEY] as { clientId?: string; clientSecret?: string } | undefined;
+				configuredCache = !!(c?.clientId?.trim() && c?.clientSecret?.trim());
+			})
+			.catch(() => {
+				configuredCache = false;
+			});
+	}
+	return configLoad;
+}
+
+void configLoaded();
+
+try {
+	browser.storage.onChanged.addListener((changes, area) => {
+		if (area === 'local' && CLIENT_KEY in changes) {
+			const c = changes[CLIENT_KEY].newValue as
+				| { clientId?: string; clientSecret?: string }
+				| undefined;
+			configuredCache = !!(c?.clientId?.trim() && c?.clientSecret?.trim());
+		}
+	});
+} catch {
+	/* storage events unavailable in some contexts */
+}
+
+export function isConfigured(): boolean {
+	return configuredCache ?? false;
+}
+
+export async function isConfiguredAsync(): Promise<boolean> {
+	await configLoaded();
+	return (await getClient()) !== null;
 }
 
 // --- token helpers -----------------------------------------------------------
 
-function base64urlBytes(bytes: Uint8Array): string {
+function randomUrlSafe(n: number): string {
+	const bytes = crypto.getRandomValues(new Uint8Array(n));
 	let s = '';
 	for (const b of bytes) s += String.fromCharCode(b);
 	return btoa(s).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
 }
-function randomUrlSafe(n: number): string {
-	return base64urlBytes(crypto.getRandomValues(new Uint8Array(n)));
-}
-async function pkcePair(): Promise<{ verifier: string; challenge: string }> {
-	const verifier = randomUrlSafe(48);
-	const digest = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(verifier));
-	return { verifier, challenge: base64urlBytes(new Uint8Array(digest)) };
+
+interface StoredToken {
+	accessToken: string;
+	expiresAt: number;
+	refreshToken?: string;
 }
 
-async function saveToken(t: CachedToken): Promise<CachedToken> {
+async function saveToken(t: StoredToken): Promise<StoredToken> {
 	await browser.storage.local.set({ [TOKEN_KEY]: t });
 	return t;
 }
-async function getCachedToken(): Promise<CachedToken | null> {
+async function getStoredToken(): Promise<StoredToken | null> {
 	const r = await browser.storage.local.get(TOKEN_KEY);
-	return (r[TOKEN_KEY] as CachedToken) || null;
+	return (r[TOKEN_KEY] as StoredToken) || null;
 }
 async function getRepoInfo(): Promise<RepoInfo | null> {
 	const r = await browser.storage.local.get(REPO_KEY);
@@ -108,97 +167,118 @@ async function saveRepoInfo(info: RepoInfo): Promise<void> {
 	await browser.storage.local.set({ [REPO_KEY]: info });
 }
 
-// --- OAuth -------------------------------------------------------------------
+// --- GitHub App user-token flow ----------------------------------------------
 
-function buildAuthUrl(challenge: string, state: string): string {
-	const p = new URLSearchParams({
-		client_id: activeClientId(),
-		redirect_uri: getRegisteredRedirectUri(),
-		scope: SCOPE,
-		state,
-		code_challenge: challenge,
-		code_challenge_method: 'S256',
-	});
-	return `${GITHUB_AUTH}?${p.toString()}`;
-}
-
-async function tokenRequest(code: string, verifier: string): Promise<CachedToken> {
-	const body = new URLSearchParams({
-		client_id: activeClientId(),
-		code,
-		redirect_uri: getRegisteredRedirectUri(),
-		code_verifier: verifier,
-	});
-	const res = await fetch(GITHUB_TOKEN, {
+async function tokenRequest(form: Record<string, string>): Promise<GitHubTokenSet> {
+	const res = await fetch(GITHUB_TOKEN_URL, {
 		method: 'POST',
 		headers: { Accept: 'application/json', 'Content-Type': 'application/x-www-form-urlencoded' },
-		body: body.toString(),
+		body: new URLSearchParams(form).toString(),
 	});
 	const data = await res.json().catch(() => ({}));
-	if (!res.ok || !data.access_token) {
-		throw new Error(`GitHub OAuth failed: ${data.error_description || data.error || res.status}`);
-	}
-	// OAuth App tokens don't expire (no refresh_token)
-	return { accessToken: data.access_token };
+	// GitHub answers some failures with HTTP 200 + an error body; the parser
+	// decides on the token's presence, not the status.
+	return parseGitHubTokenBody(data, Date.now());
 }
 
-async function launchAuth(): Promise<CachedToken> {
-	if (!isConfigured()) throw new Error('GitHub client id not configured');
-	const { verifier, challenge } = await pkcePair();
+async function refreshTokenNow(client: { clientId: string; clientSecret: string }, refreshToken: string): Promise<StoredToken> {
+	const set = await tokenRequest({
+		client_id: client.clientId,
+		client_secret: client.clientSecret,
+		grant_type: 'refresh_token',
+		refresh_token: refreshToken,
+	});
+	const stored: StoredToken = {
+		accessToken: set.accessToken,
+		expiresAt: set.expiresAt,
+		...(set.refreshToken ? { refreshToken: set.refreshToken } : { refreshToken }),
+	};
+	return saveToken(stored);
+}
+
+/**
+ * Step 1 of connect: stores a CSRF state and returns the authorize URL for
+ * the settings page to open in a tab. The bridge page shows the code for
+ * pasting (extension has no deep-link inbox).
+ */
+export async function beginConnect(): Promise<string> {
+	const client = await getClient();
+	if (!client) throw new Error('Enter the Client ID and secret first');
 	const state = randomUrlSafe(16);
-	const url = buildAuthUrl(challenge, state);
-	const redirect = await browser.identity.launchWebAuthFlow({ url, interactive: true });
-	if (!redirect) throw new Error('GitHub OAuth returned no redirect');
-	const u = new URL(redirect);
-	const err = u.searchParams.get('error');
-	if (err) throw new Error(`GitHub OAuth error: ${err}`);
-	if (u.searchParams.get('state') !== state) throw new Error('GitHub OAuth state mismatch');
-	const code = u.searchParams.get('code');
-	if (!code) throw new Error('No code in GitHub OAuth response');
-	const tok = await tokenRequest(code, verifier);
-	return saveToken(tok);
+	await browser.storage.local.set({ [PENDING_STATE_KEY]: { state, at: Date.now() } });
+	return buildGitHubAuthUrl(client.clientId, state);
+}
+
+/**
+ * Step 2 of connect: exchanges a pasted bridge-page code. Accepts `<code>`
+ * or `<code> <state>` (the page's Copy button copies both); a lone code
+ * skips the state check.
+ */
+export async function completeConnect(pasted: string): Promise<{ login: string }> {
+	const client = await getClient();
+	if (!client) throw new Error('Enter the Client ID and secret first');
+	const { code, state } = splitPastedCode(pasted);
+	if (!code) throw new Error('Paste the code shown on the browser page');
+	if (state) {
+		const r = await browser.storage.local.get(PENDING_STATE_KEY);
+		const pending = r[PENDING_STATE_KEY] as { state?: string; at?: number } | undefined;
+		if (!pending?.state || pending.state !== state) throw new Error('Sign-in state mismatch — start Connect again');
+		if (Date.now() - (pending.at ?? 0) > 10 * 60 * 1000) throw new Error('That code expired — start Connect again');
+	}
+	const set = await tokenRequest({
+		client_id: client.clientId,
+		client_secret: client.clientSecret,
+		code,
+		redirect_uri: GITHUB_BRIDGE_URL,
+	});
+	if (!set.refreshToken) throw new Error('GitHub returned no refresh token — staying connected needs one');
+	await saveToken({ accessToken: set.accessToken, expiresAt: set.expiresAt, refreshToken: set.refreshToken });
+	await browser.storage.local.remove(PENDING_STATE_KEY);
+	const res = await githubFetch('/user', { method: 'GET' }, false);
+	const user = (await res.json()) as { login: string };
+	return { login: user.login };
 }
 
 export async function getAccessToken(interactive: boolean): Promise<string> {
-	if (!isConfigured()) throw new Error('GitHub not configured');
-	const cached = await getCachedToken();
-	if (cached?.accessToken) return cached.accessToken;
+	const client = await getClient();
+	if (!client) throw new Error('GitHub not configured');
+	const cached = await getStoredToken();
+	if (cached?.accessToken) {
+		if (tokenLifetimeLeftSec(cached, Date.now()) > REFRESH_SKEW_SEC) return cached.accessToken;
+		if (cached.refreshToken) {
+			try {
+				return (await refreshTokenNow(client, cached.refreshToken)).accessToken;
+			} catch {
+				/* fall through to interactive */
+			}
+		}
+	}
 	if (!interactive) throw new Error('Not connected to GitHub');
-	return (await launchAuth()).accessToken;
+	throw new Error('GitHub session expired — open Settings → GitHub sync and Connect again');
 }
 
 export async function isConnected(): Promise<boolean> {
-	const c = await getCachedToken();
+	const c = await getStoredToken();
 	return !!c?.accessToken;
 }
 
 export async function disconnect(): Promise<void> {
-	await browser.storage.local.remove([TOKEN_KEY, REPO_KEY]);
-	// GitHub has no revoke endpoint needed for OAuth App; token stays valid until user revokes in settings
-}
-
-export async function connect(): Promise<void> {
-	await launchAuth();
-	// Ensure repo exists right after connect so first sync doesn't have to
-	await ensureRepo(true);
+	await browser.storage.local.remove([TOKEN_KEY, REPO_KEY, PENDING_STATE_KEY]);
+	// Client ID/secret stay so reconnecting is one click; tokens are dropped.
+	// (GitHub App user tokens stay valid server-side until expiry — short-lived by design.)
 }
 
 // --- GitHub REST -------------------------------------------------------------
 
 async function githubFetch(path: string, init: RequestInit, interactive = false): Promise<Response> {
 	let token = await getAccessToken(interactive);
-	let res = await fetch(`${GITHUB_API}${path}`, {
+	let res = await fetch(`${GITHUB_API_BASE}${path}`, {
 		...init,
-		headers: { ...(init.headers || {}), Authorization: `Bearer ${token}`, Accept: 'application/vnd.github+json', 'X-GitHub-Api-Version': '2022-11-28' },
+		headers: { ...(init.headers || {}), Authorization: `Bearer ${token}`, Accept: 'application/vnd.github+json', 'X-GitHub-Api-Version': GITHUB_API_VERSION },
 	});
 	if (res.status === 401) {
 		await browser.storage.local.remove(TOKEN_KEY);
-		if (!interactive) throw new Error('GitHub token expired');
-		token = await getAccessToken(true);
-		res = await fetch(`${GITHUB_API}${path}`, {
-			...init,
-			headers: { ...(init.headers || {}), Authorization: `Bearer ${token}`, Accept: 'application/vnd.github+json', 'X-GitHub-Api-Version': '2022-11-28' },
-		});
+		throw new Error('GitHub session expired — open Settings → GitHub sync and Connect again');
 	}
 	if (!res.ok) {
 		const body = await res.text().catch(() => '');
@@ -207,44 +287,60 @@ async function githubFetch(path: string, init: RequestInit, interactive = false)
 	return res;
 }
 
-async function getAuthenticatedUser(interactive: boolean): Promise<{ login: string }> {
-	const res = await githubFetch('/user', { method: 'GET' }, interactive);
-	return (await res.json()) as { login: string };
+/**
+ * Every repository every installation of this App covers — what the repo
+ * picker shows. Owner and names come from the API, never typed.
+ */
+export async function listAvailableRepos(interactive: boolean): Promise<DiscoveredRepo[]> {
+	const installsRes = await githubFetch('/user/installations', { method: 'GET' }, interactive);
+	const installs = ((await installsRes.json()) as {
+		installations?: Array<{ id: number }>;
+	}).installations ?? [];
+	const seen = new Set<number>();
+	const out: DiscoveredRepo[] = [];
+	for (const inst of installs) {
+		const res = await githubFetch(
+			`/user/installations/${inst.id}/repositories?per_page=100`,
+			{ method: 'GET' },
+			interactive,
+		);
+		const data = (await res.json()) as {
+			repositories?: Array<{ id: number; name: string; full_name: string; private?: boolean; owner?: { login?: string } }>;
+		};
+		for (const r of data.repositories ?? []) {
+			if (seen.has(r.id)) continue;
+			seen.add(r.id);
+			const owner = r.full_name.split('/')[0] || r.owner?.login || '';
+			out.push({ owner, repo: r.name, fullName: r.full_name, private: !!r.private });
+		}
+	}
+	out.sort((a, b) => a.fullName.localeCompare(b.fullName));
+	return out;
+}
+
+export async function selectRepo(fullName: string): Promise<RepoInfo> {
+	const [owner, ...rest] = fullName.split('/');
+	const repo = rest.join('/');
+	if (!owner || !repo) throw new Error('Pick a repository from the list');
+	const info: RepoInfo = { owner, repo, branch: REPO_BRANCH };
+	await saveRepoInfo(info);
+	return info;
 }
 
 export async function ensureRepo(interactive: boolean): Promise<RepoInfo> {
-	let info = await getRepoInfo();
-	if (info) {
-		// Verify it still exists
+	const info = await getRepoInfo();
+	if (info?.owner && info?.repo) {
+		// Verify the selection still exists and is still covered.
 		try {
 			await githubFetch(`/repos/${info.owner}/${info.repo}`, { method: 'GET' }, interactive);
-			return info;
-		} catch {
-			// fall through to recreate / rediscover
+			return { owner: info.owner, repo: info.repo, branch: info.branch || REPO_BRANCH };
+		} catch (e: any) {
+			if (!String(e?.message ?? e).includes('404')) throw e;
 		}
 	}
-	const user = await getAuthenticatedUser(interactive);
-	const owner = user.login;
-	// Try existing repo
-	try {
-		await githubFetch(`/repos/${owner}/${REPO_NAME}`, { method: 'GET' }, interactive);
-		info = { owner, repo: REPO_NAME, branch: REPO_BRANCH };
-		await saveRepoInfo(info);
-		return info;
-	} catch (e: any) {
-		if (!String(e.message).includes('404')) throw e;
-	}
-	// Create private repo
-	await githubFetch('/user/repos', {
-		method: 'POST',
-		headers: { 'Content-Type': 'application/json' },
-		body: JSON.stringify({ name: REPO_NAME, private: true, description: 'Scholiast annotations backup — synced by extension', auto_init: true }),
-	}, interactive);
-	info = { owner, repo: REPO_NAME, branch: REPO_BRANCH };
-	await saveRepoInfo(info);
-	// Give GitHub a moment to init branch
-	await new Promise(r => setTimeout(r, 800));
-	return info;
+	throw new Error(
+		'No sync repo selected — open Settings → GitHub sync, create an empty private repo, add it to the App installation, then pick it from the list.',
+	);
 }
 
 async function repoPath(p: string): Promise<{ info: RepoInfo; apiPath: string }> {

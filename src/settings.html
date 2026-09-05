@@ -773,7 +773,7 @@
 									<div class="setting-item-info">
 										<label>GitHub sync</label>
 										<div class="setting-item-description">
-											Back up and sync to a private GitHub repo (<code>scholiast-annotations</code> auto-created). Works alongside Drive — when both are connected this device merges and pushes to both, so devices with only one backend still converge via the other.
+											Back up and sync to a private GitHub repo you pick (App installed on selected repos only). Works alongside Drive — when both are connected this device merges and pushes to both, so devices with only one backend still converge via the other.
 										</div>
 									</div>
 									<div class="setting-item-control">
@@ -789,6 +789,38 @@
 									</div>
 									<div class="setting-item-control">
 										<button type="button" id="github-sync-now-btn" style="display: none;">Sync now</button>
+									</div>
+								</div>
+								<div class="setting-item">
+									<div class="setting-item-info">
+										<label for="github-client-id">GitHub App credentials</label>
+										<div class="setting-item-description">Paste the Client ID and a client secret from your GitHub App. Stored only in this browser — never in the build.</div>
+										<div style="display: flex; gap: 8px; margin-top: 8px;">
+											<input type="text" id="github-client-id" placeholder="Client ID (Iv23…)" autocomplete="off" spellcheck="false" style="flex: 1;" />
+											<input type="password" id="github-client-secret" placeholder="Client secret" autocomplete="off" spellcheck="false" style="flex: 1;" />
+											<button type="button" id="github-save-client-btn">Save</button>
+										</div>
+										<div id="github-client-saved-note" class="setting-item-description" style="font-size: 11px; opacity: 0.8;"></div>
+									</div>
+								</div>
+								<div class="setting-item" id="github-code-item" style="display: none;">
+									<div class="setting-item-info">
+										<label for="github-auth-code">Step 2 — paste the code</label>
+										<div class="setting-item-description">After signing in on github.com, the page shows a code (Copy button copies code + state). Paste it here.</div>
+										<div style="display: flex; gap: 8px; margin-top: 8px;">
+											<input type="text" id="github-auth-code" placeholder="Paste code…" autocomplete="off" spellcheck="false" style="flex: 1;" />
+											<button type="button" id="github-complete-btn" class="mod-cta">Finish sign-in</button>
+										</div>
+									</div>
+								</div>
+								<div class="setting-item" id="github-repo-item" style="display: none;">
+									<div class="setting-item-info">
+										<label for="github-repo-select">Sync repo</label>
+										<div class="setting-item-description">Repositories your App installation covers. Create an empty private repo and add it to the installation if the list is empty.</div>
+										<div style="display: flex; gap: 8px; margin-top: 8px;">
+											<select id="github-repo-select" style="flex: 1;"></select>
+											<button type="button" id="github-refresh-repos-btn">Refresh</button>
+										</div>
 									</div>
 								</div>
 								<div class="setting-item" id="github-sync-progress-item" style="display: none;">
@@ -812,7 +844,7 @@
 								<div class="setting-item" id="github-sync-setup-note" style="display: none;">
 									<div class="setting-item-info">
 										<div class="setting-item-description">
-											GitHub sync isn't configured in this build. Add <code>githubClientId</code> to <code>oauth.local.json</code> (OAuth App, PKCE, callback <code id="github-sync-redirect-uri"></code>).
+											Enter your GitHub App's Client ID and a client secret above, then Connect. Sign in on github.com (callback <code id="github-sync-redirect-uri"></code>), paste the shown code, and pick the repo the App is installed on.
 										</div>
 									</div>
 								</div>

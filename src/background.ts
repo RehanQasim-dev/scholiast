@@ -479,11 +479,20 @@ function triggerDrivePollIfNeeded() {
 	}
 }
 
+async function githubStatusPayload(): Promise<{ connected: boolean; lastSyncedAt?: number; syncing?: boolean }> {
+	const status = await getSyncStatus();
+	return {
+		connected: await github.isConnected().catch(() => false),
+		lastSyncedAt: (status as any).lastSyncedAt,
+		syncing: (status as any).syncing,
+	} as any;
+}
+
 browser.runtime.onMessage.addListener((request: unknown, _sender: browser.Runtime.MessageSender, sendResponse: (response?: any) => void): true | undefined => {
 	if (typeof request !== 'object' || request === null) return;
 	const action = (request as any).action as string;
 	const driveActions = ['syncConnect', 'syncDisconnect', 'syncNow', 'syncStatus'];
-	const githubActions = ['githubSyncConnect', 'githubSyncDisconnect', 'githubSyncNow', 'githubSyncStatus'];
+	const githubActions = ['githubSyncDisconnect', 'githubSyncNow', 'githubSyncStatus', 'githubSaveClient', 'githubAuthUrl', 'githubComplete', 'githubRepos', 'githubPickRepo'];
 	const obsidianActions = ['obsidianGetConfig', 'obsidianSetConfig', 'obsidianTest', 'obsidianSyncAll', 'obsidianStatus'];
 	if (!driveActions.includes(action) && !githubActions.includes(action) && !obsidianActions.includes(action)) {
 		return;
@@ -519,10 +528,34 @@ browser.runtime.onMessage.addListener((request: unknown, _sender: browser.Runtim
 
 			if (githubActions.includes(action)) {
 				switch (action) {
-					case 'githubSyncConnect':
-						await github.connect();
+					case 'githubSaveClient': {
+						const { clientId, clientSecret } = (request as any) as { clientId?: string; clientSecret?: string };
+						await github.saveClientConfig(clientId ?? '', clientSecret ?? '');
+						break;
+					}
+					case 'githubAuthUrl': {
+						const url = await github.beginConnect();
+						sendResponse({ success: true, status: await githubStatusPayload(), configured: await github.isConfiguredAsync(), redirectUrl: github.getRegisteredRedirectUri(), url });
+						return;
+					}
+					case 'githubComplete': {
+						const { code } = (request as any) as { code?: string };
+						const account = await github.completeConnect(code ?? '');
+						await syncToDrive(true);
+						sendResponse({ success: true, status: await githubStatusPayload(), configured: await github.isConfiguredAsync(), redirectUrl: github.getRegisteredRedirectUri(), account });
+						return;
+					}
+					case 'githubRepos': {
+						const repos = await github.listAvailableRepos(true);
+						sendResponse({ success: true, status: await githubStatusPayload(), configured: await github.isConfiguredAsync(), redirectUrl: github.getRegisteredRedirectUri(), repos });
+						return;
+					}
+					case 'githubPickRepo': {
+						const { fullName } = (request as any) as { fullName?: string };
+						await github.selectRepo(fullName ?? '');
 						await syncToDrive(true);
 						break;
+					}
 					case 'githubSyncDisconnect':
 						await github.disconnect();
 						// Clear GitHub pagemeta but keep Drive + local; next sync will be no-op for GitHub
@@ -539,14 +572,14 @@ browser.runtime.onMessage.addListener((request: unknown, _sender: browser.Runtim
 						// no side effect
 						break;
 				}
-				const gStatus = { connected: await github.isConnected().catch(()=>false), lastSyncedAt: (await getSyncStatus()).lastSyncedAt, syncing: (await getSyncStatus()).syncing } as any;
+				const gStatus = await githubStatusPayload();
 				// Try to get real repo info
 				let repoStr = '';
 				try {
 					const info = await (github as any).getRepoInfo?.() || await browser.storage.local.get('github_repo').then(r=>r['github_repo']);
 					if (info) repoStr = `${info.owner}/${info.repo}`;
 				} catch {}
-				sendResponse({ success: true, status: gStatus, configured: github.isConfigured(), redirectUrl: github.getRegisteredRedirectUri(), repo: repoStr });
+				sendResponse({ success: true, status: gStatus, configured: await github.isConfiguredAsync(), redirectUrl: github.getRegisteredRedirectUri(), repo: repoStr });
 				return;
 			}
 
@@ -575,7 +608,7 @@ browser.runtime.onMessage.addListener((request: unknown, _sender: browser.Runtim
 			}
 			if (githubActions.includes(action)) {
 				const gStatus = { connected: await github.isConnected().catch(()=>false) } as any;
-				sendResponse({ success: false, error: err instanceof Error ? err.message : String(err), status: gStatus, configured: github.isConfigured(), redirectUrl: github.getRegisteredRedirectUri() });
+				sendResponse({ success: false, error: err instanceof Error ? err.message : String(err), status: gStatus, configured: await github.isConfiguredAsync(), redirectUrl: github.getRegisteredRedirectUri() });
 				return;
 			}
 			const status = await getSyncStatus();
