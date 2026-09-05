@@ -1,5 +1,6 @@
 import { PREF_DEFAULTS, PREF_KEYS } from "../../lib/store";
 import { usePref } from "./usePref";
+import ThemedSelect from "./ThemedSelect";
 
 const SEEK_STEPS = [
   ["5", "5 seconds"],
@@ -16,21 +17,16 @@ export default function PlaybackSection() {
 
   return (
     <div className="grid gap-3 sm:grid-cols-1">
-      <label className="block text-sm text-text-2">
-        Seek step size
-        <select
+      <div className="flex flex-col gap-1.5 text-sm text-text-2">
+        <span>Seek step size</span>
+        <ThemedSelect
           value={seekStep}
-          onChange={(event) => setSeekStep(event.target.value)}
-          data-testid="pref-playback.seek_step"
-          className="mt-1 h-14 w-full rounded-md border border-hairline bg-elevated px-3 text-sm text-text outline-none focus:border-accent"
-        >
-          {SEEK_STEPS.map(([value, label]) => (
-            <option key={value} value={value}>
-              {label}
-            </option>
-          ))}
-        </select>
-      </label>
+          onChange={(next) => void setSeekStep(next)}
+          options={SEEK_STEPS}
+          testId="pref-playback.seek_step"
+          ariaLabel="Seek step size"
+        />
+      </div>
     </div>
   );
 }

@@ -16,7 +16,7 @@ function Group({
   children: React.ReactNode;
 }) {
   return (
-    <section className="space-y-2.5">
+    <section className="space-y-2.5 mb-7 break-inside-avoid">
       <h2 className="px-1 text-xs font-bold uppercase tracking-wider text-text-3">
         {title}
       </h2>
@@ -32,7 +32,8 @@ export default function Settings() {
     <div className="mx-auto max-w-[1200px] space-y-7 px-6 pt-7 sm:pt-9 pb-28 bg-base min-h-full">
       <h1 className="text-2xl font-bold tracking-tight text-text">Settings</h1>
 
-      <div className="grid gap-7 lg:grid-cols-2 lg:items-start">
+      {/* Masonry: cards stack tight with no row-stretch holes; single column on mobile. */}
+      <div className="lg:columns-2 lg:gap-x-7">
         <Group title="Speech">
           <SpeechSection />
         </Group>
@@ -45,27 +46,21 @@ export default function Settings() {
         <Group title="Excalidraw & Stylus">
           <ExcalidrawSettingsSection />
         </Group>
-        <div className="lg:col-span-2">
-          <Group title="Sync">
-            <DriveSyncCard />
-          </Group>
-        </div>
+        <Group title="Sync">
+          <DriveSyncCard />
+        </Group>
         <Group title="Playback">
           <PlaybackSection />
         </Group>
         <Group title="Appearance">
           <AppearanceSection />
         </Group>
-        <div className="lg:col-span-2">
-          <Group title="Data">
-            <DataSection />
-          </Group>
-        </div>
-        <div className="lg:col-span-2">
-          <Group title="About">
-            <AboutSection />
-          </Group>
-        </div>
+        <Group title="Data">
+          <DataSection />
+        </Group>
+        <Group title="About">
+          <AboutSection />
+        </Group>
       </div>
     </div>
   );

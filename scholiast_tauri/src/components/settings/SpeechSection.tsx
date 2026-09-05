@@ -6,6 +6,7 @@ import { IpcCommandError, invokeCommand } from "../../lib/ipc";
 import { PREF_DEFAULTS, PREF_KEYS } from "../../lib/store";
 import { useOffline } from "../OfflineBanner";
 import { usePref } from "./usePref";
+import ThemedSelect from "./ThemedSelect";
 
 interface SecretStatus {
   configured: boolean;
@@ -710,18 +711,13 @@ export default function SpeechSection() {
         {/* Speech Language Selector */}
         <label className="flex flex-col gap-1.5 text-sm font-medium text-text-2">
           <span>Speech language</span>
-          <select
+          <ThemedSelect
             value={language}
-            onChange={(event) => setLanguage(event.target.value)}
-            data-testid="pref-speech.language"
-            className="h-12 min-h-[48px] w-full rounded-lg border border-hairline bg-elevated px-3 text-sm text-text outline-none focus:border-accent"
-          >
-            {LANGUAGES.map(([code, label]) => (
-              <option key={code} value={code}>
-                {label}
-              </option>
-            ))}
-          </select>
+            onChange={(next) => void setLanguage(next)}
+            options={LANGUAGES}
+            testId="pref-speech.language"
+            ariaLabel="Speech language"
+          />
         </label>
       </div>
     </div>
