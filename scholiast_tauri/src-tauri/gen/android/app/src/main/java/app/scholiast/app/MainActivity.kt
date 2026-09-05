@@ -9,7 +9,6 @@ import android.os.Handler
 import android.os.Looper
 import android.view.ActionMode
 import android.view.Menu
-import android.view.MenuItem
 import android.webkit.JavascriptInterface
 import android.webkit.WebView
 import androidx.appcompat.view.ActionMode as SupportActionMode
@@ -76,74 +75,38 @@ class MainActivity : TauriActivity() {
 
   /**
    * Race-free suppression point: WebView populates the selection menu
-   * asynchronously *after* the mode starts, so a one-time clear in
+   * asynchronously *after* the mode starts (and re-populates on every
+   * invalidate, e.g. handle drags), so a one-time clear in
    * onActionModeStarted below can lose to a late repopulation (the
-   * recurring overlap). onPrepareActionMode runs after population on
-   * every show/invalidate, so the strip here always wins. Editable
-   * fields return untouched so copy/paste keeps working there.
+   * recurring overlap). Each start therefore schedules staggered re-strips
+   * that run after each population lands; editable fields return untouched
+   * so copy/paste keeps working there.
    *
    * NOTE: android.webkit.WebView has no setCustomSelectionActionModeCallback
-   * (that method exists only on TextView) — the equivalent hook for a
-   * WebView is wrapping the Activity's window-start callback and stripping
-   * the menu in onPrepareActionMode. Both the framework and the AppCompat
-   * (support) variants are wrapped because WryActivity extends
-   * AppCompatActivity and either ActionMode flavor can be started.
-   * (Returning false from onCreateActionMode would kill the selection
-   * itself — never do that here, hence the delegate-through.)
+   * (that method exists only on TextView — calling it fails Kotlin
+   * compilation), and onWindowStartingActionMode returns the ActionMode
+   * itself (not a wrappable callback), so Started/Finished + re-strips is
+   * the hook. Both the framework and the AppCompat (support) variants are
+   * covered because WryActivity extends AppCompatActivity and either
+   * ActionMode flavor can be started. Emptying the menu (rather than
+   * finishing the mode) preserves the selection and its handles: Android 6+
+   * does not render an empty floating menu at all.
    */
-  override fun onWindowStartingActionMode(callback: ActionMode.Callback): ActionMode.Callback {
-    return wrapSelectionCallback(callback)
-  }
+  private var selectionModeGeneration = 0
 
-  override fun onWindowStartingActionMode(callback: ActionMode.Callback, type: Int): ActionMode.Callback {
-    return wrapSelectionCallback(callback)
-  }
-
-  override fun onWindowStartingSupportActionMode(callback: SupportActionMode.Callback): SupportActionMode.Callback {
-    return wrapSupportSelectionCallback(callback)
-  }
-
-  private fun wrapSelectionCallback(delegate: ActionMode.Callback): ActionMode.Callback {
-    return object : ActionMode.Callback {
-      override fun onCreateActionMode(mode: ActionMode, menu: Menu): Boolean =
-        delegate.onCreateActionMode(mode, menu)
-
-      override fun onPrepareActionMode(mode: ActionMode, menu: Menu): Boolean {
-        val handled = delegate.onPrepareActionMode(mode, menu)
-        if (!selectionInEditable && menu.size() > 0) {
-          menu.clear()
-          return true
-        }
-        return handled
-      }
-
-      override fun onActionItemClicked(mode: ActionMode, item: MenuItem): Boolean =
-        delegate.onActionItemClicked(mode, item)
-
-      override fun onDestroyActionMode(mode: ActionMode) =
-        delegate.onDestroyActionMode(mode)
-    }
-  }
-
-  private fun wrapSupportSelectionCallback(delegate: SupportActionMode.Callback): SupportActionMode.Callback {
-    return object : SupportActionMode.Callback {
-      override fun onCreateActionMode(mode: SupportActionMode, menu: Menu): Boolean =
-        delegate.onCreateActionMode(mode, menu)
-
-      override fun onPrepareActionMode(mode: SupportActionMode, menu: Menu): Boolean {
-        val handled = delegate.onPrepareActionMode(mode, menu)
-        if (!selectionInEditable && menu.size() > 0) {
-          menu.clear()
-          return true
-        }
-        return handled
-      }
-
-      override fun onActionItemClicked(mode: SupportActionMode, item: MenuItem): Boolean =
-        delegate.onActionItemClicked(mode, item)
-
-      override fun onDestroyActionMode(mode: SupportActionMode) =
-        delegate.onDestroyActionMode(mode)
+  private fun stripSelectionMenu(menu: Menu) {
+    if (selectionInEditable) return
+    // Bump first: overlapping modes retire each other's pending re-strips.
+    selectionModeGeneration++
+    val generation = selectionModeGeneration
+    // The menu is usually still empty here (population lands async) — the
+    // clear + staggered re-strips below are what actually win.
+    menu.clear()
+    val view = window?.decorView ?: return
+    longArrayOf(50L, 150L, 350L).forEach { delay ->
+      view.postDelayed({
+        if (generation == selectionModeGeneration && !selectionInEditable) menu.clear()
+      }, delay)
     }
   }
 
@@ -166,23 +129,23 @@ class MainActivity : TauriActivity() {
    * system builds the default toolbar anyway.)
    */
   override fun onActionModeStarted(mode: ActionMode) {
-    if (!selectionInEditable) {
-      mode.menu?.clear()
-      // Belt-and-braces: WebView can (re)populate the menu asynchronously
-      // after start / on every invalidate, so re-strip once that lands.
-      mode.menu?.let { menu ->
-        window?.decorView?.post { if (!selectionInEditable) menu.clear() }
-      }
-    }
+    mode.menu?.let(::stripSelectionMenu)
     super.onActionModeStarted(mode)
   }
 
+  override fun onActionModeFinished(mode: ActionMode) {
+    selectionModeGeneration++
+    super.onActionModeFinished(mode)
+  }
+
   override fun onSupportActionModeStarted(mode: SupportActionMode) {
-    if (!selectionInEditable) {
-      mode.menu.clear()
-      window?.decorView?.post { if (!selectionInEditable) mode.menu.clear() }
-    }
+    stripSelectionMenu(mode.menu)
     super.onSupportActionModeStarted(mode)
+  }
+
+  override fun onSupportActionModeFinished(mode: SupportActionMode) {
+    selectionModeGeneration++
+    super.onSupportActionModeFinished(mode)
   }
 
   /** ACTION_SEND text/plain → scholiast://share?url= VIEW intent, so the
