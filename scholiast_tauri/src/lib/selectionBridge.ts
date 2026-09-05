@@ -8,6 +8,23 @@
  * the AndroidSelection bridge is absent (desktop, tests, older builds).
  */
 
+/** Elements inside which the OS selection toolbar must stay (copy/paste).
+ * Single source for the parent classifier below and the iframe-injected
+ * script (`darkReaderScript.ts` interpolates this same const), so the two
+ * sides can never disagree about what counts as editable. */
+export const EDITABLE_SELECTOR = "input, textarea, [contenteditable]";
+
+/** Pure classification of one selection anchor; unit-tested. */
+export function isEditableAnchor(anchor: Node | null): boolean {
+  const element =
+    anchor?.nodeType === Node.ELEMENT_NODE
+      ? (anchor as Element)
+      : anchor?.parentElement;
+  if (!element?.closest) return false;
+  if (element.closest('[contenteditable="false"]')) return false;
+  return Boolean(element.closest(EDITABLE_SELECTOR));
+}
+
 interface AndroidSelectionBridge {
   setSelectionEditable?: (editable: boolean) => void;
 }
@@ -34,14 +51,7 @@ export function setSelectionEditableFlag(editable: boolean): void {
 }
 
 function selectionIsEditable(): boolean {
-  const anchor = document.getSelection()?.anchorNode ?? null;
-  const element =
-    anchor?.nodeType === Node.ELEMENT_NODE
-      ? (anchor as Element)
-      : anchor?.parentElement;
-  if (!element?.closest) return false;
-  if (element.closest('[contenteditable="false"]')) return false;
-  return Boolean(element.closest("input, textarea, [contenteditable]"));
+  return isEditableAnchor(document.getSelection()?.anchorNode ?? null);
 }
 
 let installed = false;

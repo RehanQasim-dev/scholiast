@@ -1,4 +1,5 @@
 import darkReaderCode from "darkreader/darkreader.js?raw";
+import { EDITABLE_SELECTOR } from "./selectionBridge";
 
 /**
  * postMessage type the parent uses to toggle swipe-select inside the live
@@ -42,6 +43,19 @@ export function getDarkReaderScript(initialTheme: string): string {
 ${darkReaderCode}
 </script>
 <script>
+${getScholiastIframeScript(initialTheme)}
+</script>
+`;
+}
+
+/**
+ * Raw helper JS injected into every live page: theme control, selection
+ * reporting, swipe-select and the synchronous AndroidSelection bridge call.
+ * Exported raw (no <script> wrapper) so tests can eval it in jsdom and
+ * drive the real selection/swipe/message flow with mocks.
+ */
+export function getScholiastIframeScript(initialTheme: string): string {
+  return `
 (function() {
   function applyTheme(theme) {
     if (typeof DarkReader === 'undefined') return;
@@ -99,7 +113,7 @@ ${darkReaderCode}
       var node = sel ? sel.anchorNode : null;
       var el = node ? (node.nodeType === 1 ? node : node.parentElement) : null;
       var editable = !!(el && el.closest &&
-        el.closest('input, textarea, [contenteditable="true"], [contenteditable=""]'));
+        el.closest('${EDITABLE_SELECTOR}'));
       if (window.AndroidSelection && window.AndroidSelection.setSelectionEditable) {
         window.AndroidSelection.setSelectionEditable(editable);
       }
@@ -119,16 +133,21 @@ ${darkReaderCode}
     return null;
   }
 
+  function swipeRectOf(range) {
+    try {
+      var r = range.getBoundingClientRect();
+      if (r && typeof r.top === 'number') {
+        return { top: r.top, bottom: r.bottom, left: r.left, right: r.right, width: r.width, height: r.height };
+      }
+    } catch (_) {}
+    return { top: 0, bottom: 0, left: 0, right: 0, width: 0, height: 0 };
+  }
+
   function swipePostSelected() {
     var sel = window.getSelection();
     var text = sel ? sel.toString().trim() : '';
     if (!text || !sel || sel.rangeCount === 0) return false;
-    var rect = sel.getRangeAt(0).getBoundingClientRect();
-    var payload = {
-      type: 'TEXT_SELECTED',
-      text: text,
-      rect: { top: rect.top, bottom: rect.bottom, left: rect.left, right: rect.right, width: rect.width, height: rect.height }
-    };
+    var payload = { type: 'TEXT_SELECTED', text: text, rect: swipeRectOf(sel.getRangeAt(0)) };
     swipeCommit = { text: text, rect: payload.rect, t: Date.now() };
     window.parent.postMessage(payload, '*');
     return true;
@@ -225,19 +244,10 @@ ${darkReaderCode}
     if (swipeActive) return;
     swipeCommit = null;
     if (sel.rangeCount > 0) {
-      var range = sel.getRangeAt(0);
-      var rect = range.getBoundingClientRect();
       window.parent.postMessage({
         type: 'TEXT_SELECTED',
         text: text,
-        rect: {
-          top: rect.top,
-          bottom: rect.bottom,
-          left: rect.left,
-          right: rect.right,
-          width: rect.width,
-          height: rect.height
-        }
+        rect: swipeRectOf(sel.getRangeAt(0))
       }, '*');
     }
   });
@@ -250,6 +260,5 @@ ${darkReaderCode}
     applyTheme('${initialTheme}');
   }
 })();
-</script>
 `;
 }

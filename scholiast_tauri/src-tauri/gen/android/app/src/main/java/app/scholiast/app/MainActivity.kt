@@ -8,6 +8,8 @@ import android.os.Bundle
 import android.os.Handler
 import android.os.Looper
 import android.view.ActionMode
+import android.view.Menu
+import android.view.MenuItem
 import android.webkit.JavascriptInterface
 import android.webkit.WebView
 import androidx.activity.enableEdgeToEdge
@@ -69,6 +71,29 @@ class MainActivity : TauriActivity() {
         selectionInEditable = editable
       }
     }, "AndroidSelection")
+    // Race-free suppression point: WebView populates the selection menu
+    // asynchronously *after* the mode starts, so a one-time clear in
+    // onActionModeStarted below can lose to a late repopulation (the
+    // recurring overlap). onPrepareActionMode runs after population on
+    // every show/invalidate, so the strip here always wins. Editable
+    // fields return untouched so copy/paste keeps working there.
+    // (Returning false from onCreateActionMode would kill the selection
+    // itself — never do that here.)
+    webView.setCustomSelectionActionModeCallback(object : ActionMode.Callback {
+      override fun onCreateActionMode(mode: ActionMode, menu: Menu): Boolean = true
+
+      override fun onPrepareActionMode(mode: ActionMode, menu: Menu): Boolean {
+        if (!selectionInEditable && menu.size() > 0) {
+          menu.clear()
+          return true
+        }
+        return false
+      }
+
+      override fun onActionItemClicked(mode: ActionMode, item: MenuItem): Boolean = false
+
+      override fun onDestroyActionMode(mode: ActionMode) {}
+    })
   }
 
   override fun onNewIntent(intent: Intent) {
