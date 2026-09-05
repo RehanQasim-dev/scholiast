@@ -223,6 +223,27 @@ function HighlightsLayer({
   const [chipDismissed, setChipDismissed] = useState(false);
   const pendingRange = useRef<Range | null>(null);
   const showTimer = useRef<number | undefined>(undefined);
+  /**
+   * Swipe-select gesture state, shared between the selection flow below and
+   * the swipe engine further down (same component, so plain refs suffice):
+   * - `swipeLive`: a select-intent drag is in flight — the popup stays
+   *   hidden until the thumb lifts, never "completing" mid-drag.
+   * - `swipeCommit`: the clone committed on lift. If the platform collapses
+   *   the DOM selection right after touchend, the popup reopens from this
+   *   instead of vanishing.
+   * - `swipeResume`: the last committed anchor. A micro-break (weak touch
+   *   lifting for a split second) resumes the same selection when the thumb
+   *   lands back nearby instead of finalizing early and restarting.
+   */
+  const swipeLive = useRef(false);
+  const swipeCommit = useRef<{ range: Range; at: number } | null>(null);
+  const swipeResume = useRef<{
+    node: Node;
+    offset: number;
+    x: number;
+    y: number;
+    at: number;
+  } | null>(null);
 
   const highlightsRef = useRef(highlights);
   highlightsRef.current = highlights;
@@ -299,7 +320,8 @@ function HighlightsLayer({
 
   // Selection flow: collapse hides the popup; while a selection is moving the
   // popup stays hidden and re-opens once the selection has settled briefly
-  // (keyboard selections included); mouseup opens it immediately.
+  // (keyboard selections included); mouseup opens it immediately, and a
+  // swipe-select lift commits + opens it directly (see swipeLive below).
   useEffect(() => {
     const clearShowTimer = () => window.clearTimeout(showTimer.current);
     let lastPointerType = "mouse";
@@ -318,7 +340,24 @@ function HighlightsLayer({
 
     const onSelectionChange = () => {
       clearShowTimer();
+      // A swipe drag paints the DOM selection live on every move; the popup
+      // must not arm while the thumb is still down.
+      if (swipeLive.current) return;
       if (window.getSelection()?.isCollapsed !== false) {
+        // The platform may collapse the DOM selection in the same frame the
+        // thumb lifts a swipe. The just-committed clone still describes what
+        // the user selected — reopen from it instead of dropping the popup.
+        const commit = swipeCommit.current;
+        if (commit && Date.now() - commit.at < 350) {
+          pendingRange.current = commit.range.cloneRange();
+          const rect = commit.range.getBoundingClientRect();
+          setPopupAnchor(
+            rect
+              ? { top: rect.top, left: rect.left + rect.width / 2 }
+              : { top: 0, left: window.innerWidth / 2 },
+          );
+          return;
+        }
         pendingRange.current = null;
         setPopupAnchor(null);
         return;
@@ -365,8 +404,12 @@ function HighlightsLayer({
   // long-press. The container runs `touch-action: pan-y` while enabled, so
   // vertical pans scroll natively and only horizontal movement reaches us;
   // diagonal drags are disambiguated per gesture (a scroll verdict hands the
-  // gesture back for the rest of the touch). On release the settle-timer
-  // flow above opens the SwatchPopup untouched.
+  // gesture back for the rest of the touch). The selection commits on lift:
+  // the final range is re-asserted (the platform may otherwise collapse it
+  // as the touch sequence ends) and the SwatchPopup opens immediately, so
+  // swipe never needs the settle timer or a second tap. A lift-retouch
+  // within ~600ms / ~28px resumes the same anchor instead of restarting,
+  // so a momentarily weak touch can't finalize the selection early.
   useEffect(() => {
     const root = containerRef.current;
     if (!swipeSelect || !root) return;
@@ -374,19 +417,34 @@ function HighlightsLayer({
     root.style.touchAction = "pan-y";
 
     let anchor: CaretPosition | null = null;
+    let focus: CaretPosition | null = null;
     let startX = 0;
     let startY = 0;
     let scrolling = false;
 
     const onTouchStart = (e: TouchEvent) => {
       scrolling = false;
+      swipeLive.current = false;
+      swipeCommit.current = null;
       anchor = null;
+      focus = null;
       if (e.touches.length !== 1) return;
       const t = e.touches[0];
       startX = t.clientX;
       startY = t.clientY;
-      const pos = caretPointAt(t.clientX, t.clientY);
-      if (pos && root.contains(pos.node)) anchor = pos;
+      const r = swipeResume.current;
+      if (
+        r &&
+        Date.now() - r.at < 600 &&
+        Math.hypot(t.clientX - r.x, t.clientY - r.y) < 28 &&
+        root.contains(r.node)
+      ) {
+        anchor = { node: r.node, offset: r.offset };
+      } else {
+        swipeResume.current = null;
+        const pos = caretPointAt(t.clientX, t.clientY);
+        if (pos && root.contains(pos.node)) anchor = pos;
+      }
     };
 
     const onTouchMove = (e: TouchEvent) => {
@@ -397,6 +455,7 @@ function HighlightsLayer({
       if (intent === "scroll") {
         scrolling = true;
         anchor = null;
+        focus = null;
         return;
       }
       const pos = caretPointAt(t.clientX, t.clientY);
@@ -406,13 +465,48 @@ function HighlightsLayer({
       try {
         sel.setBaseAndExtent(anchor.node, anchor.offset, pos.node, pos.offset);
       } catch {
-        anchor = null;
+        // One bad sample (e.g. a node mid-layout) must not kill the drag.
+        return;
       }
+      focus = pos;
+      swipeLive.current = true;
+      pendingRange.current = null;
+      setPopupAnchor(null);
     };
 
-    const onTouchEnd = () => {
+    const onTouchEnd = (e: TouchEvent) => {
+      swipeLive.current = false;
+      const doneAnchor = anchor;
+      const doneFocus = focus;
       anchor = null;
+      focus = null;
       scrolling = false;
+      if (!doneAnchor || !doneFocus) return;
+      try {
+        window
+          .getSelection()
+          ?.setBaseAndExtent(
+            doneAnchor.node,
+            doneAnchor.offset,
+            doneFocus.node,
+            doneFocus.offset,
+          );
+      } catch {
+        /* commit proceeds from the live range below if it survived */
+      }
+      const t = e.changedTouches[0];
+      swipeResume.current = {
+        node: doneAnchor.node,
+        offset: doneAnchor.offset,
+        x: t?.clientX ?? startX,
+        y: t?.clientY ?? startY,
+        at: Date.now(),
+      };
+      const live = selectionInRange();
+      if (live) {
+        swipeCommit.current = { range: live.cloneRange(), at: Date.now() };
+        showPopupForSelection();
+      }
     };
 
     root.addEventListener("touchstart", onTouchStart, { passive: true });
@@ -426,7 +520,7 @@ function HighlightsLayer({
       root.removeEventListener("touchend", onTouchEnd);
       root.removeEventListener("touchcancel", onTouchEnd);
     };
-  }, [swipeSelect, containerRef]);
+  }, [swipeSelect, containerRef, selectionInRange, showPopupForSelection]);
 
   const handlePickColor = useCallback(
     (color: HighlightColor) => {

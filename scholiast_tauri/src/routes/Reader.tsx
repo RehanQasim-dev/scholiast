@@ -501,6 +501,7 @@ export default function Reader() {
           urlHash={urlHash}
           onHighlightClick={handleHighlightClick}
           onHighlightCreated={handleHighlightClick}
+          swipeSelect={swipeMode}
         />
       ) : (
         <ArticleView
@@ -530,7 +531,14 @@ export default function Reader() {
       onTouchEnd={handleArticleTouchEnd}
       className={scrollerClassName}
       style={{
-        paddingBottom: isNarrow ? "calc(1.5rem + var(--sc-safe-bottom))" : undefined,
+        // Trailing clearance so scrolled-to-end text clears the floating
+        // pill — scrollable (extracted) mode only. The live page is
+        // overflow-hidden with a full-height iframe, where this padding
+        // would permanently eat the bottom of the viewport instead.
+        paddingBottom:
+          isNarrow && !isAuthentic
+            ? "calc(1.5rem + var(--sc-safe-bottom))"
+            : undefined,
       }}
     >
       {articleBodyNode}

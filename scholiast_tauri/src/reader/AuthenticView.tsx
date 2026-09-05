@@ -1,10 +1,10 @@
-import { useEffect, useRef, useState, useMemo } from "react";
+import { useCallback, useEffect, useRef, useState, useMemo } from "react";
 import { useNavigate } from "react-router-dom";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import type { ReaderTheme } from "../components/reader/ReaderTopBar";
 import SwatchPopup, { type HighlightColor } from "../components/SwatchPopup";
 import { getAuthenticHtml, saveHighlight } from "../lib/readerIpc";
-import { getDarkReaderScript } from "../lib/darkReaderScript";
+import { getDarkReaderScript, SWIPE_SELECT_MESSAGE } from "../lib/darkReaderScript";
 import { setSelectionEditableFlag } from "../lib/selectionBridge";
 import { toast } from "../components/Toast";
 
@@ -14,6 +14,8 @@ export interface AuthenticViewProps {
   urlHash?: string;
   onHighlightClick?: (highlightId: string) => void;
   onHighlightCreated?: (highlightId: string) => void;
+  /** "Swipe" mode: plain finger drags extend the selection (no long-press). */
+  swipeSelect?: boolean;
 }
 
 interface SelectionState {
@@ -27,6 +29,7 @@ export default function AuthenticView({
   theme,
   urlHash,
   onHighlightCreated,
+  swipeSelect = false,
 }: AuthenticViewProps) {
   const navigate = useNavigate();
   const iframeRef = useRef<HTMLIFrameElement>(null);
@@ -62,6 +65,26 @@ export default function AuthenticView({
       /* ignore cross-frame errors if any */
     }
   }, [theme]);
+
+  // Push swipe-select mode into the iframe (and re-push after every
+  // (re)load — the injected document starts with it off). postMessage is
+  // fire-and-forget before load; the onLoad re-push is the reliable one.
+  const swipeRef = useRef(swipeSelect);
+  swipeRef.current = swipeSelect;
+  const postSwipeMode = useCallback((enabled: boolean) => {
+    try {
+      iframeRef.current?.contentWindow?.postMessage(
+        { type: SWIPE_SELECT_MESSAGE, enabled },
+        "*",
+      );
+    } catch {
+      /* ignore cross-frame errors if any */
+    }
+  }, []);
+
+  useEffect(() => {
+    postSwipeMode(swipeSelect);
+  }, [swipeSelect, postSwipeMode]);
 
   // Listen for selection messages from inside the iframe
   useEffect(() => {
@@ -150,6 +173,7 @@ export default function AuthenticView({
         title="Authentic Webview"
         sandbox="allow-same-origin allow-scripts allow-forms allow-popups"
         className="h-full w-full border-0"
+        onLoad={() => postSwipeMode(swipeRef.current)}
       />
 
       {/* Floating Selection Swatch */}
