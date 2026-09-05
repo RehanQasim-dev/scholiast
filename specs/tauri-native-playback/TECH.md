@@ -25,9 +25,9 @@ Key files @ 5bdd65c:
 - **D1 — youtubei.js v18 for extraction (PIVOT).** The TS engine runs in
   the frontend (`src/player/youtubeEngine.ts`): VISIONOS resolve, webview
   function-evaluation shim, caption tracks — externally maintained, bump on
-  rotation. The Rust `yt/` core from batch 1 stays in-tree, tested but
-  uncalled: fallback candidate for batch 3 (notably if webview CORS ever
-  blocks MSE range fetches, Rust becomes the byte-fetcher).
+  rotation. The batch-1 Rust `yt/` core was deleted, not parked: one engine,
+  no dead code. If webview CORS ever blocks MSE range fetches, the answer is
+  a thin Rust byte-fetcher, not a second extraction stack.
 - **D2 — boa_engine 0.22 for sig+n evaluation** (pure Rust: builds for all 4
   release targets. rquickjs 0.12 was tried first and dropped — its prebuilt
   bindings miss `aarch64-linux-android`, and the `bindgen` fallback needs

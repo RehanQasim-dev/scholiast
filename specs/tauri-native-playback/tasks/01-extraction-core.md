@@ -43,6 +43,12 @@ No TypeScript changes. No player changes.
 
 ## LOG
 
+- SUPERSEDED: engine pivoted to youtubei.js (TECH.md D1); the Rust `yt/`
+  core was deleted outright per "no dead code". Its findings survive here
+  and in TECH.md for reference (VISIONOS rule, decipher recipe, error
+  table, live-proof results).
+- (original log below, kept for the record)
+
 - Implemented: yt/{mod,error,client,decipher,formats,resolve,commands} +
   `yt_resolve` / `yt_captions` commands registered in lib.rs.
 - rquickjs 0.12 dropped: prebuilt bindings miss aarch64-linux-android

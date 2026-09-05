@@ -72,6 +72,8 @@ export interface ManifestCaptionView {
   isAsr: boolean;
 }
 
+/** Fresh per-session manifest (produced by the youtubei.js engine); stream
+ * URLs expire and are never persisted. */
 export interface StreamManifestView {
   videoId: string;
   title?: string | null;
@@ -79,18 +81,6 @@ export interface StreamManifestView {
   streams: StreamFormatView[];
   hlsUrl?: string | null;
   captions: ManifestCaptionView[];
-}
-
-/** Fresh per-session manifest; URLs expire and are never persisted. */
-export function resolveStream(args: { videoId: string }): Promise<StreamManifestView> {
-  return invokeCommand<StreamManifestView>("yt_resolve", args);
-}
-
-export function fetchVideoCaptions(args: {
-  videoId: string;
-  languageCode: string;
-}): Promise<{ languageCode: string; vtt: string }> {
-  return invokeCommand<{ languageCode: string; vtt: string }>("yt_captions", args);
 }
 
 export function addArticle(args: {

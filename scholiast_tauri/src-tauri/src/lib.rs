@@ -17,7 +17,6 @@ mod state;
 mod store;
 mod sync;
 mod transcript;
-mod yt;
 
 #[derive(Serialize)]
 struct Health {
@@ -131,8 +130,6 @@ pub fn run() {
             commands::reader::delete_comment,
             commands::reader::save_diagram_item,
             commands::reader::get_diagram_item,
-            yt::commands::yt_resolve,
-            yt::commands::yt_captions,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
