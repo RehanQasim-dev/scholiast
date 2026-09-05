@@ -183,25 +183,22 @@ export default function Chrome({ stageRef, slots, onCaptureClick, collapsed = fa
       onClick={handleStageTap}
       data-testid="chrome-root"
     >
-      {/* Pause shield: YouTube's native title/channel overlay has no API
-          switch (showinfo is deprecated) and appears over the iframe while
-          paused. This cover hides it and swallows its links; it lifts the
-          moment playback resumes so the picture is never cropped mid-watch. */}
+      {/* Title shield: YouTube's native title/channel overlay has no API
+          switch (showinfo is deprecated) and appears on pause AND on mouse
+          activity during playback. This cover stays up in every state — the
+          app's own top bar paints over the same zone when chrome is shown.
+          Clicks pass through to the stage handler below. */}
       <div
         data-testid="chrome-pause-shield"
         aria-hidden="true"
-        className={`absolute top-0 right-0 left-0 h-16 bg-gradient-to-b from-black/90 via-black/60 to-transparent transition-opacity duration-[var(--sc-dur-fast)] ease-out ${
-          snap.playing ? "pointer-events-none opacity-0" : "opacity-100"
-        }`}
+        className="pointer-events-none absolute top-0 right-0 left-0 h-16 bg-gradient-to-b from-black/90 via-black/60 to-transparent"
       />
-      {/* Watermark shield: YouTube's bottom-right "Watch on YouTube" badge has
-          no API switch either. Same pause-only deal as the title shield. */}
+      {/* Watermark shield: YouTube's bottom-right "Watch on YouTube" badge
+          has no API switch either. Same always-on deal as the title shield. */}
       <div
         data-testid="chrome-watermark-shield"
         aria-hidden="true"
-        className={`absolute right-0 bottom-0 h-12 w-40 bg-gradient-to-t from-black/90 via-black/60 to-transparent transition-opacity duration-[var(--sc-dur-fast)] ease-out ${
-          snap.playing ? "pointer-events-none opacity-0" : "opacity-100"
-        }`}
+        className="pointer-events-none absolute right-0 bottom-0 h-12 w-40 bg-gradient-to-t from-black/90 via-black/60 to-transparent"
       />
       {!ready && !error && (
         <div className="pointer-events-none absolute inset-0 flex items-center justify-center">

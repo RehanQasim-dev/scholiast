@@ -183,36 +183,26 @@ describe("Chrome", () => {
     expect(backed).toBe(true);
   });
 
-  it("covers YouTube's native pause title and lifts on playback", () => {
+  it("covers YouTube's native overlays in every playback state", () => {
     const { player, fire } = makeFakePlayer();
     playerBridge.attach(player);
     renderChrome();
 
-    fire("onStateChange", YT_STATE.PAUSED);
-    expect(screen.getByTestId("chrome-pause-shield").className).toContain(
-      "opacity-100",
-    );
-
-    fire("onStateChange", YT_STATE.PLAYING);
-    expect(screen.getByTestId("chrome-pause-shield").className).toContain(
-      "opacity-0",
-    );
+    for (const state of [YT_STATE.PAUSED, YT_STATE.PLAYING]) {
+      fire("onStateChange", state);
+      for (const testid of ["chrome-pause-shield", "chrome-watermark-shield"]) {
+        const shield = screen.getByTestId(testid);
+        expect(shield).toBeInTheDocument();
+        expect(shield.className).not.toContain("opacity-0");
+      }
+    }
   });
 
-  it("covers YouTube's watermark badge only while paused", () => {
-    const { player, fire } = makeFakePlayer();
+  it("watermark shield is always present", () => {
+    const { player } = makeFakePlayer();
     playerBridge.attach(player);
     renderChrome();
-
-    fire("onStateChange", YT_STATE.PAUSED);
-    expect(screen.getByTestId("chrome-watermark-shield").className).toContain(
-      "opacity-100",
-    );
-
-    fire("onStateChange", YT_STATE.PLAYING);
-    expect(screen.getByTestId("chrome-watermark-shield").className).toContain(
-      "opacity-0",
-    );
+    expect(screen.getByTestId("chrome-watermark-shield")).toBeInTheDocument();
   });
 
   it("hides the top title bar when the stage is tapped (title gone)", () => {
