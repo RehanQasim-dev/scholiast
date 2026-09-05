@@ -179,7 +179,10 @@ describe("ArticleView annotations", () => {
       return m;
     });
     fireEvent.click(mark);
-    expect(onHighlightClick).toHaveBeenCalledWith("n1");
+    expect(onHighlightClick).toHaveBeenCalledWith(
+      "n1",
+      expect.objectContaining({ top: expect.any(Number), left: expect.any(Number) }),
+    );
   });
 
   test("unplaced highlights surface a dismissible count chip", async () => {

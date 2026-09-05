@@ -57,6 +57,17 @@ function renderReader(initialUrl = "/reader") {
   );
 }
 
+const ESSAY_URL = `/reader?url=${encodeURIComponent("https://example.com/essay")}&h=hash-a`;
+
+/** The article body's h1 (the topbar renders the same title as its own h1). */
+function findArticleHeading(name: string) {
+  return screen.findByText(name, { selector: ".sc-article-title" });
+}
+
+function queryArticleHeading(name: string) {
+  return screen.queryByText(name, { selector: ".sc-article-title" });
+}
+
 describe("Reader shell", () => {
   const store = fakePrefsStore();
 
@@ -71,6 +82,8 @@ describe("Reader shell", () => {
   beforeEach(() => {
     vi.clearAllMocks();
     store.data.clear();
+    // Extracted (clean reader) mode: the margin column, not the webview.
+    store.data.set(PREF_KEYS.readerMode, "reader");
     setPrefsStoreForTests(store);
     invokeMock.mockImplementation(async (command: string, args?: unknown) => {
       if (command === "list_articles") return { ok: true, data: articles };
@@ -132,29 +145,25 @@ describe("Reader shell", () => {
     vi.restoreAllMocks();
   });
 
-  test("deep link ?url&h opens that article and marks it active in the rail", async () => {
-    renderReader(
-      `/reader?url=${encodeURIComponent("https://example.com/essay")}&h=hash-a`,
-    );
-    expect(
-      await screen.findByRole("heading", { level: 1, name: "The Craft of Reading" }),
-    ).toBeInTheDocument();
+  test("deep link ?url&h opens that article and marks it active in the drawer rail", async () => {
+    renderReader(ESSAY_URL);
+    expect(await findArticleHeading("The Craft of Reading")).toBeInTheDocument();
+    // The rail lives in the slide-out drawer on desktop.
+    fireEvent.click(screen.getByTestId("tablet-dock-library"));
     expect(screen.getByTestId("article-item-hash-a")).toHaveAttribute(
       "aria-current",
       "true",
     );
-    expect(screen.getByTestId("breadcrumb-library")).toBeInTheDocument();
   });
 
   test("clicking a rail item switches articles via search params", async () => {
-    renderReader(
-      `/reader?url=${encodeURIComponent("https://example.com/essay")}&h=hash-a`,
-    );
-    await screen.findByRole("heading", { level: 1, name: "The Craft of Reading" });
+    renderReader(ESSAY_URL);
+    await findArticleHeading("The Craft of Reading");
+    fireEvent.click(screen.getByTestId("tablet-dock-library"));
     fireEvent.click(screen.getByTestId("article-item-hash-b"));
-    expect(
-      await screen.findByRole("heading", { level: 1, name: "Second Piece" }),
-    ).toBeInTheDocument();
+    expect(await findArticleHeading("Second Piece")).toBeInTheDocument();
+    // Selecting closes the drawer; reopen to check the active marking.
+    fireEvent.click(screen.getByTestId("tablet-dock-library"));
     expect(screen.getByTestId("article-item-hash-b")).toHaveAttribute(
       "aria-current",
       "true",
@@ -182,7 +191,9 @@ describe("Reader shell", () => {
     });
     renderReader("/reader");
     await screen.findByTestId("empty-library-state");
-    const input = screen.getByLabelText("Add article URL");
+    // The add form lives in the drawer rail; the empty-state CTA opens it.
+    fireEvent.click(screen.getByTestId("empty-library-add"));
+    const input = await screen.findByLabelText("Add article URL");
     fireEvent.change(input, { target: { value: "https://paywalled.example" } });
     fireEvent.submit(input.closest("form")!);
     expect(await screen.findByTestId("extraction-failed-state")).toHaveTextContent(
@@ -190,16 +201,15 @@ describe("Reader shell", () => {
     );
   });
 
-  test("topbar typography toggles persist to the prefs store", async () => {
-    renderReader(
-      `/reader?url=${encodeURIComponent("https://example.com/essay")}&h=hash-a`,
-    );
-    await screen.findByRole("heading", { level: 1 });
+  test("appearance popover toggles persist to the prefs store", async () => {
+    renderReader(ESSAY_URL);
+    await findArticleHeading("The Craft of Reading");
 
+    fireEvent.click(
+      screen.getByRole("button", { name: "Reading appearance settings" }),
+    );
     fireEvent.click(screen.getByTestId("serif-toggle"));
-    fireEvent.click(screen.getByTestId("column-width-cycle"));
-    expect(screen.getByTestId("width-sheet")).toBeInTheDocument();
-    fireEvent.click(screen.getByText("800"));
+    fireEvent.click(screen.getByText("Wide"));
     fireEvent.click(screen.getByTestId("font-step-up"));
 
     await waitFor(() => {
@@ -212,31 +222,27 @@ describe("Reader shell", () => {
       "aria-pressed",
       "true",
     );
-    expect(screen.getByTestId("column-width-cycle")).not.toHaveTextContent("800px");
   });
 
-  test("f toggles focus mode collapsing rail and topbar via CSS", async () => {
-    renderReader(
-      `/reader?url=${encodeURIComponent("https://example.com/essay")}&h=hash-a`,
-    );
-    await screen.findByRole("heading", { level: 1 });
-    expect(screen.getByTestId("rail-wrap")).not.toHaveClass("w-0");
-    expect(screen.getByTestId("topbar-wrap")).not.toHaveClass("h-0");
+  test("f toggles focus mode collapsing the topbar via CSS", async () => {
+    renderReader(ESSAY_URL);
+    await findArticleHeading("The Craft of Reading");
+    expect(screen.getByTestId("topbar-wrap")).not.toHaveClass("-mt-[50px]");
 
     fireEvent.keyDown(window, { key: "f" });
-    expect(screen.getByTestId("rail-wrap")).toHaveClass("w-0");
-    expect(screen.getByTestId("topbar-wrap")).toHaveClass("h-0");
+    expect(screen.getByTestId("topbar-wrap")).toHaveClass("-mt-[50px]");
 
     fireEvent.keyDown(window, { key: "f" });
-    expect(screen.getByTestId("rail-wrap")).not.toHaveClass("w-0");
+    expect(screen.getByTestId("topbar-wrap")).not.toHaveClass("-mt-[50px]");
   });
 
-  test("typed-confirm delete removes the article and lands on the next one", async () => {
-    renderReader(
-      `/reader?url=${encodeURIComponent("https://example.com/essay")}&h=hash-a`,
-    );
-    await screen.findByRole("heading", { level: 1, name: "The Craft of Reading" });
+  test("typed-confirm delete removes the article and lands on the library", async () => {
+    renderReader(ESSAY_URL);
+    await findArticleHeading("The Craft of Reading");
 
+    fireEvent.click(
+      screen.getByRole("button", { name: "Reading appearance settings" }),
+    );
     fireEvent.click(screen.getByTestId("delete-article-button"));
     fireEvent.change(screen.getByTestId("delete-confirm-input"), {
       target: { value: "DELETE" },
@@ -248,9 +254,11 @@ describe("Reader shell", () => {
         urlHash: "hash-a",
       });
     });
+    // Deleting the open article drops its hash: the inline library takes over.
     expect(
-      await screen.findByRole("heading", { level: 1, name: "Second Piece" }),
+      await screen.findByTestId("library-rail"),
     ).toBeInTheDocument();
+    expect(queryArticleHeading("The Craft of Reading")).not.toBeInTheDocument();
   });
 
   test("j/k dispatch the annotation contract events from within the shell", async () => {
@@ -265,21 +273,20 @@ describe("Reader shell", () => {
     expect(seen).toEqual([1, -1]);
   });
 
-  test("j end-to-end activates the thread and focuses the reply; g g scrolls the column", async () => {
-    renderReader(
-      `/reader?url=${encodeURIComponent("https://example.com/essay")}&h=hash-a`,
-    );
-    await screen.findByRole("heading", { level: 1, name: "The Craft of Reading" });
+  test("j end-to-end activates the margin thread and focuses the reply; g g scrolls the column", async () => {
+    renderReader(ESSAY_URL);
+    await findArticleHeading("The Craft of Reading");
 
     const scrollSpy = vi.fn();
     const scroller = screen.getByTestId("article-scroller");
     vi.spyOn(scroller, "scrollTo").mockImplementation(scrollSpy);
 
-    // No active thread yet.
-    expect(screen.queryByTestId("thread-comments")).not.toBeInTheDocument();
+    // The margin column mounts once annotations open.
+    expect(screen.queryByTestId("margin-thread-card-hl-1")).not.toBeInTheDocument();
+    fireEvent.click(screen.getByTestId("annotations-toggle"));
 
     fireEvent.keyDown(window, { key: "j" });
-    expect(await screen.findByTestId("thread-card-hl-1")).toHaveAttribute(
+    expect(await screen.findByTestId("margin-thread-card-hl-1")).toHaveAttribute(
       "data-active",
       "true",
     );

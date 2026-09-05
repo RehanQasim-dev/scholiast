@@ -274,6 +274,15 @@ export const commands = {
     }, 1500);
   },
   seekTo(seconds: number) {
+    if (nativeEl) {
+      try {
+        nativeEl.currentTime = Math.max(0, seconds);
+      } catch {
+        /* seek rejected */
+      }
+      patch({ time: Math.max(0, seconds) });
+      return;
+    }
     patch({ time: Math.max(0, seconds) });
     if (!ready || !player) return;
     let wasPlaying = false;
@@ -291,7 +300,24 @@ export const commands = {
       /* seek rejected */
     }
   },
+  /** Relative seek honoring the configured step; clamps to [0, duration). */
+  seekBy(deltaSeconds: number) {
+    const { time, duration } = getPlayerSnapshot();
+    const target =
+      deltaSeconds < 0
+        ? Math.max(0, time + deltaSeconds)
+        : duration > 0
+          ? Math.min(duration - 0.25, time + deltaSeconds)
+          : time + deltaSeconds;
+    commands.seekTo(target);
+  },
   play() {
+    if (nativeEl) {
+      void nativeEl.play().catch(() => {
+        /* autoplay rejection surfaces via element events */
+      });
+      return;
+    }
     if (!ready || !player) return;
     try {
       player.playVideo();
@@ -300,6 +326,10 @@ export const commands = {
     }
   },
   pause() {
+    if (nativeEl) {
+      nativeEl.pause();
+      return;
+    }
     if (!ready || !player) return;
     try {
       player.pauseVideo();
@@ -310,6 +340,14 @@ export const commands = {
   setRate(rate: number) {
     lastRate = rate;
     patch({ rate });
+    if (nativeEl) {
+      try {
+        nativeEl.playbackRate = rate;
+      } catch {
+        /* rate rejected */
+      }
+      return;
+    }
     if (ready && player) {
       try {
         player.setPlaybackRate(rate);
@@ -322,6 +360,14 @@ export const commands = {
     const v = Math.min(100, Math.max(0, Math.round(volume)));
     lastVolume = v;
     patch({ volume: v });
+    if (nativeEl) {
+      try {
+        nativeEl.volume = v / 100;
+      } catch {
+        /* volume rejected */
+      }
+      return;
+    }
     if (ready && player) {
       try {
         player.setVolume(v);
@@ -388,6 +434,7 @@ export const playerBridge = {
 
   resetForTests() {
     detachListeners();
+    detachNative();
     listening = false;
     stopPoll();
     clearCaptionRefreshes();
@@ -428,6 +475,93 @@ function detachListeners() {
 
 export function getPlayerSnapshot(): PlayerSnapshot {
   return snapshot;
+}
+
+/** Native-backend event emission (NativePlayer drives the same surface). */
+export function emitPlayerEvent<K extends PlayerEventName>(
+  name: K,
+  ...args: Parameters<Handlers[K]>
+): void {
+  emit(name, ...args);
+}
+
+// ---------------------------------------------------------------------------
+// Native backend: a plain <video> element behind the same command/event
+// surface (specs/tauri-native-playback, task 02). Chrome, shortcuts, notes,
+// and transcript consumers work unchanged whichever backend is attached.
+// ---------------------------------------------------------------------------
+
+let nativeEl: HTMLVideoElement | null = null;
+let nativeCleanup: (() => void) | null = null;
+let nativePoll: ReturnType<typeof setInterval> | null = null;
+
+function stopNativePoll(): void {
+  if (nativePoll) {
+    clearInterval(nativePoll);
+    nativePoll = null;
+  }
+}
+
+export function attachNative(el: HTMLVideoElement): void {
+  if (nativeEl === el) return;
+  detachNative();
+  nativeEl = el;
+  el.playbackRate = lastRate;
+  el.volume = lastVolume / 100;
+  const syncClock = () => {
+    patch({ time: el.currentTime, duration: el.duration || 0 });
+    emit("onTimeUpdate", el.currentTime);
+  };
+  const onPlay = () => {
+    patch({ playing: true });
+    emit("onStateChange", YT_STATE.PLAYING);
+    stopNativePoll();
+    nativePoll = setInterval(syncClock, 250);
+  };
+  const onPause = () => {
+    stopNativePoll();
+    patch({ playing: false, time: el.currentTime });
+    emit("onStateChange", YT_STATE.PAUSED);
+  };
+  const onEnded = () => {
+    stopNativePoll();
+    patch({ playing: false });
+    emit("onStateChange", YT_STATE.ENDED);
+  };
+  const onMeta = () => {
+    patch({ duration: el.duration || 0 });
+    emit("onDuration", el.duration || 0);
+  };
+  const onNativeError = () => {
+    emit("onError", el.error?.code ?? 5);
+  };
+  el.addEventListener("play", onPlay);
+  el.addEventListener("pause", onPause);
+  el.addEventListener("ended", onEnded);
+  el.addEventListener("loadedmetadata", onMeta);
+  el.addEventListener("error", onNativeError);
+  nativeCleanup = () => {
+    el.removeEventListener("play", onPlay);
+    el.removeEventListener("pause", onPause);
+    el.removeEventListener("ended", onEnded);
+    el.removeEventListener("loadedmetadata", onMeta);
+    el.removeEventListener("error", onNativeError);
+  };
+}
+
+export function detachNative(): void {
+  nativeCleanup?.();
+  nativeCleanup = null;
+  stopNativePoll();
+  if (nativeEl) {
+    nativeEl = null;
+    patch({ playing: false });
+  }
+}
+
+/** Element for canvas frame capture; null on the iframe backend. */
+export function getNativeElement(): HTMLVideoElement | null {
+  return nativeEl;
 }
 
 export function subscribePlayerState(fn: () => void): () => void {

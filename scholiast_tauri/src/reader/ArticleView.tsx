@@ -42,8 +42,12 @@ export interface ArticleViewProps {
   footerAction?: ReactNode;
   /** Library key of this page; enables selection → highlight annotation. */
   urlHash?: string;
-  /** Click on a painted highlight (task-31 thread surface wires this). */
-  onHighlightClick?: (highlightId: string) => void;
+  /**
+   * Click on a painted highlight (task-31 thread surface wires this). The
+   * viewport anchor lets wide extracted mode reopen the swatch over the
+   * highlight for recolor/delete instead of jumping to the margin card.
+   */
+  onHighlightClick?: (highlightId: string, anchor?: { top: number; left: number }) => void;
   /** 💬 on a fresh selection: highlight created, panel should open it. */
   onHighlightCreated?: (highlightId: string) => void;
   /** Opens diagram editor for a highlight. */
@@ -188,7 +192,7 @@ interface HighlightsLayerProps {
   /** Body HTML; a swap means fresh DOM, so paints re-run against it. */
   body: string;
   containerRef: RefObject<HTMLDivElement>;
-  onHighlightClick?: (highlightId: string) => void;
+  onHighlightClick?: (highlightId: string, anchor?: { top: number; left: number }) => void;
   onHighlightCreated?: (highlightId: string) => void;
   onOpenDiagram?: (highlightId: string) => void;
   /** "Swipe" mode: plain finger drags extend the selection (no long-press). */
@@ -508,7 +512,7 @@ function HighlightsLayer({
 
       const markId = target.closest("mark[data-sc-hl]")?.getAttribute("data-sc-hl");
       if (markId) {
-        onHighlightClick(markId);
+        onHighlightClick(markId, { top: e.clientY, left: e.clientX });
         return;
       }
       const pos = caretPointAt(e.clientX, e.clientY);
@@ -518,7 +522,7 @@ function HighlightsLayer({
         if (!range) continue;
         try {
           if (range.isPointInRange(pos.node, pos.offset)) {
-            onHighlightClick(id);
+            onHighlightClick(id, { top: e.clientY, left: e.clientX });
             return;
           }
         } catch {

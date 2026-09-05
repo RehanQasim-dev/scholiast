@@ -11,15 +11,19 @@ import useIsTablet from "../hooks/useIsTablet";
 import { invokeCommand, upsertVideo } from "../lib/ipc";
 import Chrome from "../player/Chrome";
 import PlayerHost from "../player/PlayerHost";
+import NativePlayer from "../player/NativePlayer";
+import { useSeekStep } from "../player/useSeekStep";
 import TabletVideoDock from "../components/player/TabletVideoDock";
 import type { ActiveComposerState } from "../components/NotesTab";
 import {
   getPlayerSnapshot,
+  getNativeElement,
   playerBridge,
   subscribePlayerState,
   usePlayerEvent,
   YT_STATE,
 } from "../player/playerBridge";
+import { PREF_KEYS, getPref } from "../lib/store";
 
 const VIDEO_ID_RE =
   /(?:youtube\.com\/(?:watch\?[^#\s]*v=|shorts\/|live\/|embed\/)|youtu\.be\/)([\w-]{11})/;
@@ -61,6 +65,7 @@ export default function Player() {
   const isNarrow = useIsNarrow();
   const isTablet = useIsTablet();
   const isMobile = isNarrow && !isTablet;
+  const seekStep = useSeekStep();
 
   const [sheet, setSheet] = useState<SheetState>("balanced");
   const [videoTitle, setVideoTitle] = useState("");
@@ -69,6 +74,14 @@ export default function Player() {
   const [studyTab, setStudyTab] = useState<"notes" | "transcript">("notes");
   const [tabletPanel, setTabletPanel] = useState<"notes" | "transcript" | null>("notes");
   const [activeComposer, setActiveComposer] = useState<ActiveComposerState | null>(null);
+  // Native playback behind the `player.native` dev pref (task 02: no cutover;
+  // task 03 flips the default and wires the fallback router).
+  const [nativeOn, setNativeOn] = useState(false);
+  useEffect(() => {
+    void getPref(PREF_KEYS.playerNative, false)
+      .then((v) => setNativeOn(Boolean(v)))
+      .catch(() => {});
+  }, []);
 
   const videoQuery = useQuery({
     queryKey: ["video", url],
@@ -115,6 +128,10 @@ export default function Player() {
       return null;
     }
     playerBridge.commands.pause();
+    // Native sessions: canvas first (exact video pixels, no harvest);
+    // tainted canvases throw and fall through to the harvest path.
+    const canvasHit = await tryCanvasFrame(url);
+    if (canvasHit) return canvasHit;
     const box = stage.getBoundingClientRect();
     const dpr = window.devicePixelRatio || 1;
     try {
@@ -215,11 +232,47 @@ export default function Player() {
         }
         return;
       }
+
+      if (e.key === "ArrowRight") {
+        e.preventDefault();
+        playerBridge.commands.seekBy(seekStep);
+        return;
+      }
+
+      if (e.key === "ArrowLeft") {
+        e.preventDefault();
+        playerBridge.commands.seekBy(-seekStep);
+        return;
+      }
     };
 
     window.addEventListener("keydown", onKeyDown);
     return () => window.removeEventListener("keydown", onKeyDown);
-  }, [handleAddNote, handleCaptureFrameClick, isTablet, playerState]);
+  }, [handleAddNote, handleCaptureFrameClick, isTablet, playerState, seekStep]);
+
+/** Canvas frame grab for native sessions; null on any failure (CORS taint,
+ * no element, backend error) so callers fall through to the harvest path. */
+async function tryCanvasFrame(url: string): Promise<CaptureOut | null> {
+  try {
+    const video = getNativeElement();
+    if (!video || video.readyState < 2 || video.videoWidth === 0) return null;
+    const canvas = document.createElement("canvas");
+    canvas.width = video.videoWidth;
+    canvas.height = video.videoHeight;
+    const ctx = canvas.getContext("2d");
+    if (!ctx) return null;
+    ctx.drawImage(video, 0, 0);
+    const dataUrl = canvas.toDataURL("image/png");
+    const png = dataUrl.split(",", 2)[1];
+    if (!png) return null;
+    return await invokeCommand<CaptureOut>("save_canvas_frame", {
+      url,
+      pngBase64: png,
+    });
+  } catch {
+    return null;
+  }
+}
 
   const handleWorkspaceScroll = useCallback(() => {
     const el = workspaceRef.current;
@@ -245,7 +298,19 @@ export default function Player() {
     >
       {videoId ? (
         <>
-          <PlayerHost videoId={videoId} />
+          {nativeOn ? (
+            <NativePlayer
+              videoId={videoId}
+              onFallback={(reason) => {
+                // Dev-pref stage: drop back to the iframe for the session.
+                // Task 03 replaces this with the failure-class router.
+                toast(`Native playback unavailable (${reason}) — using classic player`);
+                setNativeOn(false);
+              }}
+            />
+          ) : (
+            <PlayerHost videoId={videoId} />
+          )}
           {/* Pause / Ended recommendation shield: prevents YouTube related tiles from bleeding through */}
           {isShieldVisible && (
             <div

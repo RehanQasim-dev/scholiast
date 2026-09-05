@@ -6,6 +6,8 @@ mod capture;
 mod commands;
 mod drive;
 mod github;
+#[cfg(target_os = "linux")]
+mod media_permissions;
 pub mod player_server;
 mod reader;
 mod secrets;
@@ -15,6 +17,7 @@ mod state;
 mod store;
 mod sync;
 mod transcript;
+mod yt;
 
 #[derive(Serialize)]
 struct Health {
@@ -50,6 +53,10 @@ pub fn run() {
         // through this queue instead (consumed in lib/deepLink.ts).
         .plugin(tauri_plugin_mobile_sharetarget::init())
         .setup(|app| {
+            // Linux WebKitGTK denies getUserMedia by default; without this
+            // every voice-note mic request fails with NotAllowedError.
+            #[cfg(target_os = "linux")]
+            media_permissions::grant_media_permissions(app.handle());
             let data_dir = app.path().app_data_dir()?;
             #[cfg(target_os = "android")]
             secrets::init_store(&data_dir);
@@ -98,6 +105,7 @@ pub fn run() {
             commands::drive::get_secret_status,
             commands::drive::delete_secret,
             capture::capture_frame,
+            capture::save_canvas_frame,
             capture::cleanup_capture,
             capture::persist::save_frame_item,
             capture::persist::get_frame_item,
@@ -123,6 +131,8 @@ pub fn run() {
             commands::reader::delete_comment,
             commands::reader::save_diagram_item,
             commands::reader::get_diagram_item,
+            yt::commands::yt_resolve,
+            yt::commands::yt_captions,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

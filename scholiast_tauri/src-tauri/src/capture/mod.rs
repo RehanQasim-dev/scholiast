@@ -206,6 +206,55 @@ pub async fn capture_frame(
     }))
 }
 
+/// Canvas-first frame capture for native `<video>` sessions (task 02): the
+/// renderer posts PNG bytes drawn from the video element, avoiding the
+/// `WebKit` harvest entirely when CORS allows it (tainted canvases throw
+/// client-side and never reach here). Same tmp-JPEG contract as
+/// `capture_frame` so downstream flows are untouched.
+#[tauri::command]
+pub async fn save_canvas_frame(
+    app: AppHandle,
+    url: String,
+    png_base64: String,
+) -> Result<Reply<CaptureOut>, ScholiastError> {
+    use base64::Engine;
+    let url_hash =
+        scholiast_core::normalize::url_hash(&scholiast_core::normalize::normalize_url(&url));
+    let png_bytes = base64::engine::general_purpose::STANDARD
+        .decode(png_base64.as_bytes())
+        .map_err(|e| ScholiastError::InvalidInput(format!("canvas PNG is not valid base64: {e}")))?;
+    let img = image::load_from_memory(&png_bytes)
+        .map_err(|e| ScholiastError::InvalidInput(format!("canvas PNG decode failed: {e}")))?
+        .to_rgba8();
+    if img.width() == 0 || img.height() == 0 {
+        return Err(ScholiastError::InvalidInput("canvas frame is empty".into()));
+    }
+    // Same black-frame gate as the harvest path; the detector is Linux-only.
+    #[cfg(target_os = "linux")]
+    if blackframe::is_black_frame(img.as_raw(), img.width(), img.height()) {
+        return Err(ScholiastError::NotFound("canvas frame is black".into()));
+    }
+    let (jpeg, out_w, out_h) = encode_jpeg_q80(img).map_err(ScholiastError::Internal)?;
+    let tmp_dir = app
+        .path()
+        .app_data_dir()
+        .map_err(internal)?
+        .join("tmp");
+    tokio::fs::create_dir_all(&tmp_dir)
+        .await
+        .map_err(|e| ScholiastError::Io(e.to_string()))?;
+    let path = tmp_dir.join(format!("canvas-{}.jpg", now_stamp()));
+    tokio::fs::write(&path, &jpeg)
+        .await
+        .map_err(|e| ScholiastError::Io(e.to_string()))?;
+    Ok(Reply::new(CaptureOut {
+        path: path.to_string_lossy().into_owned(),
+        w: out_w,
+        h: out_h,
+        url_hash,
+    }))
+}
+
 /// Deletes a temp capture file. Only paths inside the app's own `tmp/`
 /// directory are honored — this is reachable from the renderer, so treat the
 /// argument as untrusted.

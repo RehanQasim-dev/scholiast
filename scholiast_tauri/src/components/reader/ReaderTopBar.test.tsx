@@ -15,6 +15,7 @@ function renderBar(
     onFontStep: vi.fn(),
     onToggleSerif: vi.fn(),
     onCycleColumnWidth: vi.fn(),
+    onSetColumnWidth: vi.fn(),
     onDelete: vi.fn(async () => {}),
     ...overrides,
   };
@@ -26,18 +27,23 @@ function renderBar(
   return { props, ...view };
 }
 
+/** Reading settings live behind the aA popover; open it first. */
+function openAppearance() {
+  fireEvent.click(
+    screen.getByRole("button", { name: "Reading appearance settings" }),
+  );
+}
+
 describe("ReaderTopBar", () => {
-  test("renders breadcrumb with library link and title", () => {
+  test("renders back link and title", () => {
     renderBar();
-    expect(screen.getByTestId("breadcrumb-library")).toHaveAttribute(
-      "href",
-      "/reader",
-    );
+    expect(screen.getByTestId("reader-back")).toHaveAttribute("href", "/home");
     expect(screen.getByText("The Craft of Reading")).toBeInTheDocument();
   });
 
   test("font buttons fire deltas and disable at clamp bounds", () => {
     const { props, rerender } = renderBar({ fontStep: 0 });
+    openAppearance();
     fireEvent.click(screen.getByTestId("font-step-up"));
     expect(props.onFontStep).toHaveBeenLastCalledWith(1);
     fireEvent.click(screen.getByTestId("font-step-down"));
@@ -63,6 +69,7 @@ describe("ReaderTopBar", () => {
 
   test("serif toggle reflects state and reports clicks", () => {
     const { props, rerender } = renderBar({ serif: false });
+    openAppearance();
     fireEvent.click(screen.getByTestId("serif-toggle"));
     expect(props.onToggleSerif).toHaveBeenCalledTimes(1);
     expect(screen.getByTestId("serif-toggle")).toHaveAttribute(
@@ -80,26 +87,24 @@ describe("ReaderTopBar", () => {
     );
   });
 
-  test("column width control is an icon button and reveals value only inside sheet", () => {
-    const { props } = renderBar({ columnWidth: 800 });
-    const btn = screen.getByTestId("column-width-cycle");
-    expect(btn).not.toHaveTextContent("800px");
-    expect(btn).toHaveAttribute("aria-label", expect.stringContaining("800"));
-    fireEvent.click(btn);
-    expect(screen.getByTestId("width-sheet")).toBeInTheDocument();
-    expect(screen.getByTestId("width-sheet")).toHaveTextContent("800px");
-    expect(props.onCycleColumnWidth).not.toHaveBeenCalled();
-    fireEvent.click(screen.getByText("736"));
-    expect(props.onCycleColumnWidth).toHaveBeenCalled();
+  test("column width options live inside the appearance popover", () => {
+    const { props } = renderBar({ columnWidth: 736 });
+    // Hidden until the popover opens.
+    expect(screen.queryByText("Wide")).not.toBeInTheDocument();
+    openAppearance();
+    // The current width reads as selected; picking another reports it.
+    fireEvent.click(screen.getByText("Wide"));
+    expect(props.onSetColumnWidth).toHaveBeenCalledWith(800);
   });
 
   test("delete requires typing DELETE and then calls onDelete once", async () => {
     const onDelete = vi.fn(async () => {});
     renderBar({ onDelete });
+    openAppearance();
     fireEvent.click(screen.getByTestId("delete-article-button"));
 
-    const dialog = screen.getByRole("dialog");
-    expect(dialog).toHaveTextContent(/Delete this article/);
+    const dialog = screen.getByRole("alertdialog");
+    expect(dialog).toHaveTextContent(/Delete article/);
     expect(dialog).toHaveTextContent(/The Craft of Reading/);
 
     const confirmButton = screen.getByTestId("delete-confirm-button");
@@ -113,28 +118,32 @@ describe("ReaderTopBar", () => {
       fireEvent.click(confirmButton);
     });
     expect(onDelete).toHaveBeenCalledTimes(1);
-    expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
+    expect(screen.queryByRole("alertdialog")).not.toBeInTheDocument();
   });
 
   test("cancel and Escape dismiss the dialog without deleting", () => {
     const onDelete = vi.fn(async () => {});
     renderBar({ onDelete });
+    openAppearance();
     fireEvent.click(screen.getByTestId("delete-article-button"));
     fireEvent.click(screen.getByTestId("delete-cancel-button"));
-    expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
+    expect(screen.queryByRole("alertdialog")).not.toBeInTheDocument();
 
+    openAppearance();
     fireEvent.click(screen.getByTestId("delete-article-button"));
-    fireEvent.keyDown(screen.getByRole("dialog"), { key: "Escape" });
-    expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
+    fireEvent.keyDown(screen.getByRole("alertdialog"), { key: "Escape" });
+    expect(screen.queryByRole("alertdialog")).not.toBeInTheDocument();
     expect(onDelete).not.toHaveBeenCalled();
   });
 
-  test("sync chip placeholder renders and delete button hidden without an article", () => {
+  test("appearance controls hidden without an article", () => {
     renderBar({ hasArticle: false, title: null });
-    expect(screen.getByTestId("sync-chip")).toBeInTheDocument();
+    expect(
+      screen.queryByRole("button", { name: "Reading appearance settings" }),
+    ).not.toBeInTheDocument();
     expect(
       screen.queryByTestId("delete-article-button"),
     ).not.toBeInTheDocument();
-    expect(screen.getByText("Library")).toBeInTheDocument();
+    expect(screen.getByText("Reader")).toBeInTheDocument();
   });
 });

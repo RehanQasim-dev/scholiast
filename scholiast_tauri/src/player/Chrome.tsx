@@ -6,6 +6,7 @@ import {
   usePlayerSnapshot,
   YT_STATE,
 } from "./playerBridge";
+import { useSeekStep } from "./useSeekStep";
 import PlaybackSheet from "./PlaybackSheet";
 
 function formatMss(totalSeconds: number): string {
@@ -57,6 +58,7 @@ export default function Chrome({ stageRef, slots, onCaptureClick, collapsed = fa
   const [sheetOpen, setSheetOpen] = useState(false);
   const lastTapRef = useRef<{ t: number; x: number } | null>(null);
   const ytTitleRef = useRef<string>("");
+  const seekStep = useSeekStep();
 
   usePlayerEvent("onPlayerReady", () => setReady(true));
   usePlayerEvent("onError", (code) => setError(code));
@@ -108,9 +110,9 @@ export default function Chrome({ stageRef, slots, onCaptureClick, collapsed = fa
         const width = rect.width || 1;
         const relX = clientX - rect.left;
         if (relX < width * 0.35) {
-          seekBy(-10);
+          seekBy(-seekStep);
         } else if (relX > width * 0.65) {
-          seekBy(10);
+          seekBy(seekStep);
         } else {
           setVisible((v) => !v);
         }
@@ -125,7 +127,7 @@ export default function Chrome({ stageRef, slots, onCaptureClick, collapsed = fa
         }
       }, 330);
     },
-    [seekBy],
+    [seekBy, seekStep],
   );
 
   const hidden = !visible;
@@ -181,6 +183,26 @@ export default function Chrome({ stageRef, slots, onCaptureClick, collapsed = fa
       onClick={handleStageTap}
       data-testid="chrome-root"
     >
+      {/* Pause shield: YouTube's native title/channel overlay has no API
+          switch (showinfo is deprecated) and appears over the iframe while
+          paused. This cover hides it and swallows its links; it lifts the
+          moment playback resumes so the picture is never cropped mid-watch. */}
+      <div
+        data-testid="chrome-pause-shield"
+        aria-hidden="true"
+        className={`absolute top-0 right-0 left-0 h-16 bg-gradient-to-b from-black/90 via-black/60 to-transparent transition-opacity duration-[var(--sc-dur-fast)] ease-out ${
+          snap.playing ? "pointer-events-none opacity-0" : "opacity-100"
+        }`}
+      />
+      {/* Watermark shield: YouTube's bottom-right "Watch on YouTube" badge has
+          no API switch either. Same pause-only deal as the title shield. */}
+      <div
+        data-testid="chrome-watermark-shield"
+        aria-hidden="true"
+        className={`absolute right-0 bottom-0 h-12 w-40 bg-gradient-to-t from-black/90 via-black/60 to-transparent transition-opacity duration-[var(--sc-dur-fast)] ease-out ${
+          snap.playing ? "pointer-events-none opacity-0" : "opacity-100"
+        }`}
+      />
       {!ready && !error && (
         <div className="pointer-events-none absolute inset-0 flex items-center justify-center">
           <span className="text-sm text-text-2">Loading player…</span>

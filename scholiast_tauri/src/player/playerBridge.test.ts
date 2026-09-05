@@ -114,6 +114,29 @@ describe("playerBridge", () => {
     expect(getPlayerSnapshot().time).toBe(30);
   });
 
+  it("seekBy moves relative to the snapshot and clamps to [0, duration)", () => {
+    const { player, calls } = makeFakePlayer({
+      duration: 120,
+      state: YT_STATE.PAUSED,
+    });
+    playerBridge.attach(player);
+
+    playerBridge.commands.seekTo(60);
+    calls.length = 0;
+    playerBridge.commands.seekBy(10);
+    playerBridge.commands.seekBy(-30);
+    expect(calls).toEqual(["seekTo:70", "seekTo:40"]);
+
+    calls.length = 0;
+    playerBridge.commands.seekTo(115);
+    playerBridge.commands.seekBy(10);
+    expect(calls).toContain("seekTo:119.75");
+
+    calls.length = 0;
+    playerBridge.commands.seekBy(-1000);
+    expect(calls).toContain("seekTo:0");
+  });
+
   it("loads a new id via loadVideoById and replays an unchanged id", () => {
     const { player, calls } = makeFakePlayer({});
     playerBridge.attach(player);

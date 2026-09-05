@@ -9,8 +9,10 @@
  */
 
 import { useEffect, useRef, useState } from "react";
-import ThreadCard from "./ThreadCard";
+import MarginThreadCard from "./MarginThreadCard";
 import ReplyComposer from "./ReplyComposer";
+import { useSyncStatus } from "../hooks/useSyncStatus";
+import useIsTablet from "../hooks/useIsTablet";
 import { clampMarginWidth, layoutMarginColumn, MARGIN_CARD_GAP } from "./marginLayout";
 import type { ThreadModel } from "./useThreadModel";
 
@@ -43,10 +45,10 @@ export default function MarginColumn({
     sending,
     tagState,
     matches,
-    handleRecolor,
-    handleDeleteThread,
-    handleEditComment,
+    lastMutationAt,
     handleDeleteComment,
+    handleClearThread,
+    handleEditComment,
     handleDraftChange,
     handleReplyKeyDown,
     sendReply,
@@ -56,6 +58,8 @@ export default function MarginColumn({
     pickTag,
     hoverTagIndex,
   } = model;
+  const { lastSynced: lastSyncedAt } = useSyncStatus();
+  const isTablet = useIsTablet();
 
   const [heights, setHeights] = useState<Record<string, number>>({});
   const [dragging, setDragging] = useState(false);
@@ -101,15 +105,22 @@ export default function MarginColumn({
     return () => document.removeEventListener("mousedown", onDown);
   }, [deactivate]);
 
+  // Extension parity: a card exists only for threads with replies, or the
+  // active thread collecting its first reply. Commentless inactive
+  // annotations stay as paint on the article — no empty boxes in the margin.
+  const visibleEntries = entries.filter(
+    (entry) => entry.comments.length > 0 || entry.key === activeKey,
+  );
+
   const placements = layoutMarginColumn(
-    entries.map((entry) => ({
+    visibleEntries.map((entry) => ({
       key: entry.key,
       anchorTop: anchors.get(entry.key) ?? Number.POSITIVE_INFINITY,
       height: heights[entry.key] ?? COLLAPSED_ESTIMATE,
     })),
     MARGIN_CARD_GAP,
   );
-  const byKey = new Map(entries.map((entry) => [entry.key, entry]));
+  const byKey = new Map(visibleEntries.map((entry) => [entry.key, entry]));
 
   const clampLive = (raw: number) =>
     clampMarginWidth(raw, window.innerWidth || 1280);
@@ -160,7 +171,7 @@ export default function MarginColumn({
           onWidthChange(defaultWidth);
           onWidthCommit(defaultWidth);
         }}
-        className={`group pointer-events-auto absolute bottom-0 left-0 top-0 flex w-3 -translate-x-1/2 cursor-col-resize touch-none items-center justify-center transition-colors pointer-coarse:w-5 ${
+        className={`group pointer-events-auto absolute bottom-0 left-0 top-0 flex w-1.5 -translate-x-1/2 cursor-col-resize touch-none items-center justify-center transition-colors pointer-coarse:w-2.5 ${
           dragging ? "bg-accent/20" : "hover:bg-accent/15"
         }`}
       >
@@ -190,16 +201,17 @@ export default function MarginColumn({
                 else nodesRef.current.delete(placement.key);
               }}
             >
-              <ThreadCard
-                members={entry.members}
+              <MarginThreadCard
+                entry={entry}
                 active={active}
-                comments={entry.comments}
+                lastSyncedAt={lastSyncedAt}
+                lastMutationAt={lastMutationAt}
+                isTablet={isTablet}
                 onSelect={() => {
                   if (active) deactivate();
                   else activate(entry, entry.members[0].id);
                 }}
-                onRecolor={(color) => handleRecolor(entry, color)}
-                onDelete={() => handleDeleteThread(entry)}
+                onClearThread={() => handleClearThread(entry)}
                 onEditComment={handleEditComment}
                 onDeleteComment={(comment) =>
                   handleDeleteComment(entry, comment)

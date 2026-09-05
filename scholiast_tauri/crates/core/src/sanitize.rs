@@ -366,7 +366,7 @@ mod tests {
         );
         assert_eq!(
             out,
-            "<img src=\"https://example.com/img/pic.jpg\" alt=\"A picture\" loading=\"lazy\">"
+            "<img src=\"https://example.com/img/pic.jpg\" referrerpolicy=\"no-referrer\" alt=\"A picture\" loading=\"lazy\">"
         );
     }
 
@@ -457,7 +457,7 @@ mod tests {
         let s = AllowlistSanitizer::new(Some("https://example.com/p/1"));
         assert_eq!(
             s.sanitize("<img src=\"i.png\" srcset=\"i2.png 2x\">"),
-            "<img src=\"https://example.com/p/i.png\">"
+            "<img src=\"https://example.com/p/i.png\" referrerpolicy=\"no-referrer\">"
         );
         assert_eq!(AllowlistSanitizer::default().sanitize("<b>b</b>"), "<b>b</b>");
     }

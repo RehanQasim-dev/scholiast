@@ -199,6 +199,7 @@ export default function ReaderTopBar({
                       <div className="mt-1 flex items-center justify-between rounded-md border border-hairline bg-base p-1">
                         <button
                           type="button"
+                          data-testid="font-step-down"
                           onClick={() => onFontStep(-1)}
                           disabled={fontStep <= -2}
                           className="h-8 w-10 rounded text-xs font-semibold text-text-2 hover:bg-elevated hover:text-text disabled:opacity-30"
@@ -208,6 +209,7 @@ export default function ReaderTopBar({
                         <span className="font-mono text-xs tabular-nums text-text">{fontPx}px</span>
                         <button
                           type="button"
+                          data-testid="font-step-up"
                           onClick={() => onFontStep(1)}
                           disabled={fontStep >= 4}
                           className="h-8 w-10 rounded text-xs font-semibold text-text-2 hover:bg-elevated hover:text-text disabled:opacity-30"
@@ -261,6 +263,8 @@ export default function ReaderTopBar({
                         </button>
                         <button
                           type="button"
+                          data-testid="serif-toggle"
+                          aria-pressed={serif}
                           onClick={() => !serif && onToggleSerif()}
                           className={`flex-1 rounded py-1 font-serif text-xs font-medium transition-colors border ${
                             serif ? "bg-[rgba(58,166,125,0.14)] border-accent/20 text-[color:var(--sc-note-text)]" : "border-transparent text-text-2 hover:text-text"
@@ -298,6 +302,7 @@ export default function ReaderTopBar({
                     <div className="border-t border-hairline pt-2">
                       <button
                         type="button"
+                        data-testid="delete-article-button"
                         onClick={() => {
                           setPopoverOpen(false);
                           setDialogOpen(true);
@@ -335,6 +340,7 @@ export default function ReaderTopBar({
                 <button
                   type="button"
                   aria-label="Toggle annotations panel"
+                  data-testid="annotations-toggle"
                   onClick={onToggleAnnotations}
                   className={`flex h-9 items-center gap-1.5 rounded-md px-2.5 text-xs font-medium transition-colors border ${hideAnnotationsOnTablet ? "lg:hidden" : ""} ${
                     annotationsOpen
@@ -362,7 +368,12 @@ export default function ReaderTopBar({
 
       {/* Delete Confirmation Modal */}
       {dialogOpen && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center p-4"
+          onKeyDown={(e) => {
+            if (e.key === "Escape") closeDialog();
+          }}
+        >
           <div
             className="absolute inset-0 bg-black/60 backdrop-blur-sm"
             onClick={closeDialog}
@@ -390,6 +401,7 @@ export default function ReaderTopBar({
             <input
               ref={inputRef}
               value={typed}
+              data-testid="delete-confirm-input"
               onChange={(e) => setTyped(e.target.value)}
               placeholder="DELETE"
               className="mt-3 w-full rounded-md border border-hairline bg-base px-3 py-1.5 font-mono text-sm text-text outline-none focus:border-[color:var(--sc-danger)]"
@@ -397,6 +409,7 @@ export default function ReaderTopBar({
             <div className="mt-4 flex justify-end gap-2">
               <button
                 type="button"
+                data-testid="delete-cancel-button"
                 onClick={closeDialog}
                 className="h-8 rounded-md border border-hairline px-3 text-xs font-medium text-text-2 hover:bg-elevated hover:text-text"
               >
@@ -404,6 +417,7 @@ export default function ReaderTopBar({
               </button>
               <button
                 type="button"
+                data-testid="delete-confirm-button"
                 disabled={!confirmed || busy}
                 onClick={() => void handleDelete()}
                 className="h-8 rounded-md bg-[color:var(--sc-danger)] px-3 text-xs font-medium text-white transition-opacity hover:opacity-90 disabled:opacity-40"

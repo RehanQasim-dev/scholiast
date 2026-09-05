@@ -83,6 +83,8 @@ export interface ThreadModel {
   activeEntry: ThreadEntry | null;
   activate: (entry: ThreadEntry, scrollTargetId: string) => void;
   deactivate: () => void;
+  /** Epoch ms of the last local mutation; drives the per-comment sync dots. */
+  lastMutationAt: number | null;
   replyRef: { current: HTMLTextAreaElement | null };
   replyDraft: string;
   sending: boolean;
@@ -93,6 +95,7 @@ export interface ThreadModel {
   confirmUndo: () => void;
   handleRecolor: (entry: ThreadEntry, color: HighlightColor) => void;
   handleDeleteThread: (entry: ThreadEntry) => void;
+  handleClearThread: (entry: ThreadEntry) => void;
   handleEditComment: (comment: ThreadCommentView, body: string) => void;
   handleDeleteComment: (entry: ThreadEntry, comment: ThreadCommentView) => void;
   handleDraftChange: (value: string, caret: number) => void;
@@ -121,6 +124,10 @@ export function useThreadModel(
   } | null>(null);
   const [sending, setSending] = useState(false);
   const [undoState, setUndoState] = useState<UndoState | null>(null);
+  // Last local write through this model. Margin cards compare it (with the
+  // engine's last-synced stamp) to decide each reply's sync dot: anything
+  // written after the last successful sync is still pending.
+  const [lastMutationAt, setLastMutationAt] = useState<number | null>(null);
 
   const replyRef = useRef<HTMLTextAreaElement | null>(null);
   const undoTimerRef = useRef<number | undefined>(undefined);
@@ -185,6 +192,7 @@ export function useThreadModel(
     setActiveKey(null);
     setReplyDraft("");
     setTagState(null);
+    setLastMutationAt(null);
     disarmUndo();
   }, [urlHash, disarmUndo]);
 
@@ -251,6 +259,7 @@ export function useThreadModel(
 
   const handleRecolor = useCallback(
     (entry: ThreadEntry, color: HighlightColor) => {
+      setLastMutationAt(Date.now());
       for (const member of entry.members) recolor(member.id, color);
     },
     [recolor],
@@ -258,6 +267,7 @@ export function useThreadModel(
 
   const handleDeleteThread = useCallback(
     (entry: ThreadEntry) => {
+      setLastMutationAt(Date.now());
       const snapshots = entry.members.map((m) => ({ ...m }));
       for (const snapshot of snapshots) remove(snapshot.id);
       const quote = entry.members[0].content ?? "";
@@ -274,9 +284,35 @@ export function useThreadModel(
     [armUndo, invalidate, remove, urlHash],
   );
 
+  // Extension parity (`deleteCommentThread`): drop the whole reply thread but
+  // keep the painted highlight. Undo restores the exact marker strings.
+  const handleClearThread = useCallback(
+    (entry: ThreadEntry) => {
+      const snapshots = entry.members.map((m) => ({ ...m }));
+      if (!snapshots.some((m) => (m.notes ?? []).length > 0)) return;
+      setLastMutationAt(Date.now());
+      for (const snapshot of snapshots) {
+        patchMemberNotes(snapshot.id, () => []);
+        void saveHighlight({ urlHash, highlight: { ...snapshot, notes: [] } })
+          .catch(invalidate)
+          .finally(invalidate);
+      }
+      armUndo("Thread cleared.", () => {
+        void (async () => {
+          for (const snapshot of snapshots) {
+            await saveHighlight({ urlHash, highlight: snapshot });
+          }
+          invalidate();
+        })();
+      });
+    },
+    [armUndo, invalidate, patchMemberNotes, urlHash],
+  );
+
   const handleEditComment = useCallback(
     (comment: ThreadCommentView, body: string) => {
       // Same timestamp id, fresh edited marker — the pair IS the identity.
+      setLastMutationAt(Date.now());
       const note = `${body}<!--timestamp:${comment.id}--><!--edited:${Date.now()}-->`;
       patchMemberNotes(comment.highlightId, (notes) =>
         notes.map((n) => (n === comment.note ? note : n)),
@@ -291,6 +327,7 @@ export function useThreadModel(
   const handleDeleteComment = useCallback(
     (entry: ThreadEntry, comment: ThreadCommentView) => {
       const index = entry.comments.findIndex((c) => c.id === comment.id);
+      setLastMutationAt(Date.now());
       patchMemberNotes(comment.highlightId, (notes) =>
         notes.filter((n) => n !== comment.note),
       );
@@ -433,6 +470,7 @@ export function useThreadModel(
     const representative = entry.members[0];
     const note = `${text}<!--timestamp:${Date.now()}-->`;
     setSending(true);
+    setLastMutationAt(Date.now());
     patchMemberNotes(representative.id, (notes) => [...notes, note]);
     try {
       await saveComment({ highlightId: representative.id, note });
@@ -499,6 +537,7 @@ export function useThreadModel(
     activeEntry,
     activate,
     deactivate,
+    lastMutationAt,
     replyRef,
     replyDraft,
     sending,
@@ -509,6 +548,7 @@ export function useThreadModel(
     confirmUndo,
     handleRecolor,
     handleDeleteThread,
+    handleClearThread,
     handleEditComment,
     handleDeleteComment,
     handleDraftChange,

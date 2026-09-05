@@ -183,6 +183,38 @@ describe("Chrome", () => {
     expect(backed).toBe(true);
   });
 
+  it("covers YouTube's native pause title and lifts on playback", () => {
+    const { player, fire } = makeFakePlayer();
+    playerBridge.attach(player);
+    renderChrome();
+
+    fire("onStateChange", YT_STATE.PAUSED);
+    expect(screen.getByTestId("chrome-pause-shield").className).toContain(
+      "opacity-100",
+    );
+
+    fire("onStateChange", YT_STATE.PLAYING);
+    expect(screen.getByTestId("chrome-pause-shield").className).toContain(
+      "opacity-0",
+    );
+  });
+
+  it("covers YouTube's watermark badge only while paused", () => {
+    const { player, fire } = makeFakePlayer();
+    playerBridge.attach(player);
+    renderChrome();
+
+    fire("onStateChange", YT_STATE.PAUSED);
+    expect(screen.getByTestId("chrome-watermark-shield").className).toContain(
+      "opacity-100",
+    );
+
+    fire("onStateChange", YT_STATE.PLAYING);
+    expect(screen.getByTestId("chrome-watermark-shield").className).toContain(
+      "opacity-0",
+    );
+  });
+
   it("hides the top title bar when the stage is tapped (title gone)", () => {
     vi.useFakeTimers();
     try {

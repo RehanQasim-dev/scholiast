@@ -1,0 +1,40 @@
+/*
+ * Margin thread card replies (extension parity: `src/highlighter.scss`
+ * `.obsidian-comment-text.is-collapsed`).
+ *
+ * A collapsed reply clamps to 3 lines; overflowing ones get a bottom fade and
+ * pointer cursor. Rows keep `pan-y` touch action so a vertical finger scrolls
+ * the article while a horizontal swipe can still delete (tablet).
+ */
+
+.mtc-reply-body {
+  word-break: break-word;
+}
+
+.mtc-reply-body.mtc-clamped {
+  display: -webkit-box;
+  -webkit-line-clamp: 3;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+  position: relative;
+}
+
+.mtc-reply-body.mtc-clamped.mtc-overflows {
+  cursor: pointer;
+}
+
+.mtc-reply-body.mtc-clamped.mtc-overflows::after {
+  content: "";
+  position: absolute;
+  bottom: 0;
+  left: 0;
+  right: 0;
+  height: 22px;
+  background: linear-gradient(to bottom, transparent, var(--sc-surface));
+  pointer-events: none;
+}
+
+.mtc-reply-row {
+  touch-action: pan-y;
+  transition: transform 0.12s ease-out;
+}

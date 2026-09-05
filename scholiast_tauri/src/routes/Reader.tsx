@@ -6,6 +6,7 @@ import { ChevronUp, FileText } from "lucide-react";
 import ArticleView from "../reader/ArticleView";
 import AuthenticView from "../reader/AuthenticView";
 import MarginColumn from "../reader/MarginColumn";
+import SwatchPopup, { type HighlightColor } from "../components/SwatchPopup";
 import { useMarginAnchors } from "../reader/useMarginAnchors";
 import { useThreadModel } from "../reader/useThreadModel";
 import {
@@ -81,6 +82,8 @@ export default function Reader() {
   const [focusMode, setFocusMode] = useState(false);
   const [addErrorMessage, setAddErrorMessage] = useState<string | null>(null);
   const [selectRequest, setSelectRequest] = useState<ThreadSelectRequest | null>(null);
+  /** Clicked highlight awaiting the recolor/thread/delete swatch (wide extracted only). */
+  const [existingSwatch, setExistingSwatch] = useState<{ id: string; top: number; left: number } | null>(null);
   const isNarrow = useIsNarrow();
 
   useEffect(() => {
@@ -118,12 +121,19 @@ export default function Reader() {
   }, [dockAppearanceOpen]);
 
   // When a highlight is clicked or created, open the notes panel/sheet
-  const handleHighlightClick = useCallback((highlightId: string) => {
+  const handleHighlightClick = useCallback((highlightId: string, anchor?: { top: number; left: number }) => {
     setFocusMode(false);
+    // Wide extracted mode reopens the same swatch over the highlight for
+    // recolor / thread / delete. Phones keep the bottom sheet; web mode
+    // keeps the side panel — both flows below are untouched.
+    if (!isNarrow && viewMode === "reader" && anchor) {
+      setExistingSwatch({ id: highlightId, top: anchor.top, left: anchor.left });
+      return;
+    }
     setAnnotationsOpen(true);
     setSheetState((prev) => (prev === "closed" ? "half" : prev));
     setSelectRequest({ id: highlightId, nonce: Date.now() });
-  }, []);
+  }, [isNarrow, viewMode]);
 
   // Bottom edge swipe: quick swipe opens the sheet at half height; a longer
   // press-drag follows the thumb live and snaps on release.
@@ -299,6 +309,7 @@ export default function Reader() {
   useEffect(() => {
     scrollRef.current?.scrollTo({ top: 0 });
     setHeaderHidden(false);
+    setExistingSwatch(null);
     lastScrollTop.current = 0;
   }, [urlHash]);
 
@@ -410,8 +421,12 @@ export default function Reader() {
     setMarginWidth(next);
     void setPref(PREF_KEYS.readerMarginWidth, next).catch(() => {});
   }, []);
-  const marginMode =
-    !isNarrow && !isAuthentic && Boolean(urlHash) && annotationsOpen;
+  // Extracted article mode is margin-only: the SplitterPane/ThreadPanel split
+  // view survives solely for authentic (web/iframe) desktop mode, and the
+  // bottom sheet solely for narrow phones. annotationsOpen only toggles the
+  // margin column's visibility; the article reclaims the width when hidden.
+  const extractedMode =
+    !isNarrow && !isAuthentic && Boolean(urlHash);
 
   const scrollerClassName = isAuthentic
     ? "h-full min-h-0 flex-1 overflow-hidden bg-base"
@@ -446,9 +461,14 @@ export default function Reader() {
                 type="button"
                 autoFocus
                 data-testid="empty-library-add"
-                onClick={() =>
-                  document.getElementById(ADD_ARTICLE_INPUT_ID)?.focus()
-                }
+                onClick={() => {
+                  // The rail (and its add input) lives in the drawer when the
+                  // library is empty — open it, then hand it focus.
+                  setDrawerOpen(true);
+                  window.requestAnimationFrame(() => {
+                    document.getElementById(ADD_ARTICLE_INPUT_ID)?.focus();
+                  });
+                }}
                 className="mt-3 rounded-md bg-accent px-4 py-2 text-sm font-semibold text-[var(--sc-accent-text)] transition-opacity hover:opacity-90"
               >
                 Add an article
@@ -529,7 +549,7 @@ export default function Reader() {
         ref={stackRef}
         data-testid="margin-stack"
         className="mx-auto flex min-h-full items-stretch justify-center gap-6"
-        style={{ maxWidth: columnWidth + MARGIN_GUTTER + marginWidth }}
+        style={{ maxWidth: annotationsOpen ? columnWidth + MARGIN_GUTTER + marginWidth : columnWidth }}
       >
         <div
           className="min-w-0 shrink"
@@ -537,16 +557,18 @@ export default function Reader() {
         >
           {articleBodyNode}
         </div>
-        <div className="relative flex-none" style={{ width: marginWidth }}>
-          <MarginColumn
-            model={marginModel}
-            anchors={marginAnchors}
-            width={marginWidth}
-            defaultWidth={MARGIN_WIDTH_DEFAULT}
-            onWidthChange={setMarginWidth}
-            onWidthCommit={persistMarginWidth}
-          />
-        </div>
+        {annotationsOpen ? (
+          <div className="relative flex-none" style={{ width: marginWidth }}>
+            <MarginColumn
+              model={marginModel}
+              anchors={marginAnchors}
+              width={marginWidth}
+              defaultWidth={MARGIN_WIDTH_DEFAULT}
+              onWidthChange={setMarginWidth}
+              onWidthCommit={persistMarginWidth}
+            />
+          </div>
+        ) : null}
       </div>
       {marginModel.undoState ? (
         <div className="pointer-events-none absolute inset-x-0 bottom-4 z-30 flex justify-center">
@@ -796,7 +818,7 @@ export default function Reader() {
                 </div>
               </aside>
             </div>
-          ) : marginMode ? (
+          ) : extractedMode ? (
             marginNode
           ) : annotationsOpen && threadPanelNode ? (
             <SplitterPane left={articleContentNode} right={threadPanelNode} storageKey="layout.reader_split_ratio" defaultRatio={0.65} minRatio={0.4} maxRatio={0.8} />
@@ -805,12 +827,57 @@ export default function Reader() {
           )}
         </div>
       </div>
+      {existingSwatch ? (
+        <ExistingHighlightSwatch
+          swatch={existingSwatch}
+          model={marginModel}
+          onEnsureAnnotationsOpen={() => setAnnotationsOpen(true)}
+          onClose={() => setExistingSwatch(null)}
+        />
+      ) : null}
     </section>
   );
 }
 
-function EmptyState({
-  message,
+/**
+ * Reopened swatch over a clicked highlight (wide extracted mode only): the
+ * same strip as a fresh selection, but recoloring in place with a delete
+ * option instead of creating. Voice/diagram/copy stay selection-only.
+ */
+function ExistingHighlightSwatch({
+  swatch,
+  model,
+  onEnsureAnnotationsOpen,
+  onClose,
+}: {
+  swatch: { id: string; top: number; left: number };
+  model: ReturnType<typeof useThreadModel>;
+  onEnsureAnnotationsOpen: () => void;
+  onClose: () => void;
+}) {
+  const entry = model.entries.find((e) =>
+    e.members.some((m) => m.id === swatch.id),
+  );
+  if (!entry) return null;
+  const color = (entry.members[0].color ?? "yellow") as HighlightColor;
+  return (
+    <SwatchPopup
+      anchor={{ top: swatch.top, left: swatch.left }}
+      existingColor={color}
+      onPickColor={() => {}}
+      onComment={() => {
+        onEnsureAnnotationsOpen();
+        model.activate(entry, swatch.id);
+        onClose();
+      }}
+      onRecolorExisting={(next) => model.handleRecolor(entry, next)}
+      onDeleteExisting={() => model.handleDeleteThread(entry)}
+      onClose={onClose}
+    />
+  );
+}
+
+function EmptyState({  message,
   action,
   testId,
 }: {

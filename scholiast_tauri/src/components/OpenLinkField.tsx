@@ -58,7 +58,9 @@ export default function OpenLinkField() {
     try {
       const text = await readClipboardText();
       if (text && text.trim()) {
+        // Paste-and-go: fill the field and open it straight away.
         setValue(text.trim());
+        await openLink(text);
       } else {
         toast("Clipboard is empty");
       }
@@ -69,7 +71,11 @@ export default function OpenLinkField() {
 
   const handleSubmit = async (event: FormEvent) => {
     event.preventDefault();
-    const trimmed = value.trim();
+    await openLink(value);
+  };
+
+  const openLink = async (raw: string) => {
+    const trimmed = raw.trim();
     if (!trimmed) {
       toast("Paste a link to add");
       return;

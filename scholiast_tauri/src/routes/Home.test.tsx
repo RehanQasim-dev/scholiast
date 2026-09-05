@@ -154,7 +154,7 @@ describe("Home", () => {
     expect(screen.getByTestId("probe").textContent).toContain("url=https%3A%2F%2Fexample.com%2Farticle");
   });
 
-  test("paste button reads from AndroidBridge when available", async () => {
+  test("paste button pastes and opens the link straight away", async () => {
     (window as unknown as { AndroidBridge?: { getClipboardText: () => string } }).AndroidBridge = {
       getClipboardText: () => "https://example.com/pasted-via-bridge",
     };
@@ -162,9 +162,13 @@ describe("Home", () => {
     const pasteBtn = screen.getByLabelText("Paste from clipboard");
     fireEvent.click(pasteBtn);
     await waitFor(() => {
-      const input = screen.getByLabelText("Paste YouTube or URL...") as HTMLInputElement;
-      expect(input.value).toBe("https://example.com/pasted-via-bridge");
+      expect(invokeMock).toHaveBeenCalledWith("add_article", {
+        url: "https://example.com/pasted-via-bridge",
+      });
     });
+    expect(screen.getByTestId("probe").textContent).toContain(
+      "url=https%3A%2F%2Fexample.com%2Fpasted-via-bridge",
+    );
     delete (window as unknown as { AndroidBridge?: unknown }).AndroidBridge;
   });
 });

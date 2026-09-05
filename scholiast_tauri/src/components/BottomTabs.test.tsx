@@ -11,20 +11,24 @@ function renderTabs(initialEntries: string[]) {
 }
 
 describe("BottomTabs", () => {
-  test("renders the four primary destinations", () => {
+  test("renders the three primary destinations", () => {
     renderTabs(["/home"]);
     const nav = screen.getByRole("navigation", { name: "Primary" });
     expect(nav).toHaveAttribute("data-testid", "bottom-tabs");
-    for (const label of ["Home", "Player", "Reader", "Settings"]) {
+    // Study surfaces (Player/Reader) hide the chrome; only the three
+    // library-level destinations live here.
+    for (const label of ["Home", "Library", "Settings"]) {
       expect(screen.getByTestId(`tab-${label.toLowerCase()}`)).toHaveTextContent(
         label,
       );
     }
+    expect(screen.queryByTestId("tab-player")).not.toBeInTheDocument();
+    expect(screen.queryByTestId("tab-reader")).not.toBeInTheDocument();
   });
 
   test("marks the active route", () => {
-    renderTabs(["/player"]);
-    expect(screen.getByTestId("tab-player")).toHaveAttribute(
+    renderTabs(["/library"]);
+    expect(screen.getByTestId("tab-library")).toHaveAttribute(
       "aria-current",
       "page",
     );
@@ -32,8 +36,8 @@ describe("BottomTabs", () => {
   });
 
   test("active state follows the current route", () => {
-    renderTabs(["/reader"]);
-    expect(screen.getByTestId("tab-reader")).toHaveAttribute(
+    renderTabs(["/settings"]);
+    expect(screen.getByTestId("tab-settings")).toHaveAttribute(
       "aria-current",
       "page",
     );

@@ -1,8 +1,16 @@
-import { render, screen } from "@testing-library/react";
+import { render, screen, within } from "@testing-library/react";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { MemoryRouter } from "react-router-dom";
-import { afterEach, vi } from "vitest";
+import { afterEach, beforeAll, vi } from "vitest";
 import App from "./App";
+
+beforeAll(() => {
+  Object.defineProperty(Element.prototype, "scrollTo", {
+    configurable: true,
+    writable: true,
+    value: vi.fn(),
+  });
+});
 
 function renderApp(initialEntries: string[]) {
   return render(
@@ -14,19 +22,23 @@ function renderApp(initialEntries: string[]) {
   );
 }
 
-test("shell renders the sidebar and the home placeholder", () => {
+test("shell renders the sidebar with library-level destinations", () => {
   renderApp(["/home"]);
 
   expect(screen.getByRole("navigation", { name: "Primary" })).toBeInTheDocument();
-  for (const label of ["Home", "Player", "Reader"]) {
+  for (const [label, href] of [
+    ["Home", "/home"],
+    ["Library", "/library"],
+    ["Settings", "/settings"],
+  ] as const) {
     expect(screen.getByRole("link", { name: label })).toHaveAttribute(
       "href",
-      `/${label.toLowerCase()}`
+      href,
     );
   }
-  expect(screen.queryByRole("link", { name: "Settings" })).not.toBeInTheDocument();
-  expect(screen.getByRole("heading", { level: 1, name: "Scholiast" })).toBeInTheDocument();
-  expect(screen.getByRole("button", { name: "Open settings" })).toBeInTheDocument();
+  expect(
+    within(screen.getByRole("complementary")).getByText("Scholiast"),
+  ).toBeInTheDocument();
 });
 
 describe("responsive shell switch", () => {
@@ -48,7 +60,7 @@ describe("responsive shell switch", () => {
     expect(screen.queryByRole("complementary")).not.toBeInTheDocument();
     const tabs = screen.getByTestId("bottom-tabs");
     expect(tabs).toBeInTheDocument();
-    for (const label of ["home", "player", "reader", "settings"]) {
+    for (const label of ["home", "library", "settings"]) {
       expect(screen.getByTestId(`tab-${label}`)).toBeInTheDocument();
     }
     expect(screen.getByRole("navigation", { name: "Primary" })).toBe(tabs);
@@ -59,6 +71,14 @@ describe("responsive shell switch", () => {
     renderApp(["/home"]);
 
     expect(screen.getByRole("complementary")).toBeInTheDocument();
+    expect(screen.queryByTestId("bottom-tabs")).not.toBeInTheDocument();
+  });
+
+  test("study sessions hide all chrome on every viewport", () => {
+    stubNarrow(false);
+    renderApp(["/reader"]);
+
+    expect(screen.queryByRole("complementary")).not.toBeInTheDocument();
     expect(screen.queryByTestId("bottom-tabs")).not.toBeInTheDocument();
   });
 });

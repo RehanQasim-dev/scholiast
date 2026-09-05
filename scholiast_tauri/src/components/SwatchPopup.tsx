@@ -12,6 +12,14 @@ interface SwatchPopupProps {
   onOpenDiagram?: (color: HighlightColor) => void;
   onComment: () => void;
   onClose: () => void;
+  /**
+   * Existing-highlight mode: tapping painted text reopens the same strip to
+   * recolor it, open its thread, or delete it — instead of creating a new
+   * highlight. Voice/diagram/copy are selection-only and stay hidden here.
+   */
+  existingColor?: HighlightColor;
+  onRecolorExisting?: (color: HighlightColor) => void;
+  onDeleteExisting?: () => void;
 }
 
 const SWATCHES: { color: HighlightColor; token: string; label: string }[] = [
@@ -88,7 +96,11 @@ export default function SwatchPopup({
   onOpenDiagram,
   onComment,
   onClose,
+  existingColor,
+  onRecolorExisting,
+  onDeleteExisting,
 }: SwatchPopupProps) {
+  const existing = existingColor !== undefined;
   const [mode, setMode] = useState<"swatches" | "voice" | "comment">("swatches");
   const [selectedColor, setSelectedColor] = useState<HighlightColor>("yellow");
   const [text, setText] = useState("");
@@ -156,9 +168,9 @@ export default function SwatchPopup({
         />
       ) : mode === "swatches" ? (
         /* Compact Swatch Strip */
-        <div className="flex items-center gap-1.5 rounded-full border border-hairline bg-surface/90 px-2.5 py-1.5 shadow-2xl backdrop-blur-md">
+        <div className="flex items-center gap-2 rounded-full border border-hairline bg-surface/90 px-3 py-1.5 shadow-2xl backdrop-blur-md">
           {/* Exactly 3 Colors matching the Clipper extension */}
-          <div className="flex items-center gap-1.5 pr-1">
+          <div className="flex items-center gap-2 pr-1">
             {SWATCHES.map(({ color, token, label }) => (
               <button
                 key={color}
@@ -167,10 +179,15 @@ export default function SwatchPopup({
                 title={label}
                 data-testid={`swatch-${color}`}
                 onClick={() => {
-                  setSelectedColor(color);
-                  onPickColor(color);
+                  if (existing) {
+                    onRecolorExisting?.(color);
+                    onClose();
+                  } else {
+                    setSelectedColor(color);
+                    onPickColor(color);
+                  }
                 }}
-                className="h-6 w-6 rounded-full border border-black/25 transition-transform duration-[var(--sc-dur-fast)] ease-out hover:scale-115 active:scale-95 cursor-pointer shadow-sm"
+                className={`h-6 w-6 rounded-full border border-black/25 transition-transform duration-[var(--sc-dur-fast)] ease-out hover:scale-115 active:scale-95 cursor-pointer shadow-sm ${existing && color === existingColor ? "ring-2 ring-accent scale-110" : ""}`}
                 style={{ backgroundColor: token }}
               />
             ))}
@@ -182,7 +199,7 @@ export default function SwatchPopup({
           <button
             type="button"
             aria-label="Add comment"
-            title="Write text note"
+            title={existing ? "Open comment thread" : "Write text note"}
             data-testid="swatch-comment"
             onClick={handleStartComment}
             className="flex h-7 w-7 items-center justify-center rounded-full text-text-2 transition-colors hover:bg-elevated hover:text-text cursor-pointer"
@@ -190,54 +207,76 @@ export default function SwatchPopup({
             <CommentTextIcon />
           </button>
 
-          {/* Voice Comment Combined (Mic on top of comment) */}
-          <button
-            type="button"
-            aria-label="Speak voice note"
-            title="Speak voice note"
-            data-testid="swatch-voice"
-            onClick={handleStartVoice}
-            className="flex h-7 w-7 items-center justify-center rounded-full text-accent transition-colors hover:bg-elevated hover:text-accent-press cursor-pointer"
-          >
-            <CommentMicIcon />
-          </button>
+          {existing ? (
+            <>
+              <span className="h-4 w-px bg-hairline" aria-hidden />
+              {/* Delete Highlight Button (existing highlights only) */}
+              <button
+                type="button"
+                aria-label="Delete highlight"
+                title="Delete highlight"
+                data-testid="swatch-delete"
+                onClick={() => {
+                  onDeleteExisting?.();
+                  onClose();
+                }}
+                className="flex h-7 w-7 items-center justify-center rounded-full text-text-2 transition-colors hover:bg-elevated hover:text-[color:var(--sc-danger)] cursor-pointer"
+              >
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="h-3.5 w-3.5"><path d="M3 6h18" /><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2" /></svg>
+              </button>
+            </>
+          ) : (
+            <>
+              {/* Voice Comment Combined (Mic on top of comment) */}
+              <button
+                type="button"
+                aria-label="Speak voice note"
+                title="Speak voice note"
+                data-testid="swatch-voice"
+                onClick={handleStartVoice}
+                className="flex h-7 w-7 items-center justify-center rounded-full text-accent transition-colors hover:bg-elevated hover:text-accent-press cursor-pointer"
+              >
+                <CommentMicIcon />
+              </button>
 
-          {/* Diagram / Shapes Button (3 shapes: triangle, square, circle) */}
-          <button
-            type="button"
-            aria-label="Add diagram"
-            title="Draw diagram / sketch"
-            data-testid="swatch-diagram"
-            onClick={() => {
-              if (onOpenDiagram) {
-                onOpenDiagram(selectedColor);
-              } else {
-                onPickColor(selectedColor);
-              }
-              onClose();
-            }}
-            className="flex h-7 w-7 items-center justify-center rounded-full text-text-2 transition-colors hover:bg-elevated hover:text-text cursor-pointer"
-          >
-            <ShapesDiagramIcon />
-          </button>
+              {/* Diagram / Shapes Button (3 shapes: triangle, square, circle) */}
+              <button
+                type="button"
+                aria-label="Add diagram"
+                title="Draw diagram / sketch"
+                data-testid="swatch-diagram"
+                onClick={() => {
+                  if (onOpenDiagram) {
+                    onOpenDiagram(selectedColor);
+                  } else {
+                    onPickColor(selectedColor);
+                  }
+                  onClose();
+                }}
+                className="flex h-7 w-7 items-center justify-center rounded-full text-text-2 transition-colors hover:bg-elevated hover:text-text cursor-pointer"
+              >
+                <ShapesDiagramIcon />
+              </button>
 
-          {/* Copy Selected Text Button */}
-          <button
-            type="button"
-            aria-label="Copy text"
-            title="Copy to clipboard"
-            data-testid="swatch-copy"
-            onClick={() => {
-              const sel = window.getSelection()?.toString();
-              if (sel) {
-                void navigator.clipboard?.writeText(sel).catch(() => {});
-              }
-              onClose();
-            }}
-            className="flex h-7 w-7 items-center justify-center rounded-full text-text-2 transition-colors hover:bg-elevated hover:text-text cursor-pointer"
-          >
-            <Copy size={13} strokeWidth={2} />
-          </button>
+              {/* Copy Selected Text Button */}
+              <button
+                type="button"
+                aria-label="Copy text"
+                title="Copy to clipboard"
+                data-testid="swatch-copy"
+                onClick={() => {
+                  const sel = window.getSelection()?.toString();
+                  if (sel) {
+                    void navigator.clipboard?.writeText(sel).catch(() => {});
+                  }
+                  onClose();
+                }}
+                className="flex h-7 w-7 items-center justify-center rounded-full text-text-2 transition-colors hover:bg-elevated hover:text-text cursor-pointer"
+              >
+                <Copy size={13} strokeWidth={2} />
+              </button>
+            </>
+          )}
         </div>
       ) : (
         /* Typed Comment Box */

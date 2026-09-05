@@ -47,6 +47,52 @@ export interface CommentView {
   editedAt: number | null;
 }
 
+export interface StreamFormatView {
+  itag: number;
+  kind: "progressive" | "audio" | "videoOnly";
+  mime: string;
+  codecs: string;
+  qualityLabel?: string | null;
+  bitrate?: number | null;
+  width?: number | null;
+  height?: number | null;
+  fps?: number | null;
+  audioSampleRate?: number | null;
+  audioChannels?: number | null;
+  contentLength?: string | null;
+  initRange?: string | null;
+  indexRange?: string | null;
+  url: string;
+}
+
+export interface ManifestCaptionView {
+  languageCode: string;
+  name: string;
+  baseUrl: string;
+  isAsr: boolean;
+}
+
+export interface StreamManifestView {
+  videoId: string;
+  title?: string | null;
+  lengthSeconds?: number | null;
+  streams: StreamFormatView[];
+  hlsUrl?: string | null;
+  captions: ManifestCaptionView[];
+}
+
+/** Fresh per-session manifest; URLs expire and are never persisted. */
+export function resolveStream(args: { videoId: string }): Promise<StreamManifestView> {
+  return invokeCommand<StreamManifestView>("yt_resolve", args);
+}
+
+export function fetchVideoCaptions(args: {
+  videoId: string;
+  languageCode: string;
+}): Promise<{ languageCode: string; vtt: string }> {
+  return invokeCommand<{ languageCode: string; vtt: string }>("yt_captions", args);
+}
+
 export function addArticle(args: {
   url: string;
   title?: string;
