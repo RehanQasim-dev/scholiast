@@ -1,6 +1,6 @@
 [package]
 name = "scholiast"
-version = "0.3.0"
+version = "0.4.1"
 edition = "2021"
 description = "Scholiast — lecture notes companion"
 
@@ -24,6 +24,10 @@ reqwest = { version = "0.12", default-features = false, features = [
   "rustls-tls-webpki-roots",
 ] }
 image = { version = "0.25", default-features = false, features = ["jpeg", "png"] }
+# Pure-Rust JS engine for sig/n evaluation (rquickjs was dropped: its
+# prebuilt bindings miss the Android targets and bindgen needs host
+# libclang — see task 01 LOG).
+boa_engine = { version = "0.22" }
 scholiast-core = { path = "../crates/core" }
 serde = { workspace = true }
 serde_json = { workspace = true }

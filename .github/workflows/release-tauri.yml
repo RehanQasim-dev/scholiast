@@ -227,7 +227,6 @@ jobs:
           # plugin's BuildConfig.TAURI_LIBRARY_NAME comes from this property and a
           # missing/wrong value crashes the app on open (UnsatisfiedLinkError).
           ORG_GRADLE_PROJECT_tauri_app_lib_name: scholiast_lib
-          RELEASE_TAG: ${{ inputs.tag }}
         run: |
           # whisper-rs-sys runs bindgen without a target sysroot, so it parses
           # the HOST glibc headers (64-bit layouts) and the 32-bit armv7
