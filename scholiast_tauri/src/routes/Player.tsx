@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { invoke } from "@tauri-apps/api/core";
+import { openUrl } from "@tauri-apps/plugin-opener";
 import { useNavigate, useSearchParams } from "react-router-dom";
 import { ArrowLeft } from "lucide-react";
 import { toast } from "../components/Toast";
@@ -299,6 +300,15 @@ async function tryCanvasFrame(url: string): Promise<CaptureOut | null> {
             <div className="flex h-full flex-col items-center justify-center gap-2 p-6 text-center">
               <p className="text-sm font-medium text-text">This video can't play here</p>
               <p className="max-w-sm text-xs text-text-2">{nativeError}</p>
+              {/* Kill-switch without an in-app fallback: hand off to the
+                system YouTube app / browser instead of a dead stage. */}
+              <button
+                type="button"
+                onClick={() => void openUrl(`https://www.youtube.com/watch?v=${videoId}`).catch(() => {})}
+                className="mt-1 inline-flex h-9 items-center gap-2 rounded-lg bg-accent px-4 text-xs font-semibold text-[var(--sc-accent-text)] hover:opacity-90 active:scale-95"
+              >
+                Open in YouTube
+              </button>
             </div>
           ) : (
             <NativePlayer

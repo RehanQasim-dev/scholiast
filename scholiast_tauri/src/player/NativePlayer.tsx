@@ -11,6 +11,8 @@
 import { useEffect, useRef, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { fetch as tauriFetch } from "@tauri-apps/plugin-http";
+import Hls from "hls.js";
+import { TauriFetchLoader, setHlsPotToken } from "./hlsLoader";
 import { attachNative, detachNative, emitPlayerEvent } from "./playerBridge";
 import { AdaptiveSession, choosePlayback } from "./adaptiveEngine";
 import { fetchCaptionVtt, resolveManifest } from "./youtubeEngine";
@@ -25,6 +27,7 @@ interface NativePlayerProps {
 export default function NativePlayer({ videoId, onFallback }: NativePlayerProps) {
   const videoRef = useRef<HTMLVideoElement | null>(null);
   const sessionRef = useRef<AdaptiveSession | null>(null);
+  const hlsRef = useRef<Hls | null>(null);
   const [captionUrl, setCaptionUrl] = useState<string | null>(null);
   const snapshot = usePlayerSnapshot();
   const fallbackRef = useRef(onFallback);
@@ -56,7 +59,7 @@ export default function NativePlayer({ videoId, onFallback }: NativePlayerProps)
         manifest.captions[0];
       if (!track || cancelled) return;
       try {
-        const vtt = await fetchCaptionVtt(track.baseUrl);
+        const vtt = await fetchCaptionVtt(track.baseUrl, manifest.poToken);
         if (cancelled) return;
         blobUrl = URL.createObjectURL(new Blob([vtt], { type: "text/vtt" }));
         setCaptionUrl(blobUrl);
@@ -90,6 +93,27 @@ export default function NativePlayer({ videoId, onFallback }: NativePlayerProps)
     const manifest = manifestQuery.data;
     if (!el || !manifest) return;
     if (manifest.title) emitPlayerEvent("onTitle", manifest.title);
+    setHlsPotToken(manifest.poToken ?? null);
+    // HD first: iOS HLS through hls.js on the Rust-side fetch (ReactTube's
+    // pattern — no decipher, no MSE). Classic progressive/MSE below stays
+    // the universal floor whenever HLS is missing or unsupported.
+    if (manifest.iosHlsUrl && Hls.isSupported()) {
+      const hls = new Hls({ loader: TauriFetchLoader, maxBufferLength: 30 });
+      hlsRef.current = hls;
+      hls.on(Hls.Events.ERROR, (_event, data) => {
+        if (data.fatal) {
+          fallbackRef.current(
+            data.details ? `hls ${data.details}` : "hls playback failed",
+          );
+        }
+      });
+      hls.loadSource(manifest.iosHlsUrl);
+      hls.attachMedia(el);
+      return () => {
+        hls.destroy();
+        if (hlsRef.current === hls) hlsRef.current = null;
+      };
+    }
     const plan = choosePlayback(manifest);
     if (!plan) {
       fallbackRef.current("no playable streams");

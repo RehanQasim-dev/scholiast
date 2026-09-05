@@ -14,8 +14,9 @@
  * traffic on the user's residential IP rather than a datacenter proxy.
  */
 
-import { Innertube, Platform } from "youtubei.js";
+import { Innertube, Platform, UniversalCache } from "youtubei.js";
 import { fetch as tauriFetch } from "@tauri-apps/plugin-http";
+import { coldStartPoToken, getPoToken } from "./poToken";
 import type {
   ManifestCaptionView,
   StreamFormatView,
@@ -49,12 +50,35 @@ let sessionPromise: Promise<Awaited<ReturnType<typeof Innertube.create>>> | null
 function session(): Promise<Awaited<ReturnType<typeof Innertube.create>>> {
   ensureEvaluator();
   if (!sessionPromise) {
-    sessionPromise = Innertube.create({
-      generate_session_locally: true,
-      fetch: tauriFetch as typeof fetch,
-    }).catch((err: unknown) => {
+    const fresh = () =>
+      Innertube.create({
+        // Server session + persistent cache. Locally-generated sessions
+        // never meet a Google server and under-attest (Kira carries the
+        // same warning) — pay the handshake once, cache it in IndexedDB.
+        cache: new UniversalCache(true),
+        fetch: tauriFetch as typeof fetch,
+      });
+    sessionPromise = fresh().catch(async () => {
       sessionPromise = null;
-      throw err;
+      // A poisoned cached session breaks every resolve: purge once so the
+      // retry handshakes fresh, then give up loudly if that fails too.
+      try {
+        await new Promise<void>((resolve) => {
+          const req = indexedDB.deleteDatabase("youtubei.js");
+          req.onsuccess = () => resolve();
+          req.onerror = () => resolve();
+          req.onblocked = () => resolve();
+        });
+      } catch {
+        /* IndexedDB unavailable */
+      }
+      sessionPromise = fresh();
+      try {
+        return await sessionPromise;
+      } catch (retryErr) {
+        sessionPromise = null;
+        throw retryErr;
+      }
     });
   }
   return sessionPromise;
@@ -144,7 +168,28 @@ export async function resolveManifest(videoId: string): Promise<StreamManifestVi
   const id = videoId.trim();
   if (!id) throw new Error("bad video id");
   const yt = await session();
-  const info = await yt.getBasicInfo(id, { client: "VISIONOS" });
+  // Attestation and the iOS manifest resolve in parallel: the iOS HLS URL
+  // (ReactTube's HD pattern — no decipher, no MSE) goes out bare and gets
+  // its `pot` at load time from the manifest token below.
+  const [poTokenReal, iosHlsUrl] = await Promise.all([
+    getPoToken(id),
+    yt
+      .getBasicInfo(id, { client: "IOS" })
+      .then((ios) => ios.streaming_data?.hls_manifest_url ?? null)
+      .catch(() => null),
+  ]);
+  // PO token floor: attested content-bound token when available, else an
+  // instant cold-start token (sps≤2 grace, zero network) — a request never
+  // goes out bare anymore.
+  const poToken = poTokenReal ?? coldStartPoToken(id);
+  if (yt.session.player) {
+    // v18 appends `pot=<token>` to segment URLs at decipher time.
+    yt.session.player.po_token = poToken;
+  }
+  const info = await yt.getBasicInfo(id, {
+    client: "VISIONOS",
+    po_token: poToken,
+  });
   const status = info.playability_status?.status ?? "";
   if (status !== "OK") {
     throw playabilityError(status, info.playability_status?.reason ?? "");
@@ -190,13 +235,21 @@ export async function resolveManifest(videoId: string): Promise<StreamManifestVi
     streams,
     hlsUrl: info.streaming_data?.hls_manifest_url ?? null,
     captions,
+    poToken,
+    iosHlsUrl,
   };
 }
 
 /** Timedtext fetch for one caption track — what `<track>` loads. Same
- * Rust-side fetch as everything else (timedtext is CORS-gated too). */
-export async function fetchCaptionVtt(trackUrl: string): Promise<string> {
-  const url = trackUrl.includes("fmt=") ? trackUrl : `${trackUrl}&fmt=vtt`;
+ * Rust-side fetch as everything else (timedtext is CORS-gated too), with
+ * the video's token replayed (`pot` + `potc`) like Kira does — captions
+ * 403 while video plays when it's missing under enforcement. */
+export async function fetchCaptionVtt(
+  trackUrl: string,
+  poToken?: string | null,
+): Promise<string> {
+  let url = trackUrl.includes("fmt=") ? trackUrl : `${trackUrl}&fmt=vtt`;
+  if (poToken) url += `&pot=${encodeURIComponent(poToken)}&potc=1`;
   const res = await tauriFetch(url);
   if (!res.ok) throw new Error(`captions HTTP ${res.status}`);
   return res.text();

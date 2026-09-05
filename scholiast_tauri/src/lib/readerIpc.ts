@@ -81,6 +81,10 @@ export interface StreamManifestView {
   streams: StreamFormatView[];
   hlsUrl?: string | null;
   captions: ManifestCaptionView[];
+  /** PO token bound to this videoId; replays onto captions/segments. */
+  poToken?: string | null;
+  /** iOS-client HLS manifest URL (HD path); null when unavailable. */
+  iosHlsUrl?: string | null;
 }
 
 export function addArticle(args: {
